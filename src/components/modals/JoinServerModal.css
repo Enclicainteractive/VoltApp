@@ -1,0 +1,48 @@
+.join-server-modal {
+  max-width: 440px;
+}
+
+.join-server-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 50%;
+  color: var(--volt-primary);
+}
+
+.join-description {
+  text-align: center;
+  color: var(--volt-text-secondary);
+  margin-bottom: 24px;
+  font-size: 15px;
+}
+
+.join-server-modal .form-group {
+  margin-bottom: 0;
+}
+
+.join-server-modal .form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--volt-text-muted);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.input-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--volt-text-muted);
+  margin-top: 8px;
+}
+
+.join-server-modal .modal-footer .btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

@@ -1,0 +1,223 @@
+.rich-text-editor {
+  display: flex;
+  flex-direction: column;
+  background: var(--volt-bg-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.rich-text-editor.focused {
+  box-shadow: 0 0 0 2px var(--volt-primary);
+}
+
+.rich-text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--volt-bg-tertiary);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toolbar-btn:hover {
+  background: var(--volt-bg-hover);
+  color: var(--volt-text);
+}
+
+.toolbar-btn.active {
+  background: var(--volt-primary);
+  color: white;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--volt-border);
+  margin: 0 4px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.rich-text-content {
+  position: relative;
+  overflow-y: auto;
+}
+
+.rich-text-input {
+  width: 100%;
+  min-height: inherit;
+  max-height: inherit;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  color: var(--volt-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.rich-text-input:empty::before {
+  content: attr(placeholder);
+  color: var(--volt-text-muted);
+  pointer-events: none;
+}
+
+.rich-text-preview {
+  padding: 12px;
+  min-height: inherit;
+  max-height: inherit;
+  overflow-y: auto;
+}
+
+.rich-text-live-preview {
+  padding: 12px;
+  background: var(--volt-bg-tertiary);
+  border-top: 1px solid var(--volt-border);
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.rich-text-editor.empty .rich-text-live-preview {
+  display: none;
+}
+
+.rich-text-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px;
+  background: var(--volt-bg-tertiary);
+  border-top: 1px solid var(--volt-border);
+}
+
+.rich-text-editor .send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: var(--volt-primary);
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rich-text-editor .send-btn:hover:not(:disabled) {
+  background: var(--volt-primary-hover);
+}
+
+.rich-text-editor .send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rich-text-editor.dm-input {
+  background: var(--volt-bg-input);
+}
+
+.rich-text-editor.bio-input {
+  background: var(--volt-bg-input);
+}
+
+/* Markdown body styles for previews */
+.markdown-body {
+  color: var(--volt-text);
+}
+
+.markdown-body p {
+  margin: 0 0 8px 0;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body strong {
+  font-weight: 700;
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+.markdown-body del {
+  text-decoration: line-through;
+}
+
+.markdown-body code {
+  background: var(--volt-bg-dark);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 13px;
+}
+
+.markdown-body pre {
+  background: var(--volt-bg-dark);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+}
+
+.markdown-body a {
+  color: var(--volt-link);
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-body li {
+  margin: 4px 0;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid var(--volt-border);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--volt-text-muted);
+}
+
+.markdown-body .spoiler {
+  background: var(--volt-bg-dark);
+  padding: 2px 6px;
+  border-radius: 4px;
+}

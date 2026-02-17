@@ -1,0 +1,237 @@
+.login-page {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.login-background {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #0b1220 0%, #0f1828 50%, #0b1220 100%);
+  z-index: 0;
+}
+
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(var(--volt-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--volt-border) 1px, transparent 1px);
+  background-size: 50px 50px;
+  opacity: 0.1;
+}
+
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.3;
+  animation: float 8s ease-in-out infinite;
+}
+
+.glow-1 {
+  width: 500px;
+  height: 500px;
+  background: var(--volt-primary);
+  top: -200px;
+  left: -200px;
+}
+
+.glow-2 {
+  width: 400px;
+  height: 400px;
+  background: var(--volt-primary-light);
+  bottom: -150px;
+  right: -150px;
+  animation-delay: -4s;
+}
+
+.glow-3 {
+  width: 300px;
+  height: 300px;
+  background: var(--volt-success);
+  top: 50%;
+  right: 20%;
+  animation-delay: -6s;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -30px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+}
+
+.login-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 480px;
+  padding: 20px;
+}
+
+.login-content {
+  background: var(--volt-bg-secondary);
+  border-radius: var(--border-radius-xl);
+  padding: 48px;
+  box-shadow: 0 8px 32px var(--volt-shadow);
+  border: 1px solid var(--volt-border);
+  backdrop-filter: blur(10px);
+}
+
+.login-branding {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.logo {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: linear-gradient(135deg, var(--volt-primary), var(--volt-primary-light));
+  border-radius: var(--border-radius-xl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 8px 24px rgba(31, 182, 255, 0.35);
+}
+
+.brand-name {
+  font-size: 36px;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--volt-primary-light), var(--volt-primary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+
+.brand-tagline {
+  color: var(--volt-text-secondary);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.feature-card {
+  background: var(--volt-bg-tertiary);
+  padding: 20px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--volt-border);
+  transition: all var(--transition-medium);
+}
+
+.feature-card:hover {
+  background: var(--volt-bg-quaternary);
+  transform: translateY(-2px);
+  border-color: var(--volt-primary);
+}
+
+.feature-card svg {
+  color: var(--volt-primary);
+  margin-bottom: 12px;
+}
+
+.feature-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--volt-text-primary);
+}
+
+.feature-card p {
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  line-height: 1.4;
+}
+
+.login-button {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--volt-primary), var(--volt-primary-light));
+  color: white;
+  border-radius: var(--border-radius-md);
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-shadow: 0 4px 16px rgba(31, 182, 255, 0.35);
+  transition: all var(--transition-medium);
+  margin-bottom: 20px;
+}
+
+.login-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(31, 182, 255, 0.45);
+}
+
+.login-button:active {
+  transform: translateY(0);
+}
+
+.login-footer {
+  text-align: center;
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.server-selector-button-container {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+}
+
+.server-selector-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #b5bac1;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  backdrop-filter: blur(10px);
+}
+
+.server-selector-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+@media (max-width: 640px) {
+  .login-content {
+    padding: 32px 24px;
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-name {
+    font-size: 28px;
+  }
+}

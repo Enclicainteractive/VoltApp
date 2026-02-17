@@ -1,0 +1,262 @@
+.friends-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--volt-bg-primary);
+}
+
+.friends-header {
+  height: 48px;
+  border-bottom: 1px solid var(--volt-border);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+}
+
+.friends-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.friends-tabs .tab {
+  background: none;
+  color: var(--volt-text-secondary);
+  padding: 8px 16px;
+  border-radius: var(--border-radius-sm);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.friends-tabs .tab:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.friends-tabs .tab.active {
+  background: var(--volt-active);
+  color: var(--volt-text-primary);
+}
+
+.friends-tabs .tab.add-friend-tab {
+  background: var(--volt-success);
+  color: white;
+}
+
+.friends-tabs .tab.add-friend-tab:hover {
+  background: #2f9e4f;
+}
+
+.friends-tabs .tab .badge {
+  background: var(--volt-danger);
+  color: white;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.friends-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--volt-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  margin-top: 16px;
+}
+
+.section-title:first-child {
+  margin-top: 0;
+}
+
+.add-friend-section {
+  max-width: 600px;
+}
+
+.add-friend-section h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+  margin-bottom: 8px;
+}
+
+.add-friend-section p {
+  color: var(--volt-text-secondary);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.blocked-section {
+  max-width: 600px;
+}
+
+.blocked-section h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+  margin-bottom: 8px;
+}
+
+.blocked-section > p {
+  color: var(--volt-text-secondary);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.add-friend-form {
+  width: 100%;
+}
+
+.add-friend-input-wrapper {
+  display: flex;
+  gap: 12px;
+  background: var(--volt-bg-tertiary);
+  padding: 8px;
+  border-radius: var(--border-radius-md);
+}
+
+.add-friend-input-wrapper input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  padding: 8px 12px;
+}
+
+.add-friend-input-wrapper input:focus {
+  background: transparent;
+}
+
+.error-text {
+  color: var(--volt-danger);
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+.success-text {
+  color: var(--volt-success);
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.friend-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--border-radius-md);
+  transition: background var(--transition-fast);
+}
+
+.friend-item:hover {
+  background: var(--volt-hover);
+}
+
+.friend-avatar-wrapper {
+  position: relative;
+}
+
+.friend-avatar-wrapper .status-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 3px solid var(--volt-bg-primary);
+}
+
+.friend-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.friend-name {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--volt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-status {
+  display: block;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-actions {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.friend-item:hover .friend-actions {
+  opacity: 1;
+}
+
+.friend-actions .icon-btn {
+  width: 36px;
+  height: 36px;
+  background: var(--volt-bg-tertiary);
+}
+
+.friend-actions .icon-btn:hover {
+  background: var(--volt-bg-quaternary);
+}
+
+.friend-actions .icon-btn.accept {
+  color: var(--volt-success);
+}
+
+.friend-actions .icon-btn.accept:hover {
+  background: var(--volt-success);
+  color: white;
+}
+
+.friend-actions .icon-btn.reject,
+.friend-actions .icon-btn.danger {
+  color: var(--volt-danger);
+}
+
+.friend-actions .icon-btn.reject:hover,
+.friend-actions .icon-btn.danger:hover {
+  background: var(--volt-danger);
+  color: white;
+}
+
+.empty-state-inline {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--volt-text-muted);
+}
+
+.empty-state-inline p {
+  font-size: 14px;
+}
+
+.loading-inline {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--volt-text-muted);
+}

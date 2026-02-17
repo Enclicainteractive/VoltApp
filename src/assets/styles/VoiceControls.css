@@ -1,0 +1,58 @@
+.voice-controls {
+  padding: 16px;
+  background: var(--volt-bg-tertiary);
+  border-top: 1px solid var(--volt-border);
+}
+
+.voice-join-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.voice-active {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.voice-participants {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--volt-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.voice-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.voice-buttons .icon-btn {
+  flex: 1;
+  height: 40px;
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-primary);
+}
+
+.voice-buttons .icon-btn:hover {
+  background: var(--volt-hover);
+}
+
+.voice-buttons .icon-btn.danger {
+  background: var(--volt-danger);
+  color: white;
+}
+
+.voice-buttons .icon-btn.danger:hover {
+  background: #c63940;
+}

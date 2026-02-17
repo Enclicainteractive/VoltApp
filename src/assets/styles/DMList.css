@@ -1,0 +1,244 @@
+.dm-list {
+  width: 240px;
+  background: var(--volt-bg-secondary);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  border-right: 1px solid var(--volt-border);
+}
+
+.dm-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.dm-search {
+  position: relative;
+}
+
+.dm-search .search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--volt-text-muted);
+}
+
+.dm-search input {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  font-size: 13px;
+}
+
+.dm-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.dm-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: none;
+  color: var(--volt-text-secondary);
+  border-radius: var(--border-radius-sm);
+  font-size: 15px;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+  text-align: left;
+  border: none;
+  cursor: pointer;
+}
+
+.dm-item:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.dm-item.active {
+  background: var(--volt-active);
+  color: var(--volt-text-primary);
+}
+
+.dm-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--volt-text-muted);
+  padding: 16px 12px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dm-add-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.dm-add-btn:hover {
+  color: var(--volt-text-primary);
+  background: var(--volt-bg-tertiary);
+}
+
+.new-dm-section {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.new-dm-section .input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: none;
+  border: none;
+  color: var(--volt-text-primary);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.search-result-item:hover {
+  background: var(--volt-bg-tertiary);
+}
+
+.no-results,
+.dm-loading,
+.dm-loading-small {
+  padding: 12px;
+  text-align: center;
+  color: var(--volt-text-muted);
+  font-size: 13px;
+}
+
+.dm-loading-small {
+  padding: 8px;
+  font-size: 12px;
+}
+
+.dm-conversations {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dm-conversation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: none;
+  border: none;
+  color: var(--volt-text-secondary);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+}
+
+.dm-conversation:hover,
+.dm-conversation.active {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.dm-avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.dm-status-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--volt-bg-secondary);
+}
+
+.dm-conv-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dm-conv-name {
+  font-weight: 500;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+
+.dm-conv-status {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-close-btn {
+  width: 20px;
+  height: 20px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.dm-conversation:hover .dm-close-btn {
+  display: flex;
+}
+
+.dm-close-btn:hover {
+  color: var(--volt-text-primary);
+  background: var(--volt-bg-tertiary);
+}
+
+.empty-dms {
+  padding: 16px 12px;
+  color: var(--volt-text-muted);
+  font-size: 14px;
+  text-align: center;
+  font-style: italic;
+}

@@ -1,0 +1,124 @@
+.voice-channel-preview {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  max-width: 90vw;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  animation: previewIn 0.2s ease-out;
+}
+
+@keyframes previewIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.preview-header svg {
+  color: var(--volt-text-muted);
+}
+
+.preview-info h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+  margin: 0;
+}
+
+.preview-type {
+  font-size: 13px;
+  color: var(--volt-text-muted);
+}
+
+.preview-participants {
+  padding: 20px;
+  min-height: 120px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.participants-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--volt-text-secondary);
+  margin-bottom: 16px;
+}
+
+.participants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.participant-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 8px;
+}
+
+.participant-name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--volt-text-primary);
+}
+
+.participant-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--volt-danger);
+  color: white;
+}
+
+.no-participants {
+  text-align: center;
+  padding: 20px;
+  color: var(--volt-text-muted);
+}
+
+.no-participants p {
+  margin: 0;
+}
+
+.no-participants .hint {
+  font-size: 13px;
+  margin-top: 8px;
+  color: var(--volt-text-muted);
+}
+
+.preview-actions {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--volt-border);
+  justify-content: flex-end;
+}
+
+.preview-actions .btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

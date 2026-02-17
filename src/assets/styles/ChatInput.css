@@ -1,0 +1,121 @@
+.chat-input-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 0 8px;
+  background: transparent;
+  border-radius: 8px;
+  transition: box-shadow 0.15s ease;
+  width: 100%;
+  flex: 1;
+}
+
+.chat-input-container.focused {
+  box-shadow: 0 0 0 2px var(--volt-primary, #5865f2);
+}
+
+.chat-input-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text-muted, #949ba4);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chat-input-action-btn:hover {
+  color: var(--volt-text, #dbdee1);
+  background: var(--volt-bg-hover, #3f4147);
+}
+
+.chat-input-wrapper {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.chat-input-editor {
+  width: 100%;
+  min-height: 24px;
+  max-height: 200px;
+  padding: 8px 0;
+  background: transparent;
+  border: none;
+  color: var(--volt-text, #dbdee1);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.375;
+  outline: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  resize: none;
+}
+
+.chat-input-editor:empty::before {
+  content: attr(placeholder);
+  color: var(--volt-text-muted, #949ba4);
+  pointer-events: none;
+}
+
+.chat-input-editor:empty::after {
+  content: '';
+}
+
+.chat-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.custom-context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 160px;
+  background: var(--volt-bg-secondary, #2b2d31);
+  border: 1px solid var(--volt-border, #1e1f22);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text, #dbdee1);
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.context-menu-item:hover:not(.disabled) {
+  background: var(--volt-primary, #5865f2);
+}
+
+.context-menu-item.disabled {
+  color: var(--volt-text-muted, #949ba4);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.context-menu-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+}
+
+.context-menu-label {
+  flex: 1;
+}

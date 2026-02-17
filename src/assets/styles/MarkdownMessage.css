@@ -1,0 +1,204 @@
+.markdown-message {
+  line-height: 1.6;
+}
+
+.markdown-message strong {
+  font-weight: 700;
+  color: var(--volt-text-primary);
+}
+
+.markdown-message em {
+  font-style: italic;
+  color: var(--volt-text-secondary);
+}
+
+.markdown-message del {
+  text-decoration: line-through;
+  color: var(--volt-text-muted);
+}
+
+.markdown-message .spoiler {
+  background: var(--volt-text-secondary);
+  color: transparent;
+  border-radius: 3px;
+  padding: 0 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.markdown-message .spoiler:hover {
+  background: transparent;
+  color: var(--volt-text-primary);
+}
+
+.markdown-message .markdown-link {
+  color: #60a5fa;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.markdown-message .markdown-link:hover {
+  border-bottom-color: #60a5fa;
+}
+
+.markdown-message .inline-code {
+  background: var(--volt-bg-tertiary);
+  color: #f472b6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-message .code-block {
+  background: #1e1e2e;
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.markdown-message .code-block code {
+  color: #cdd6f4;
+  background: none;
+  padding: 0;
+  white-space: pre;
+}
+
+/* Syntax Highlighting */
+.markdown-message .code-block .token.comment,
+.markdown-message .code-block .token.prolog,
+.markdown-message .code-block .token.doctype,
+.markdown-message .code-block .token.cdata {
+  color: #6c7086;
+}
+
+.markdown-message .code-block .token.punctuation {
+  color: #9399b2;
+}
+
+.markdown-message .code-block .token.property,
+.markdown-message .code-block .token.tag,
+.markdown-message .code-block .token.boolean,
+.markdown-message .code-block .token.number,
+.markdown-message .code-block .token.constant,
+.markdown-message .code-block .token.symbol,
+.markdown-message .code-block .token.deleted {
+  color: #fab387;
+}
+
+.markdown-message .code-block .token.selector,
+.markdown-message .code-block .token.attr-name,
+.markdown-message .code-block .token.string,
+.markdown-message .code-block .token.char,
+.markdown-message .code-block .token.builtin,
+.markdown-message .code-block .token.inserted {
+  color: #a6e3a1;
+}
+
+.markdown-message .code-block .token.operator,
+.markdown-message .code-block .token.entity,
+.markdown-message .code-block .token.url,
+.markdown-message .code-block .language-css .token.string,
+.markdown-message .code-block .style .token.string {
+  color: #94e2d5;
+}
+
+.markdown-message .code-block .token.atrule,
+.markdown-message .code-block .token.attr-value,
+.markdown-message .code-block .token.keyword {
+  color: #cba6f7;
+}
+
+.markdown-message .code-block .token.function,
+.markdown-message .code-block .token.class-name {
+  color: #89b4fa;
+}
+
+.markdown-message .code-block .token.regex,
+.markdown-message .code-block .token.important,
+.markdown-message .code-block .token.variable {
+  color: #f9e2af;
+}
+
+/* Basic colors as fallback */
+.markdown-message .code-block[data-language="javascript"] code,
+.markdown-message .code-block[data-language="js"] code { color: #f9e2af; }
+.markdown-message .code-block[data-language="typescript"] code,
+.markdown-message .code-block[data-language="ts"] code { color: #89b4fa; }
+.markdown-message .code-block[data-language="python"] code,
+.markdown-message .code-block[data-language="py"] code { color: #a6e3a1; }
+.markdown-message .code-block[data-language="html"] code { color: #f38ba8; }
+.markdown-message .code-block[data-language="css"] code { color: #89dceb; }
+.markdown-message .code-block[data-language="json"] code { color: #fab387; }
+.markdown-message .code-block[data-language="bash"] code,
+.markdown-message .code-block[data-language="sh"] code { color: #94e2d5; }
+.markdown-message .code-block[data-language="rust"] code { color: #f9e2af; }
+.markdown-message .code-block[data-language="go"] code { color: #94e2d5; }
+.markdown-message .code-block[data-language="sql"] code { color: #f9e2af; }
+.markdown-message .code-block[data-language="java"] code { color: #f9e2af; }
+.markdown-message .code-block[data-language="ruby"] code { color: #f38ba8; }
+.markdown-message .code-block[data-language="php"] code { color: #fab387; }
+.markdown-message .code-block[data-language="csharp"] code,
+.markdown-message .code-block[data-language="c#"] code { color: #89b4fa; }
+.markdown-message .code-block[data-language="c"] code,
+.markdown-message .code-block[data-language="cpp"] code { color: #f9e2af; }
+
+.markdown-message br {
+  display: block;
+  content: "";
+  margin-top: 8px;
+}
+
+/* Quoting styles */
+.markdown-message blockquote,
+.message-content blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  border-radius: 0 4px 4px 0;
+  color: var(--volt-text-secondary);
+}
+
+.markdown-message blockquote p,
+.message-content blockquote p {
+  margin: 0;
+}
+
+/* Headers in messages */
+.markdown-message h1,
+.markdown-message h2,
+.markdown-message h3 {
+  margin: 12px 0 8px;
+  color: var(--volt-text-primary);
+  font-weight: 700;
+}
+
+.markdown-message h1 {
+  font-size: 1.5em;
+}
+
+.markdown-message h2 {
+  font-size: 1.25em;
+}
+
+.markdown-message h3 {
+  font-size: 1.1em;
+}
+
+/* Lists */
+.markdown-message ul,
+.markdown-message ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.markdown-message li {
+  margin: 4px 0;
+}

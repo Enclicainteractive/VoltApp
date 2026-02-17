@@ -1,0 +1,192 @@
+.invite-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--volt-bg-primary) 0%, var(--volt-bg-secondary) 100%);
+  padding: 20px;
+}
+
+.invite-card {
+  background: var(--volt-bg-secondary);
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--volt-border);
+}
+
+.invite-card.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--volt-text-muted);
+}
+
+.invite-card.loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.invite-label {
+  font-size: 14px;
+  color: var(--volt-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 24px;
+}
+
+.server-preview {
+  margin-bottom: 24px;
+}
+
+.server-icon-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 24px;
+  background: var(--volt-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 36px;
+  font-weight: 700;
+  color: white;
+  overflow: hidden;
+}
+
+.server-icon-large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.server-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+  margin: 0 0 12px;
+}
+
+.server-stats {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--volt-text-secondary);
+}
+
+.stat-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.stat-dot.online {
+  background: var(--volt-success);
+}
+
+.inviter-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 8px;
+  margin-bottom: 24px;
+  font-size: 14px;
+  color: var(--volt-text-secondary);
+}
+
+.inviter-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.inviter-info strong {
+  color: var(--volt-text-primary);
+}
+
+.btn-large {
+  width: 100%;
+  padding: 14px 24px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-large .spin {
+  animation: spin 1s linear infinite;
+}
+
+.login-hint {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--volt-text-muted);
+}
+
+.invite-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.invite-icon.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--volt-danger);
+}
+
+.invite-icon.success {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--volt-success);
+}
+
+.invite-card.error h1,
+.invite-card.success h1 {
+  font-size: 24px;
+  margin-bottom: 8px;
+  color: var(--volt-text-primary);
+}
+
+.invite-card.error p,
+.invite-card.success p {
+  color: var(--volt-text-secondary);
+  margin-bottom: 20px;
+}
+
+.redirect-text {
+  font-size: 14px;
+  color: var(--volt-text-muted) !important;
+}
+
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--volt-danger);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}

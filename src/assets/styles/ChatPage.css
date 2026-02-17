@@ -1,0 +1,315 @@
+.chat-page {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 18px;
+  color: var(--volt-text-secondary);
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 16px;
+  font-size: 18px;
+  color: var(--volt-text-secondary);
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--volt-bg-tertiary);
+  border-top: 4px solid var(--volt-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--volt-bg-primary);
+  color: var(--volt-text-secondary);
+  text-align: center;
+  padding: 40px;
+}
+
+.empty-state.simple {
+  font-size: 14px;
+  opacity: 0.6;
+}
+
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  opacity: 0.3;
+  color: var(--volt-text-muted);
+}
+
+.empty-state h2 {
+  font-size: 24px;
+  color: var(--volt-text-primary);
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  font-size: 16px;
+  color: var(--volt-text-secondary);
+}
+
+.empty-state.full {
+  width: 100%;
+}
+
+.empty-state.upgraded, .empty-state.hero {
+  background: radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--server-accent, var(--volt-primary)) 18%, transparent), transparent 30%), var(--volt-bg-primary);
+  color: var(--volt-text-primary);
+}
+
+.empty-state-hero, .welcome-hero {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--server-accent, var(--volt-primary)) 18%, transparent), color-mix(in srgb, var(--server-accent, var(--volt-primary)) 8%, var(--volt-bg-secondary)));
+  border: 1px solid var(--volt-border);
+  border-radius: 16px;
+  padding: 28px;
+  max-width: 720px;
+  box-shadow: 0 12px 30px var(--volt-shadow);
+}
+
+.welcome-hero {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+}
+
+.welcome-copy .badge, .empty-state-hero .badge {
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--server-accent, var(--volt-primary)) 20%, transparent);
+  color: var(--volt-text-primary);
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.welcome-hero h2, .empty-state-hero h2 {
+  margin: 4px 0 8px;
+}
+
+.cta-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.welcome-panels {
+  display: grid;
+  gap: 10px;
+}
+
+.welcome-panels .panel {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--volt-text-primary);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.simple-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.simple-welcome {
+  text-align: center;
+  padding: 40px;
+}
+
+.simple-welcome h2 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+  margin-bottom: 8px;
+}
+
+.simple-welcome p {
+  font-size: 16px;
+  color: var(--volt-text-secondary);
+  margin-bottom: 24px;
+}
+
+.simple-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.btn-lg {
+  padding: 14px 28px;
+  font-size: 16px;
+}
+
+.empty-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.card.mini {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 12px;
+  padding: 12px;
+  color: var(--volt-text-primary);
+  text-align: center;
+}
+
+.voice-container {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+}
+
+.voice-container.full {
+  flex: 1;
+  border-radius: 0;
+}
+
+.voice-container.mini {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 320px;
+  height: 240px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.voice-container-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--volt-bg-tertiary);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.voice-container-header span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+}
+
+.voice-view-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.voice-view-controls button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.voice-view-controls button:hover {
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-primary);
+}
+
+.voice-container .voice-channel-view {
+  flex: 1;
+  overflow: hidden;
+}
+
+.voice-container.mini .voice-participants {
+  padding: 12px;
+  gap: 12px;
+}
+
+.voice-container.mini .voice-controls {
+  padding: 12px;
+  gap: 8px;
+}
+
+.voice-container.mini .voice-control-btn {
+  width: 36px;
+  height: 36px;
+}
+
+.voice-container.mini .voice-header {
+  display: none;
+}
+
+.voice-container.mini .ghost-container {
+  width: 60px;
+  height: 60px;
+}
+
+.voice-container.mini .no-participants h3 {
+  font-size: 14px;
+}
+
+.voice-container.mini .no-participants p {
+  font-size: 12px;
+}
+
+.voice-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+}
+
+@media (max-width: 900px) {
+  .chat-page {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .voice-container.mini {
+    right: 12px;
+    bottom: 70px;
+    width: 260px;
+    height: 200px;
+  }
+
+  .welcome-hero {
+    grid-template-columns: 1fr;
+  }
+}

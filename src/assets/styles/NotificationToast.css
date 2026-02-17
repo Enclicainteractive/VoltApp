@@ -1,0 +1,138 @@
+.notification-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.notification-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 300px;
+  max-width: 400px;
+  animation: slideInRight 0.3s ease, fadeOut 0.3s ease 4.7s forwards;
+  cursor: pointer;
+}
+
+.notification-toast:hover {
+  background: var(--volt-bg-tertiary);
+}
+
+.notification-toast.everyone {
+  border-left: 3px solid #fbbf24;
+}
+
+.notification-toast.here {
+  border-left: 3px solid #60a5fa;
+}
+
+.notification-toast.user {
+  border-left: 3px solid #a78bfa;
+}
+
+.notification-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-primary);
+  flex-shrink: 0;
+}
+
+.notification-toast.everyone .notification-icon {
+  color: #fbbf24;
+}
+
+.notification-toast.here .notification-icon {
+  color: #60a5fa;
+}
+
+.notification-toast.user .notification-icon {
+  color: #a78bfa;
+}
+
+.notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--volt-text-primary);
+  margin-bottom: 2px;
+}
+
+.notification-message {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+
+.notification-close:hover {
+  opacity: 1;
+  background: var(--volt-hover);
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .notification-container {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+  }
+  
+  .notification-toast {
+    min-width: auto;
+    max-width: none;
+  }
+}

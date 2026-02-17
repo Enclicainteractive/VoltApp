@@ -1,0 +1,255 @@
+import React, { useState, useEffect } from 'react'
+import { Crown, Shield, User, MessageSquare, UserPlus, UserMinus, Ban, Volume2, VolumeX } from 'lucide-react'
+import { useSocket } from '../contexts/SocketContext'
+import { useAuth } from '../contexts/AuthContext'
+import { apiService } from '../services/apiService'
+import { getStoredServer } from '../services/serverConfig'
+import ContextMenu from './ContextMenu'
+import Avatar from './Avatar'
+import '../assets/styles/MemberSidebar.css'
+
+const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBan, onAddFriend, visible = true }) => {
+  const { socket, connected } = useSocket()
+  const { user: currentUser } = useAuth()
+  const [memberStatuses, setMemberStatuses] = useState({})
+  const [contextMenu, setContextMenu] = useState(null)
+  
+  const currentServer = getStoredServer()
+  const apiUrl = currentServer?.apiUrl || ''
+  const imageApiUrl = currentServer?.imageApiUrl || apiUrl
+
+  const getMemberRoles = (member) => {
+    if (!member) return []
+    if (Array.isArray(member.roles)) return member.roles
+    return member.role ? [member.role] : []
+  }
+
+  const resolveRole = (roleId) => (server?.roles || []).find(r => r.id === roleId)
+
+  const getPrimaryRole = (member) => {
+    const roles = getMemberRoles(member)
+    const resolved = roles.map(resolveRole).filter(Boolean)
+    if (!resolved.length) return null
+    return resolved.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]
+  }
+
+  const hasPermission = (permission) => {
+    if (server?.ownerId === currentUser?.id) return true
+    const currentMember = server?.members?.find(m => m.id === currentUser?.id)
+    const roleIds = getMemberRoles(currentMember)
+    const roles = roleIds.map(resolveRole).filter(Boolean)
+    const permSet = new Set(['view_channels', 'send_messages', 'connect', 'speak', 'use_voice_activity'])
+    roles.forEach(r => r.permissions?.forEach(p => permSet.add(p)))
+    return permSet.has('admin') || permSet.has(permission)
+  }
+
+  const isAdmin = hasPermission('ban_members')
+  const isModerator = hasPermission('kick_members')
+
+  useEffect(() => {
+    if (!socket || !connected) return
+
+    const handleStatusUpdate = ({ userId, status, customStatus }) => {
+      setMemberStatuses(prev => ({
+        ...prev,
+        [userId]: { status, customStatus }
+      }))
+    }
+
+    socket.on('user:status', handleStatusUpdate)
+
+    return () => {
+      socket.off('user:status', handleStatusUpdate)
+    }
+  }, [socket, connected])
+
+  const getMemberStatus = (member) => {
+    return memberStatuses[member.id]?.status || member.status || 'online'
+  }
+
+  const getMemberCustomStatus = (member) => {
+    return memberStatuses[member.id]?.customStatus || member.customStatus
+  }
+
+  const handleMemberContextMenu = (e, member) => {
+    e.preventDefault()
+    const isOwner = member.id === server?.ownerId
+    const isSelf = member.id === currentUser?.id
+    const primaryRole = getPrimaryRole(member)
+    
+    const items = [
+      {
+        icon: <User size={16} />,
+        label: 'Profile',
+        onClick: () => onMemberClick?.(member.id)
+      },
+      {
+        icon: <MessageSquare size={16} />,
+        label: 'Message',
+        onClick: () => onStartDM?.(member.id),
+        disabled: isSelf
+      },
+      { type: 'separator' },
+      {
+        icon: <UserPlus size={16} />,
+        label: 'Add Friend',
+        onClick: () => onAddFriend?.(member.id),
+        disabled: isSelf
+      },
+      ...(!isSelf ? [
+        {
+          icon: <Ban size={16} />,
+          label: 'Block User',
+          onClick: () => {
+            if (confirm('Block this user? They will be removed from servers and cannot interact with you.')) {
+              apiService.blockUser(member.id).then(() => {
+                onKick?.(member.id)
+              }).catch(err => console.error('Failed to block user:', err))
+            }
+          },
+          danger: true
+        }
+      ] : []),
+      { type: 'separator' },
+      ...(isModerator && !isSelf && !isOwner ? [
+        {
+          icon: <VolumeX size={16} />,
+          label: 'Mute',
+          onClick: () => {},
+          disabled: true
+        },
+        {
+          icon: <UserMinus size={16} />,
+          label: 'Kick',
+          onClick: () => onKick?.(member.id),
+          danger: true
+        }
+      ] : []),
+      ...(isAdmin && !isSelf && !isOwner ? [
+        {
+          icon: <Ban size={16} />,
+          label: 'Ban',
+          onClick: () => onBan?.(member.id),
+          danger: true
+        }
+      ] : [])
+    ]
+    
+    setContextMenu({ x: e.clientX, y: e.clientY, items })
+  }
+  const getRoleIcon = (member) => {
+    if (member.id === server?.ownerId) {
+      return <Crown size={14} className="role-icon owner" />
+    }
+    const primary = getPrimaryRole(member)
+    if (!primary) return null
+    return <Shield size={14} className="role-icon" style={{ color: primary.color }} />
+  }
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'online':
+        return 'online'
+      case 'idle':
+        return 'idle'
+      case 'dnd':
+        return 'dnd'
+      default:
+        return 'offline'
+    }
+  }
+
+  const onlineMembers = members.filter(m => {
+    const status = getMemberStatus(m)
+    return status === 'online' || status === 'idle' || status === 'dnd'
+  })
+  const offlineMembers = members.filter(m => {
+    const status = getMemberStatus(m)
+    return status === 'offline' || status === 'invisible'
+  })
+
+  if (!visible) return null
+
+  return (
+    <div className="member-sidebar">
+      <div className="member-list">
+        {onlineMembers.length > 0 && (
+          <div className="member-section">
+            <div className="section-header">
+              ONLINE — {onlineMembers.length}
+            </div>
+            {onlineMembers.map(member => (
+              <div 
+                key={member.id} 
+                className="member-item"
+                onClick={() => onMemberClick?.(member.id)}
+                onContextMenu={(e) => handleMemberContextMenu(e, member)}
+              >
+              <div className="member-avatar">
+                  <Avatar 
+                    src={member.avatar || `${imageApiUrl}/api/images/users/${member.id}/profile`}
+                    alt={member.username}
+                    fallback={member.username}
+                    size={32}
+                    className="avatar-img"
+                  />
+                  <div className={`status-badge ${getStatusColor(getMemberStatus(member))}`}></div>
+                </div>
+                <div className="member-info">
+                  <div className="member-name">
+                    {getRoleIcon(member)}
+                    <span>{member.username}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {offlineMembers.length > 0 && (
+          <div className="member-section">
+            <div className="section-header">
+              OFFLINE — {offlineMembers.length}
+            </div>
+            {offlineMembers.map(member => (
+              <div 
+                key={member.id} 
+                className="member-item offline"
+                onClick={() => onMemberClick?.(member.id)}
+                onContextMenu={(e) => handleMemberContextMenu(e, member)}
+              >
+                <div className="member-avatar">
+                  <Avatar 
+                    src={member.avatar}
+                    alt={member.username}
+                    fallback={member.username}
+                    size={32}
+                    className="avatar-img"
+                  />
+                  <div className={`status-badge ${getStatusColor(getMemberStatus(member))}`}></div>
+                </div>
+                <div className="member-info">
+                  <div className="member-name">
+                    {getRoleIcon(member)}
+                    <span>{member.username}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+export default MemberSidebar

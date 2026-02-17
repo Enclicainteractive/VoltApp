@@ -1,0 +1,541 @@
+.admin-config-modal.large {
+  width: 900px;
+  max-width: 95vw;
+  height: 85vh;
+}
+
+.admin-config-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.admin-config-modal .modal-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  margin: 0;
+}
+
+.admin-config-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--volt-bg-secondary);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.view-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--volt-bg-tertiary);
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.view-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  color: var(--volt-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.view-toggle button:hover {
+  color: var(--volt-text-primary);
+}
+
+.view-toggle button.active {
+  background: var(--volt-primary);
+  color: white;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  color: var(--volt-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.toolbar-btn:hover {
+  background: var(--volt-bg-hover);
+  color: var(--volt-text-primary);
+}
+
+.validation-box {
+  margin: 12px 20px;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.validation-box.valid {
+  background: rgba(45, 212, 191, 0.1);
+  border: 1px solid var(--volt-success);
+  color: var(--volt-success);
+}
+
+.validation-box.invalid {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--volt-danger);
+}
+
+.validation-errors, .validation-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.validation-error {
+  color: var(--volt-danger);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.validation-warning {
+  color: var(--volt-warning);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.validation-success {
+  color: var(--volt-success);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-config-tabs {
+  display: flex;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--volt-border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.admin-config-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  color: var(--volt-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.admin-config-tabs button:hover {
+  color: var(--volt-text-primary);
+}
+
+.admin-config-tabs button.active {
+  color: var(--volt-primary);
+  border-bottom-color: var(--volt-primary);
+}
+
+.admin-config-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.admin-config-json {
+  flex: 1;
+  padding: 0 !important;
+}
+
+.json-editor-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.json-editor-wrapper .json-error {
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--volt-danger);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.json-editor-wrapper textarea {
+  flex: 1;
+  width: 100%;
+  padding: 16px;
+  background: var(--volt-bg-tertiary);
+  border: none;
+  color: var(--volt-text-primary);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.json-editor-wrapper textarea:focus {
+  outline: none;
+}
+
+.json-editor-wrapper textarea.error {
+  color: var(--volt-danger);
+}
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.config-group {
+  background: var(--volt-bg-tertiary);
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.config-group h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.config-field:last-child {
+  margin-bottom: 0;
+}
+
+.config-field > label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--volt-text-secondary);
+}
+
+.config-field input[type="text"],
+.config-field input[type="number"],
+.config-field select {
+  padding: 10px 12px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  color: var(--volt-text-primary);
+  font-size: 14px;
+}
+
+.config-field input:focus,
+.config-field select:focus {
+  outline: none;
+  border-color: var(--volt-primary);
+}
+
+.config-field input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.config-field small {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.config-field.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.config-field.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--volt-text-primary);
+}
+
+.config-field.checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--volt-primary);
+}
+
+.config-field input[type="color"] {
+  width: 60px;
+  height: 36px;
+  padding: 2px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.config-message {
+  margin: 12px 20px;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.config-message.success {
+  background: rgba(45, 212, 191, 0.1);
+  border: 1px solid var(--volt-success);
+  color: var(--volt-success);
+}
+
+.config-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--volt-danger);
+  color: var(--volt-danger);
+}
+
+.admin-config-modal .modal-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-top: 1px solid var(--volt-border);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.admin-config-modal .modal-footer .btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Migration Styles */
+.migration-current {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.db-badge {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.db-badge.json { background: #4a5568; color: white; }
+.db-badge.sqlite { background: #3182ce; color: white; }
+.db-badge.mysql { background: #00758f; color: white; }
+.db-badge.mariadb { background: #003545; color: white; }
+.db-badge.postgres { background: #336791; color: white; }
+.db-badge.cockroachdb { background: #6930c3; color: white; }
+.db-badge.mssql { background: #cc2927; color: white; }
+.db-badge.mongodb { background: #47a248; color: white; }
+.db-badge.redis { background: #dc382d; color: white; }
+
+.migration-types {
+  margin-bottom: 24px;
+}
+
+.migration-types h4 {
+  margin-bottom: 12px;
+  color: var(--volt-text-secondary);
+  font-size: 14px;
+}
+
+.migration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.migration-type-card {
+  padding: 16px;
+  background: var(--volt-bg-tertiary);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.migration-type-card:hover:not(.unavailable) {
+  border-color: var(--volt-primary);
+  background: var(--volt-bg-secondary);
+}
+
+.migration-type-card.selected {
+  border-color: var(--volt-primary);
+  background: rgba(88, 101, 242, 0.1);
+}
+
+.migration-type-card.current {
+  border-color: var(--volt-success);
+  cursor: default;
+}
+
+.migration-type-card.unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.type-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.type-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.current-badge, .unavailable-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.current-badge {
+  background: var(--volt-success);
+  color: white;
+}
+
+.unavailable-badge {
+  background: var(--volt-danger);
+  color: white;
+}
+
+.type-desc {
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.migration-config {
+  padding: 20px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 8px;
+}
+
+.migration-config h4 {
+  margin-bottom: 16px;
+  font-size: 16px;
+}
+
+.config-fields {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.config-field .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.migration-test-result {
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.migration-test-result.success {
+  background: rgba(72, 187, 120, 0.2);
+  color: var(--volt-success);
+}
+
+.migration-test-result.error {
+  background: rgba(245, 101, 101, 0.2);
+  color: var(--volt-danger);
+}
+
+.migration-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.migration-result {
+  padding: 16px;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.migration-result.success {
+  background: rgba(72, 187, 120, 0.15);
+  border: 1px solid var(--volt-success);
+}
+
+.migration-result.error {
+  background: rgba(245, 101, 101, 0.15);
+  border: 1px solid var(--volt-danger);
+}
+
+.migration-result strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.migration-result p {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.migration-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  padding: 4px 0;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
