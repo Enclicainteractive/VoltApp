@@ -11,7 +11,7 @@
 .login-background {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, #0b1220 0%, #0f1828 50%, #0b1220 100%);
+  background: var(--volt-bg-gradient, linear-gradient(135deg, #0b1220 0%, #0f1828 50%, #0b1220 100%)), linear-gradient(135deg, var(--volt-bg-primary, #0b1220) 0%, var(--volt-bg-secondary, #0f1828) 50%, var(--volt-bg-primary, #0b1220) 100%);
   z-index: 0;
 }
 

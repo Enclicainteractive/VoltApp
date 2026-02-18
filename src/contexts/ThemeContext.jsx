@@ -26,7 +26,8 @@ export const ThemeProvider = ({ children }) => {
     const selected = allThemes.find(t => t.id === id) || themes[0]
     const baseMode = selected?.mode === 'auto' ? null : (selected?.mode || 'dark')
     const allKeys = Array.from(new Set(allThemes.flatMap(t => Object.keys(t.vars || {}))))
-    allKeys.forEach(k => root.style.removeProperty(k))
+    const knownKeys = Array.from(new Set([...allKeys, '--volt-bg-gradient']))
+    knownKeys.forEach(k => root.style.removeProperty(k))
 
     Object.keys(selected?.vars || {}).forEach(key => {
       root.style.setProperty(key, selected.vars[key])
@@ -58,6 +59,7 @@ export const ThemeProvider = ({ children }) => {
     const updated = customThemes.filter(t => t.id !== id)
     setCustomThemes(updated)
     localStorage.setItem(CUSTOM_THEMES_KEY, JSON.stringify(updated))
+    if (theme === id) setTheme('dark')
   }
 
   useEffect(() => {

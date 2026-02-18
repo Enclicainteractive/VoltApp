@@ -122,6 +122,38 @@
   margin-left: 6px;
 }
 
+.bot-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  background: var(--volt-primary, #1fb6ff);
+  color: #fff;
+  margin-left: 4px;
+  line-height: 16px;
+  vertical-align: middle;
+  letter-spacing: 0.3px;
+}
+
+.encrypted-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  background: rgba(52, 211, 153, 0.2);
+  color: #34d399;
+  margin-left: 4px;
+  line-height: 16px;
+  vertical-align: middle;
+  letter-spacing: 0.3px;
+}
+
 .message-edit-container {
   display: flex;
   flex-direction: column;
@@ -362,18 +394,54 @@
 
 /* Mention highlighting */
 .mention-highlight {
-  background: rgba(250, 204, 21, 0.2);
-  color: #fbbf24;
   padding: 1px 4px;
   border-radius: 4px;
   font-weight: 600;
-  border: 1px solid rgba(250, 204, 21, 0.3);
   cursor: pointer;
   transition: background 0.15s ease;
 }
 
-.mention-highlight:hover {
-  background: rgba(250, 204, 21, 0.3);
+/* @everyone */
+.mention-highlight.mention-everyone {
+  background: rgba(250, 204, 21, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+}
+.mention-highlight.mention-everyone:hover {
+  background: rgba(250, 204, 21, 0.32);
+}
+
+/* @here */
+.mention-highlight.mention-here {
+  background: rgba(96, 165, 250, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+.mention-highlight.mention-here:hover {
+  background: rgba(96, 165, 250, 0.32);
+}
+
+/* @user — personal mention */
+.mention-highlight.mention-user {
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+}
+.mention-highlight.mention-user:hover {
+  background: rgba(99, 102, 241, 0.38);
+}
+
+/* @other-user — shown but not highlighted as personal */
+.mention-other {
+  color: #818cf8;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 1px;
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+.mention-other:hover {
+  background: rgba(99, 102, 241, 0.15);
 }
 
 .loading-more-messages {
@@ -473,4 +541,134 @@
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ── Bot / Rich Embeds ─────────────────────────────────────────────────────── */
+.message-embeds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  max-width: 520px;
+}
+
+.message-embed {
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-left: 4px solid var(--volt-primary);
+  border-radius: 4px;
+  padding: 10px 14px 10px 12px;
+  font-size: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.embed-author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+}
+
+.embed-author-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.embed-author a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.embed-author a:hover {
+  text-decoration: underline;
+}
+
+.embed-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--volt-text-primary);
+}
+
+a.embed-title {
+  color: #00b0f4;
+  text-decoration: none;
+}
+
+a.embed-title:hover {
+  text-decoration: underline;
+}
+
+.embed-description {
+  color: var(--volt-text-secondary, var(--volt-text-primary));
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.embed-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.embed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 100%;
+}
+
+.embed-field-inline {
+  flex: 0 0 calc(33% - 8px);
+}
+
+.embed-field-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+}
+
+.embed-field-value {
+  font-size: 0.82rem;
+  color: var(--volt-text-secondary, var(--volt-text-primary));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.embed-image {
+  max-width: 100%;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+.embed-thumbnail {
+  max-width: 80px;
+  max-height: 80px;
+  border-radius: 4px;
+  align-self: flex-start;
+}
+
+.embed-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--volt-text-muted);
+  margin-top: 2px;
+}
+
+.embed-footer-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.embed-footer-sep {
+  opacity: 0.5;
 }

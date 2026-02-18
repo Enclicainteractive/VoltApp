@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Search, Plus, Globe, Users, ArrowRight, Filter, Star, X, Hash, Gamepad2, Music, Palette, FlaskConical, GraduationCap, Film, Trophy, Briefcase } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { apiService } from '../services/apiService'
+import { soundService } from '../services/soundService'
 import Avatar from './Avatar'
 import '../assets/styles/Discovery.css'
 
@@ -84,6 +85,7 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
   const handleJoinServer = async (server) => {
     try {
       await apiService.joinServerById(server.serverId)
+      soundService.serverJoined()
       onJoinServer?.(server.serverId)
       navigate(`/chat/${server.serverId}`)
     } catch (error) {

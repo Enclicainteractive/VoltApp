@@ -19,7 +19,7 @@
 
 .settings-sidebar {
   width: 240px;
-  background: var(--volt-bg-primary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary);
   padding: 60px 8px 20px;
   display: flex;
   flex-direction: column;
@@ -324,6 +324,30 @@
   padding-right: 4px;
 }
 
+.theme-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--volt-danger) 18%, transparent);
+  color: var(--volt-text-primary);
+  border: 1px solid color-mix(in srgb, var(--volt-danger) 30%, transparent);
+  opacity: 0;
+  transition: opacity var(--transition-fast), transform var(--transition-fast), background var(--transition-fast);
+  transform: translateY(-2px);
+}
+
+.theme-card {
+  position: relative;
+}
+
+.theme-card:hover .theme-remove {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .theme-card {
   background: var(--volt-bg-secondary);
   border: 1px solid var(--volt-border);
@@ -396,6 +420,83 @@
 .theme-mode {
   font-size: 12px;
   color: var(--volt-text-muted);
+}
+
+.theme-customizer {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-secondary);
+}
+
+.theme-customizer h3 {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.theme-customizer-desc {
+  margin-top: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.color-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.color-input-row .input {
+  width: 120px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+}
+
+.color-picker {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 2px;
+  background: var(--volt-bg-tertiary);
+}
+
+.custom-theme-gradient {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--volt-border);
+}
+
+.custom-theme-gradient-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  margin-bottom: 10px;
+}
+
+.custom-theme-gradient-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.custom-theme-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
 }
 
 /* Voice & devices */

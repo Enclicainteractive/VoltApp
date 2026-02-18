@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, MessageSquare, UserPlus, UserMinus, Ban, MoreVertical, Github, Twitter, Youtube, Twitch, Globe, Edit2, Check, Gamepad2, Music, Camera, XCircle, Shield, Copy } from 'lucide-react'
+import { X, MessageSquare, UserPlus, UserMinus, Ban, MoreVertical, Github, Twitter, Youtube, Twitch, Globe, Edit2, Check, Gamepad2, Music, Camera, XCircle, Shield, Copy, Bot, Terminal } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSocket } from '../../contexts/SocketContext'
@@ -33,11 +33,13 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
   const [bannerPreview, setBannerPreview] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
   const fileInputRef = useRef(null)
+
+  const isBot = userId?.startsWith('bot_')
   
   const currentServer = getStoredServer()
   const apiUrl = currentServer?.apiUrl || ''
   const imageApiUrl = currentServer?.imageApiUrl || apiUrl
-  const bannerUrl = profile?.banner || `${imageApiUrl}/api/images/users/${userId}/banner`
+  const bannerUrl = profile?.banner || (!isBot ? `${imageApiUrl}/api/images/users/${userId}/banner` : null)
   const { bannerSrc, loading: bannerLoading } = useBanner(editingBanner ? bannerPreview : bannerUrl)
 
   useEffect(() => {
@@ -55,16 +57,21 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
   const loadProfile = async () => {
     try {
-      const res = await apiService.getUserProfile(userId)
-      setProfile(res.data)
-      
-      if (userId !== currentUser?.id) {
-        const [mutualFriendsRes, mutualServersRes] = await Promise.all([
-          apiService.getMutualFriends(userId).catch(() => ({ data: [] })),
-          apiService.getMutualServers(userId).catch(() => ({ data: [] }))
-        ])
-        setMutualFriends(mutualFriendsRes.data || [])
-        setMutualServers(mutualServersRes.data || [])
+      if (isBot) {
+        const res = await apiService.getBotProfile(userId)
+        setProfile({ ...res.data, isBot: true })
+      } else {
+        const res = await apiService.getUserProfile(userId)
+        setProfile(res.data)
+        
+        if (userId !== currentUser?.id) {
+          const [mutualFriendsRes, mutualServersRes] = await Promise.all([
+            apiService.getMutualFriends(userId).catch(() => ({ data: [] })),
+            apiService.getMutualServers(userId).catch(() => ({ data: [] }))
+          ])
+          setMutualFriends(mutualFriendsRes.data || [])
+          setMutualServers(mutualServersRes.data || [])
+        }
       }
     } catch (err) {
       console.error('Failed to load profile:', err)
@@ -270,7 +277,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
       <div 
         className="modal-content user-profile-modal" 
         onClick={e => e.stopPropagation()}
-        onContextMenu={handleContextMenu}
+        onContextMenu={isBot ? undefined : handleContextMenu}
       >
         <button className="modal-close" onClick={onClose}>
           <X size={24} />
@@ -279,13 +286,15 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
         <div 
           className="profile-banner"
           style={{ 
-            backgroundImage: (editingBanner && bannerPreview) || bannerSrc
+            backgroundImage: !isBot && ((editingBanner && bannerPreview) || bannerSrc)
               ? `url(${editingBanner ? bannerPreview : bannerSrc})` 
               : undefined,
-            backgroundColor: !editingBanner && !bannerSrc ? 'var(--volt-primary)' : undefined
+            backgroundColor: isBot
+              ? 'var(--volt-bg-tertiary)'
+              : (!editingBanner && !bannerSrc ? 'var(--volt-primary)' : undefined)
           }}
         >
-          {isOwnProfile && !editingBanner && (
+          {!isBot && isOwnProfile && !editingBanner && (
             <button 
               className="banner-edit-btn" 
               onClick={() => fileInputRef.current?.click()}
@@ -294,7 +303,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
               <Camera size={16} />
             </button>
           )}
-          {isOwnProfile && editingBanner && (
+          {!isBot && isOwnProfile && editingBanner && (
             <div className="banner-edit-actions">
               <button className="banner-save-btn" onClick={handleSaveBanner}>
                 <Check size={14} /> Save
@@ -321,8 +330,8 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
         <div className="profile-header">
           <div className="profile-avatar-container">
             <Avatar
-              src={profile?.avatar || `${imageApiUrl}/api/images/users/${userId}/profile`}
-              fallback={profile?.username}
+              src={profile?.avatar || (!isBot ? `${imageApiUrl}/api/images/users/${userId}/profile` : null)}
+              fallback={profile?.username || profile?.displayName}
               size={100}
               className="profile-avatar"
             />
@@ -333,15 +342,18 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
           </div>
 
           <div className="profile-info">
-            <h2 className="profile-display-name">{profile?.displayName || profile?.customUsername || profile?.username}</h2>
+            <h2 className="profile-display-name">
+              {profile?.displayName || profile?.customUsername || profile?.username}
+              {isBot && <span className="profile-bot-badge"><Bot size={13} /> Bot</span>}
+            </h2>
             <p className="profile-username">@{profile?.customUsername || profile?.username}</p>
-            {profile?.customUsername && (
+            {!isBot && profile?.customUsername && (
               <p className="profile-original-username">Account: @{profile?.username}</p>
             )}
-            {profile?.customStatus && (
+            {!isBot && profile?.customStatus && (
               <p className="profile-custom-status">{profile.customStatus}</p>
             )}
-            {server && members && (() => {
+            {!isBot && server && members && (() => {
               const member = members.find(m => m.id === userId)
               const memberRoles = member?.roles || (member?.role ? [member.role] : [])
               if (memberRoles.length > 0) {
@@ -363,7 +375,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
             })()}
           </div>
 
-          {!isOwnProfile && (
+          {!isBot && !isOwnProfile && (
             <div className="profile-actions">
               <button className="btn btn-primary" onClick={handleSendMessage}>
                 <MessageSquare size={18} />
@@ -417,13 +429,21 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
         <div className="profile-body">
           <div className="profile-section">
-            <h4>About Me</h4>
-            {profile?.bio ? (
-              <div className="profile-bio">
-                <MarkdownMessage content={profile.bio} />
-              </div>
+            <h4>{isBot ? 'Description' : 'About Me'}</h4>
+            {isBot ? (
+              profile?.description ? (
+                <p style={{ color: 'var(--volt-text)', fontSize: 14 }}>{profile.description}</p>
+              ) : (
+                <p className="no-bio">No description set</p>
+              )
             ) : (
-              <p className="no-bio">No bio set</p>
+              profile?.bio ? (
+                <div className="profile-bio">
+                  <MarkdownMessage content={profile.bio} />
+                </div>
+              ) : (
+                <p className="no-bio">No bio set</p>
+              )
             )}
           </div>
 
@@ -438,7 +458,30 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
             </div>
           </div>
 
-          {mutualServers.length > 0 && (
+          {isBot && profile?.prefix && (
+            <div className="profile-section">
+              <h4>Prefix</h4>
+              <code style={{ background: 'var(--volt-bg-tertiary)', padding: '2px 8px', borderRadius: 4, fontSize: 14 }}>{profile.prefix}</code>
+            </div>
+          )}
+
+          {isBot && profile?.commands?.length > 0 && (
+            <div className="profile-section">
+              <h4><Terminal size={12} /> Commands</h4>
+              <div className="bot-commands-list">
+                {profile.commands.map(cmd => (
+                  <div key={cmd.name} className="bot-command-item">
+                    <span className="bot-command-name">{profile.prefix}{cmd.name}</span>
+                    {cmd.description && (
+                      <span className="bot-command-desc">{cmd.description}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!isBot && mutualServers.length > 0 && (
             <div className="profile-section">
               <h4>Mutual Servers ({mutualServers.length})</h4>
               <div className="mutual-servers-grid expanded">
@@ -458,7 +501,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
             </div>
           )}
 
-          {mutualFriends.length > 0 && (
+          {!isBot && mutualFriends.length > 0 && (
             <div className="profile-section">
               <h4>Mutual Friends ({mutualFriends.length})</h4>
               <div className="mutual-friends-grid expanded">
@@ -476,66 +519,68 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
             </div>
           )}
 
-          <div className="profile-section">
-            <h4>
-              Connections
-              {isOwnProfile && !editingSocials && (
-                <button className="section-edit-btn" onClick={() => { setEditingSocials(true); setSocialDraft(profile?.socialLinks || {}) }}>
-                  <Edit2 size={12} />
-                </button>
-              )}
-            </h4>
-            {editingSocials ? (
-              <div className="social-links-edit">
-                {SOCIAL_PLATFORMS.map(p => (
-                  <div key={p.key} className="social-edit-row">
-                    <p.icon size={16} />
-                    <input
-                      type="text"
-                      placeholder={p.label}
-                      value={socialDraft[p.key] || ''}
-                      onChange={e => setSocialDraft(prev => ({ ...prev, [p.key]: e.target.value }))}
-                    />
-                  </div>
-                ))}
-                <div className="social-edit-actions">
-                  <button className="btn btn-secondary btn-sm" onClick={() => setEditingSocials(false)}>Cancel</button>
-                  <button className="btn btn-primary btn-sm" onClick={async () => {
-                    const cleaned = {}
-                    Object.entries(socialDraft).forEach(([k, v]) => { if (v.trim()) cleaned[k] = v.trim() })
-                    try {
-                      await apiService.updateProfile({ socialLinks: cleaned })
-                      setProfile(p => ({ ...p, socialLinks: cleaned }))
-                      setEditingSocials(false)
-                    } catch (err) { console.error('Failed to save socials:', err) }
-                  }}>
-                    <Check size={12} /> Save
+          {!isBot && (
+            <div className="profile-section">
+              <h4>
+                Connections
+                {isOwnProfile && !editingSocials && (
+                  <button className="section-edit-btn" onClick={() => { setEditingSocials(true); setSocialDraft(profile?.socialLinks || {}) }}>
+                    <Edit2 size={12} />
                   </button>
-                </div>
-              </div>
-            ) : (
-              <div className="social-links">
-                {profile?.socialLinks && Object.keys(profile.socialLinks).length > 0 ? (
-                  SOCIAL_PLATFORMS.filter(p => profile.socialLinks[p.key]).map(p => {
-                    const value = profile.socialLinks[p.key]
-                    const url = value.startsWith('http') ? value : (p.prefix + value)
-                    return (
-                      <a key={p.key} href={url} target="_blank" rel="noopener noreferrer" className="social-link" title={p.label}>
-                        <p.icon size={16} />
-                        <span>{value.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</span>
-                      </a>
-                    )
-                  })
-                ) : (
-                  <p className="no-socials">No connections added</p>
                 )}
-              </div>
-            )}
-          </div>
+              </h4>
+              {editingSocials ? (
+                <div className="social-links-edit">
+                  {SOCIAL_PLATFORMS.map(p => (
+                    <div key={p.key} className="social-edit-row">
+                      <p.icon size={16} />
+                      <input
+                        type="text"
+                        placeholder={p.label}
+                        value={socialDraft[p.key] || ''}
+                        onChange={e => setSocialDraft(prev => ({ ...prev, [p.key]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                  <div className="social-edit-actions">
+                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingSocials(false)}>Cancel</button>
+                    <button className="btn btn-primary btn-sm" onClick={async () => {
+                      const cleaned = {}
+                      Object.entries(socialDraft).forEach(([k, v]) => { if (v.trim()) cleaned[k] = v.trim() })
+                      try {
+                        await apiService.updateProfile({ socialLinks: cleaned })
+                        setProfile(p => ({ ...p, socialLinks: cleaned }))
+                        setEditingSocials(false)
+                      } catch (err) { console.error('Failed to save socials:', err) }
+                    }}>
+                      <Check size={12} /> Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="social-links">
+                  {profile?.socialLinks && Object.keys(profile.socialLinks).length > 0 ? (
+                    SOCIAL_PLATFORMS.filter(p => profile.socialLinks[p.key]).map(p => {
+                      const value = profile.socialLinks[p.key]
+                      const url = value.startsWith('http') ? value : (p.prefix + value)
+                      return (
+                        <a key={p.key} href={url} target="_blank" rel="noopener noreferrer" className="social-link" title={p.label}>
+                          <p.icon size={16} />
+                          <span>{value.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</span>
+                        </a>
+                      )
+                    })
+                  ) : (
+                    <p className="no-socials">No connections added</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {profile?.createdAt && (
             <div className="profile-section">
-              <h4>Member Since</h4>
+              <h4>{isBot ? 'Created' : 'Member Since'}</h4>
               <p>{new Date(profile.createdAt).toLocaleDateString('en-US', { 
                 year: 'numeric', 
                 month: 'long', 
@@ -546,7 +591,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
         </div>
       </div>
 
-      {contextMenu && (
+      {!isBot && contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}

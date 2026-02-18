@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { SocketProvider } from './contexts/SocketContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { E2eProvider } from './contexts/E2eContext'
+import { E2eTrueProvider } from './contexts/E2eTrueContext'
 import { SelfVoltProvider } from './contexts/SelfVoltContext'
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
@@ -32,6 +33,7 @@ function App() {
           <SocketProvider>
             <SelfVoltProvider>
               <E2eProvider>
+              <E2eTrueProvider>
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/callback" element={<CallbackPage />} />
@@ -62,6 +64,7 @@ function App() {
                   />
                   <Route path="/" element={<Navigate to="/chat" replace />} />
                 </Routes>
+              </E2eTrueProvider>
               </E2eProvider>
             </SelfVoltProvider>
           </SocketProvider>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Hash, Users, Pin, Search, Smile, X, FileText, Lock } from 'lucide-react'
+import { Hash, Users, Pin, Search, Smile, X, FileText, Lock, AtSign, Radio } from 'lucide-react'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useE2e } from '../contexts/E2eContext'
+import { useE2eTrue } from '../contexts/E2eTrueContext'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
 import MessageList from './MessageList'
@@ -21,6 +22,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     encryptMessageForServer,
     decryptMessageFromServer
   } = useE2e()
+  const e2eTrue = useE2eTrue()
   const [inputValue, setInputValue] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [typingUsers, setTypingUsers] = useState(new Set())
@@ -79,9 +81,10 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
         setShowEmojiPicker(false)
       }
       
-      // Check mention panel
+      // Check mention panel — inputRef is an imperative handle, use getEditor() for DOM node
       const isMentionPanel = mentionPanelRef.current && mentionPanelRef.current.contains(e.target)
-      const isInput = inputRef.current && inputRef.current.contains(e.target)
+      const editorNode = inputRef.current?.getEditor?.()
+      const isInput = editorNode && editorNode.contains(e.target)
       
       if (showMentionSuggestions && !isMentionPanel && !isInput) {
         setShowMentionSuggestions(false)
@@ -187,7 +190,20 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     let messageContent = inputValue.trim()
     let encryptedData = null
     
-    if (serverId && isEncryptionEnabled(serverId) && hasDecryptedKey(serverId)) {
+    // Try True E2EE first, then fall back to legacy
+    if (serverId && e2eTrue) {
+      try {
+        const trueEncrypted = await e2eTrue.encryptMessage(messageContent, serverId)
+        if (trueEncrypted.encrypted) {
+          encryptedData = trueEncrypted
+          messageContent = trueEncrypted.content
+        }
+      } catch (err) {
+        console.error('[ChatArea] True E2EE encryption error:', err)
+      }
+    }
+    
+    if (!encryptedData?.encrypted && serverId && isEncryptionEnabled(serverId) && hasDecryptedKey(serverId)) {
       try {
         encryptedData = await encryptMessageForServer(messageContent, serverId)
         if (encryptedData.encrypted) {
@@ -198,7 +214,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
           })
         }
       } catch (err) {
-        console.error('[ChatArea] Encryption error:', err)
+        console.error('[ChatArea] Legacy encryption error:', err)
       }
     }
     
@@ -207,7 +223,8 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
       content: messageContent,
       attachments: attachments.length > 0 ? attachments : undefined,
       encrypted: encryptedData?.encrypted || false,
-      iv: encryptedData?.iv
+      iv: encryptedData?.iv,
+      epoch: encryptedData?.epoch || null
     }
 
     console.log('[ChatArea] Sending message:', messageData)
@@ -225,13 +242,13 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     }, 500)
   }
 
-  const handleInputChange = (e) => {
-    const value = e.target.value
+  // Called by ChatInput with a plain string (the current innerText)
+  const handleInputChange = (value) => {
     setInputValue(value)
     
-    // Check for @ mentions
-    const cursorPosition = e.target.selectionStart
-    const textBeforeCursor = value.slice(0, cursorPosition)
+    // Read cursor position from the actual contentEditable via the forwarded ref
+    const caretPos = inputRef.current?.getCaretPosition?.() ?? value.length
+    const textBeforeCursor = value.slice(0, caretPos)
     const mentionMatch = textBeforeCursor.match(/@([a-zA-Z0-9_]*)$/)
     
     if (mentionMatch) {
@@ -240,16 +257,21 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
       setShowMentionSuggestions(true)
       setSelectedMentionIndex(0)
       
-      // Filter members based on query
-      const suggestions = [
-        { id: 'everyone', username: 'everyone', displayName: 'everyone', type: 'special', color: '#fbbf24' },
-        { id: 'here', username: 'here', displayName: 'here', type: 'special', color: '#60a5fa' },
-        ...members.filter(m => 
-          m.username?.toLowerCase().includes(query) || 
-          m.displayName?.toLowerCase().includes(query)
-        ).slice(0, 8)
-      ]
-      setMentionSuggestions(suggestions)
+      // Special mentions always shown, filter members by query
+      const specials = [
+        { id: 'everyone', username: 'everyone', displayName: '@everyone — notify all members', type: 'special', color: '#fbbf24' },
+        { id: 'here', username: 'here', displayName: '@here — notify online members', type: 'special', color: '#60a5fa' },
+      ].filter(s => !query || s.username.startsWith(query))
+
+      const memberMatches = members.filter(m => 
+        !query ||
+        m.username?.toLowerCase().startsWith(query) || 
+        m.displayName?.toLowerCase().startsWith(query) ||
+        m.username?.toLowerCase().includes(query) || 
+        m.displayName?.toLowerCase().includes(query)
+      ).slice(0, 8)
+
+      setMentionSuggestions([...specials, ...memberMatches])
     } else {
       setShowMentionSuggestions(false)
     }
@@ -266,36 +288,53 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
   }
 
   const handleMentionSelect = (mention) => {
-    const cursorPosition = inputRef.current.selectionStart
-    const textBeforeCursor = inputValue.slice(0, cursorPosition)
+    // Get cursor position via the exposed ref helper
+    const caretPos = inputRef.current?.getCaretPosition?.() ?? inputValue.length
+    const textBeforeCursor = inputValue.slice(0, caretPos)
     const mentionMatch = textBeforeCursor.match(/@([a-zA-Z0-9_]*)$/)
     
     if (mentionMatch) {
-      const mentionText = mention.type === 'special' ? `@${mention.username}` : `@${mention.username}`
-      const newValue = textBeforeCursor.replace(/@([a-zA-Z0-9_]*)$/, mentionText + ' ') + 
-                       inputValue.slice(cursorPosition)
+      const insertText = `@${mention.username} `
+      const newBefore = textBeforeCursor.replace(/@([a-zA-Z0-9_]*)$/, insertText)
+      const newValue = newBefore + inputValue.slice(caretPos)
       setInputValue(newValue)
       setShowMentionSuggestions(false)
-      inputRef.current.focus()
+
+      // Restore focus and move caret to after the inserted mention
+      requestAnimationFrame(() => {
+        inputRef.current?.setCaretPosition?.(newBefore.length)
+      })
+    } else {
+      setShowMentionSuggestions(false)
     }
   }
 
   const handleKeyDown = (e) => {
-    if (showMentionSuggestions) {
+    if (showMentionSuggestions && mentionSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setSelectedMentionIndex(prev => (prev + 1) % mentionSuggestions.length)
+        return
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
         setSelectedMentionIndex(prev => (prev - 1 + mentionSuggestions.length) % mentionSuggestions.length)
+        return
       } else if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         handleMentionSelect(mentionSuggestions[selectedMentionIndex])
+        return
       } else if (e.key === 'Escape') {
         e.preventDefault()
         setShowMentionSuggestions(false)
+        return
+      } else if (e.key === 'Tab') {
+        e.preventDefault()
+        handleMentionSelect(mentionSuggestions[selectedMentionIndex])
+        return
       }
-    } else if (e.key === 'Enter' && !e.shiftKey) {
+    }
+    
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
     }
@@ -309,7 +348,8 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     } else if (emoji.type === 'custom') {
       setInputValue(prev => prev + `:${emoji.name}:`)
     }
-    inputRef.current?.focus()
+    // inputRef is now a forwarded ref object with a .focus() helper
+    requestAnimationFrame(() => inputRef.current?.focus?.())
   }
 
   const processFiles = async (files) => {
@@ -393,10 +433,11 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
   }, [serverId])
 
   useEffect(() => {
-    const input = inputRef.current
-    if (input) {
-      input.addEventListener('paste', handlePaste)
-      return () => input.removeEventListener('paste', handlePaste)
+    // inputRef is now the forwarded ref object; get the inner editor node
+    const editor = inputRef.current?.getEditor?.()
+    if (editor) {
+      editor.addEventListener('paste', handlePaste)
+      return () => editor.removeEventListener('paste', handlePaste)
     }
   }, [handlePaste])
 
@@ -579,10 +620,64 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
             multiple
             accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
           />
+
+          {/* Mention suggestions panel — rendered ABOVE the input */}
+          {showMentionSuggestions && mentionSuggestions.length > 0 && (
+            <div ref={mentionPanelRef} className="mention-suggestions-panel">
+              <div className="mention-suggestions-header">
+                Members &amp; Mentions — {mentionQuery ? `"@${mentionQuery}"` : 'type to filter'}
+              </div>
+              <div className="mention-suggestions-list">
+                {mentionSuggestions.map((mention, index) => (
+                  <button
+                    key={mention.id}
+                    className={`mention-item ${index === selectedMentionIndex ? 'selected' : ''}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault() // prevent blur on the input
+                      handleMentionSelect(mention)
+                    }}
+                    onMouseEnter={() => setSelectedMentionIndex(index)}
+                  >
+                    {mention.type === 'special' ? (
+                      <div
+                        className="mention-special-icon"
+                        style={{ '--mention-color': mention.color }}
+                      >
+                        {mention.username === 'everyone'
+                          ? <Users size={16} />
+                          : <Radio size={16} />}
+                      </div>
+                    ) : (
+                      <div
+                        className="mention-avatar"
+                        style={{ background: `hsl(${(mention.username?.charCodeAt(0) || 0) * 37 % 360}, 60%, 45%)` }}
+                      >
+                        {mention.avatar
+                          ? <img src={mention.avatar} alt={mention.username} />
+                          : (mention.username?.[0] || '?').toUpperCase()}
+                      </div>
+                    )}
+                    <div className="mention-info">
+                      <span className="mention-name">
+                        {mention.type === 'special' ? `@${mention.username}` : (mention.displayName || mention.username)}
+                      </span>
+                      {mention.type !== 'special' && (
+                        <span className="mention-username">@{mention.username}</span>
+                      )}
+                      {mention.type === 'special' && (
+                        <span className="mention-username">{mention.displayName}</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           
           <ChatInput
+            ref={inputRef}
             value={inputValue}
-            onChange={setInputValue}
+            onChange={handleInputChange}
             placeholder={`Message #${currentChannel?.name || 'channel'}`}
             onSubmit={handleSendMessage}
             onKeyDown={handleKeyDown}

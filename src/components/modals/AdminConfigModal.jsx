@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Save, RotateCcw, Server, Shield, Globe, Database, Lock, Bell, Zap, Settings, Code, Eye, EyeOff, AlertTriangle, Check, Download, Upload, RefreshCw, ArrowRight, Loader } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import './Modal.css'
@@ -28,6 +28,28 @@ const AdminConfigModal = ({ onClose }) => {
   const [showSecrets, setShowSecrets] = useState({})
   const [validation, setValidation] = useState(null)
   
+  const jsonEditorRef = useRef(null)
+  const jsonHighlightRef = useRef(null)
+
+  const highlightJson = useCallback((json) => {
+    return json
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/("(?:\\.|[^"\\])*")\s*:/g, '<span class="json-key">$1</span>:')
+      .replace(/:\s*("(?:\\.|[^"\\])*")/g, ': <span class="json-string">$1</span>')
+      .replace(/:\s*(\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+      .replace(/:\s*(true|false)/g, ': <span class="json-boolean">$1</span>')
+      .replace(/:\s*(null)/g, ': <span class="json-null">$1</span>')
+  }, [])
+
+  const syncScroll = useCallback(() => {
+    if (jsonEditorRef.current && jsonHighlightRef.current) {
+      jsonHighlightRef.current.scrollTop = jsonEditorRef.current.scrollTop
+      jsonHighlightRef.current.scrollLeft = jsonEditorRef.current.scrollLeft
+    }
+  }, [])
+
   // Migration state
   const [migrationState, setMigrationState] = useState({
     currentType: null,
@@ -251,7 +273,7 @@ const AdminConfigModal = ({ onClose }) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'voltchat-config.json'
+    a.download = 'voltage-config.json'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -376,43 +398,39 @@ const AdminConfigModal = ({ onClose }) => {
         )}
 
         {viewMode === 'gui' ? (
-          <>
-            <div className="admin-config-tabs">
-              <button className={activeTab === 'server' ? 'active' : ''} onClick={() => setActiveTab('server')}>
-                <Server size={16} /> Server
-              </button>
-              <button className={activeTab === 'auth' ? 'active' : ''} onClick={() => setActiveTab('auth')}>
-                <Shield size={16} /> Auth
-              </button>
-              <button className={activeTab === 'security' ? 'active' : ''} onClick={() => setActiveTab('security')}>
-                <Lock size={16} /> Security
-              </button>
-              <button className={activeTab === 'features' ? 'active' : ''} onClick={() => setActiveTab('features')}>
-                <Zap size={16} /> Features
-              </button>
-              <button className={activeTab === 'limits' ? 'active' : ''} onClick={() => setActiveTab('limits')}>
-                <Globe size={16} /> Limits
-              </button>
-              <button className={activeTab === 'storage' ? 'active' : ''} onClick={() => setActiveTab('storage')}>
-                <Database size={16} /> Storage
-              </button>
-              <button className={activeTab === 'cdn' ? 'active' : ''} onClick={() => setActiveTab('cdn')}>
-                <Globe size={16} /> CDN
-              </button>
-              <button className={activeTab === 'federation' ? 'active' : ''} onClick={() => setActiveTab('federation')}>
-                <Globe size={16} /> Federation
-              </button>
-              <button className={activeTab === 'advanced' ? 'active' : ''} onClick={() => setActiveTab('advanced')}>
-                <Settings size={16} /> Advanced
-              </button>
-              <button className={activeTab === 'migration' ? 'active' : ''} onClick={() => setActiveTab('migration')}>
-                <RefreshCw size={16} /> Migration
-              </button>
+          <div className="admin-config-body">
+            <div className="admin-config-sidebar">
+              {[
+                { id: 'server', label: 'Server', icon: Server },
+                { id: 'auth', label: 'Auth', icon: Shield },
+                { id: 'security', label: 'Security', icon: Lock },
+                { id: 'features', label: 'Features', icon: Zap },
+                { id: 'limits', label: 'Limits', icon: Globe },
+                { id: 'storage', label: 'Storage', icon: Database },
+                { id: 'cdn', label: 'CDN', icon: Globe },
+                { id: 'federation', label: 'Federation', icon: Globe },
+                { id: 'advanced', label: 'Advanced', icon: Settings },
+                { id: 'migration', label: 'Migration', icon: RefreshCw },
+              ].map(tab => {
+                const Icon = tab.icon
+                return (
+                  <button
+                    key={tab.id}
+                    className={`config-nav-btn ${activeTab === tab.id ? 'active' : ''}`}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    <Icon size={16} />
+                    <span>{tab.label}</span>
+                  </button>
+                )
+              })}
             </div>
 
-            <div className="modal-content admin-config-content">
+            <div className="admin-config-content">
               {activeTab === 'server' && config?.server && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Server</h2>
+                  <p className="config-section-desc">Core server identity and network settings.</p>
                   <div className="config-group">
                     <h3>Basic Settings</h3>
                     <div className="config-field">
@@ -445,6 +463,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'auth' && config?.auth && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Authentication</h2>
+                  <p className="config-section-desc">Configure how users sign in and register.</p>
                   <div className="config-group">
                     <h3>Authentication Type</h3>
                     <div className="config-field">
@@ -506,6 +526,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'security' && config?.security && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Security</h2>
+                  <p className="config-section-desc">JWT tokens, encryption, and rate limiting.</p>
                   <div className="config-group">
                     <h3>JWT Settings</h3>
                     <div className="config-field">
@@ -545,6 +567,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'features' && config?.features && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Features</h2>
+                  <p className="config-section-desc">Enable or disable platform capabilities.</p>
                   <div className="config-group">
                     <h3>Core Features</h3>
                     <div className="config-field checkbox">
@@ -571,6 +595,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'limits' && config?.limits && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Limits</h2>
+                  <p className="config-section-desc">Resource quotas and usage caps.</p>
                   <div className="config-group">
                     <h3>Resource Limits</h3>
                     <div className="config-field">
@@ -592,6 +618,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'storage' && config?.storage && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Storage</h2>
+                  <p className="config-section-desc">Database engine and file storage settings.</p>
                   <div className="config-group">
                     <h3>Storage Type</h3>
                     <div className="config-field">
@@ -627,6 +655,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'cdn' && config?.cdn !== undefined && (
                 <div className="config-section">
+                  <h2 className="config-section-title">CDN</h2>
+                  <p className="config-section-desc">Content delivery and file hosting provider.</p>
                   <div className="config-group">
                     <h3>CDN Settings</h3>
                     <div className="config-field checkbox">
@@ -646,6 +676,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'federation' && config?.federation && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Federation</h2>
+                  <p className="config-section-desc">Connect with other VoltChat instances.</p>
                   <div className="config-group">
                     <h3>Federation</h3>
                     <div className="config-field checkbox">
@@ -669,6 +701,8 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'advanced' && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Advanced</h2>
+                  <p className="config-section-desc">Branding, caching, queues, and monitoring.</p>
                   <div className="config-group">
                     <h3>Branding</h3>
                     <div className="config-field">
@@ -726,8 +760,10 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'migration' && (
                 <div className="config-section">
+                  <h2 className="config-section-title">Database Migration</h2>
+                  <p className="config-section-desc">Migrate your data between different database backends.</p>
                   <div className="config-group">
-                    <h3><Database size={18} /> Database Migration</h3>
+                    <h3><Database size={18} /> Migration Tool</h3>
                     <p className="config-description">
                       Migrate your data between different database types. A backup will be created automatically.
                     </p>
@@ -864,19 +900,29 @@ const AdminConfigModal = ({ onClose }) => {
                 </div>
               )}
             </div>
-          </>
+          </div>
         ) : (
-          <div className="modal-content admin-config-json">
+          <div className="admin-config-json">
             <div className="json-editor-wrapper">
               {jsonError ? (
                 <div className="json-error"><AlertTriangle size={14} /> {jsonError}</div>
               ) : null}
-              <textarea
-                className={jsonError ? 'error' : ''}
-                value={rawConfig}
-                onChange={handleJsonChange}
-                spellCheck="false"
-              />
+              <div className="json-editor-container">
+                <pre
+                  ref={jsonHighlightRef}
+                  className="json-highlight"
+                  aria-hidden="true"
+                  dangerouslySetInnerHTML={{ __html: highlightJson(rawConfig) + '\n' }}
+                />
+                <textarea
+                  ref={jsonEditorRef}
+                  className={jsonError ? 'error' : ''}
+                  value={rawConfig}
+                  onChange={handleJsonChange}
+                  onScroll={syncScroll}
+                  spellCheck="false"
+                />
+              </div>
             </div>
           </div>
         )}

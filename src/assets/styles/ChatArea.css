@@ -2,7 +2,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--volt-bg-primary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary);
   height: 100vh;
   position: relative;
 }
@@ -280,17 +280,24 @@
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
+  right: 0;
   min-width: 240px;
-  max-width: 320px;
-  max-height: 300px;
+  max-width: 400px;
+  max-height: 320px;
   background: var(--volt-bg-secondary);
   border: 1px solid var(--volt-border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   z-index: 1000;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  animation: slideUp 0.12s ease;
+}
+
+.mention-suggestions-list {
+  overflow-y: auto;
+  flex: 1;
 }
 
 .mention-suggestions-header {
@@ -383,8 +390,6 @@
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 14px;
-  font-weight: 700;
   flex-shrink: 0;
 }
 
@@ -392,6 +397,11 @@
   font-weight: 600;
   color: var(--mention-color, #6366f1);
   font-size: 14px;
+}
+
+.mention-item.selected .mention-name,
+.mention-item:hover .mention-name {
+  color: var(--volt-text-primary);
 }
 
 /* Emoji Button Wrapper */

@@ -12,7 +12,7 @@ const migrateServerConfig = (stored) => {
       let needsMigration = false
       
       if (parsed.apiUrl === 'https://api.enclicainteractive.com') {
-        parsed.apiUrl = 'https://voltchatapp.enclicainteractive.com'
+        parsed.apiUrl = 'https://volt.voltagechat.app'
         needsMigration = true
       }
       
@@ -33,7 +33,7 @@ const migrateServerConfig = (stored) => {
     }
     
     if (parsed.apiUrl === 'https://api.enclicainteractive.com') {
-      parsed.apiUrl = 'https://voltchatapp.enclicainteractive.com'
+      parsed.apiUrl = 'https://volt.voltagechat.app'
     }
     
     if (!parsed.imageApiUrl) {
@@ -61,12 +61,12 @@ export const DEFAULT_MAIN_SERVERS = [
     id: 'enclica',
     name: 'Enclica',
     host: 'enclicainteractive.com',
-    apiUrl: 'https://voltchatapp.enclicainteractive.com',
+    apiUrl: 'https://volt.voltagechat.app',
     imageApiUrl: 'https://api.enclicainteractive.com',
     authUrl: 'https://enclicainteractive.com/oauth/authorize',
     tokenUrl: 'https://api.enclicainteractive.com/api/oauth/token',
     revokeUrl: 'https://api.enclicainteractive.com/api/oauth/revoke',
-    socketUrl: 'https://voltchatapp.enclicainteractive.com',
+    socketUrl: 'https://volt.voltagechat.app',
     clientId: 'app_54f92e4d526840789998b4cca492aea1',
     website: 'https://enclicainteractive.com',
     icon: null

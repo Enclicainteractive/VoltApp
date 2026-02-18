@@ -81,15 +81,13 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
             <Compass size={28} />
           </button>
 
-          {isAdmin && (
-            <button 
-              className="server-icon admin-icon"
-              onClick={onOpenAdmin}
-              title="Admin Panel"
-            >
-              <Shield size={28} />
-            </button>
-          )}
+          <button 
+            className="server-icon admin-icon"
+            onClick={onOpenAdmin}
+            title="Admin Panel"
+          >
+            <Shield size={28} />
+          </button>
           
           <div className="server-divider"></div>
           

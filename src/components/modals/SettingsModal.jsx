@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, User, Bell, Volume2, Shield, Palette, Info, Mic, Video, Monitor, MicOff, VideoOff, Eye, Edit2, Globe, Server, Settings } from 'lucide-react'
+import { X, User, Bell, Volume2, Shield, Palette, Info, Mic, Video, Monitor, MicOff, VideoOff, Eye, Edit2, Globe, Server, Settings, Bot, Network } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
-import { themes } from '../../theme/themes'
 import { useBanner } from '../../hooks/useAvatar'
 import { settingsService } from '../../services/settingsService'
 import { pushService } from '../../services/pushService'
@@ -14,6 +13,8 @@ import BioEditor from '../BioEditor'
 import AgeVerificationModal from './AgeVerificationModal'
 import AdminConfigModal from './AdminConfigModal'
 import SelfVoltPanel from '../SelfVoltPanel'
+import FederationPanel from '../FederationPanel'
+import BotPanel from '../BotPanel'
 import './Modal.css'
 import './SettingsModal.css'
 import '../../assets/styles/RichTextEditor.css'
@@ -21,7 +22,7 @@ import '../../assets/styles/RichTextEditor.css'
 const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const [activeTab, setActiveTab] = useState(initialTab)
   const { user, logout, refreshUser } = useAuth()
-  const { theme, setTheme } = useTheme()
+  const { theme, setTheme, allThemes, customThemes, addCustomTheme, removeCustomTheme } = useTheme()
   const server = getStoredServer()
   const apiUrl = server?.apiUrl || ''
   const imageApiUrl = server?.imageApiUrl || apiUrl
@@ -53,6 +54,99 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const videoPreviewRef = useRef(null)
   const analyserRef = useRef(null)
   const animationRef = useRef(null)
+
+  const [isAdminUser, setIsAdminUser] = useState(false)
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        const res = await apiService.getMyAdminRole()
+        if (res.data?.isAdmin || res.data?.role === 'owner' || res.data?.role === 'admin') {
+          setIsAdminUser(true)
+          return
+        }
+      } catch { /* ignore */ }
+      if (user?.adminRole === 'owner' || user?.adminRole === 'admin') {
+        setIsAdminUser(true)
+      }
+    }
+    checkAdmin()
+  }, [user])
+
+  const [customThemeDraft, setCustomThemeDraft] = useState(() => ({
+    name: 'Custom',
+    mode: 'dark',
+    primary: '#12d8ff',
+    success: '#3be3b2',
+    warning: '#ffd166',
+    danger: '#ff6b81',
+    bgPrimary: '#08111e',
+    bgSecondary: '#0c1a2c',
+    bgTertiary: '#0f2137',
+    bgQuaternary: '#142b46',
+    textPrimary: '#e6f5ff',
+    textSecondary: '#bad7f2',
+    textMuted: '#7fa1c2',
+    border: '#1e3a56',
+    gradientEnabled: false,
+    gradientAngle: 135,
+    gradientA: '#08111e',
+    gradientB: '#142b46'
+  }))
+  const [customThemeError, setCustomThemeError] = useState('')
+
+  const getThemePreviewBackground = (t) => {
+    const v = t?.vars || {}
+    const g = t?.previewGradient || v['--volt-bg-gradient']
+    if (g && g !== 'none') return g
+    const a = t?.preview?.[0] || v['--volt-bg-primary'] || '#0b1220'
+    const b = t?.preview?.[1] || v['--volt-primary'] || '#162138'
+    return `linear-gradient(135deg, ${a}, ${b})`
+  }
+
+  const handleCreateCustomTheme = () => {
+    setCustomThemeError('')
+    const name = (customThemeDraft.name || '').trim() || 'Custom'
+    const mode = customThemeDraft.mode === 'light' ? 'light' : 'dark'
+
+    const vars = {
+      '--volt-primary': customThemeDraft.primary,
+      '--volt-primary-dark': customThemeDraft.primary,
+      '--volt-primary-light': customThemeDraft.primary,
+      '--volt-success': customThemeDraft.success,
+      '--volt-warning': customThemeDraft.warning,
+      '--volt-danger': customThemeDraft.danger,
+      '--volt-bg-primary': customThemeDraft.bgPrimary,
+      '--volt-bg-secondary': customThemeDraft.bgSecondary,
+      '--volt-bg-tertiary': customThemeDraft.bgTertiary,
+      '--volt-bg-quaternary': customThemeDraft.bgQuaternary,
+      '--volt-text-primary': customThemeDraft.textPrimary,
+      '--volt-text-secondary': customThemeDraft.textSecondary,
+      '--volt-text-muted': customThemeDraft.textMuted,
+      '--volt-border': customThemeDraft.border,
+      '--volt-hover': mode === 'light' ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)',
+      '--volt-active': mode === 'light' ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.08)',
+      '--volt-shadow': mode === 'light' ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.38)'
+    }
+
+    if (customThemeDraft.gradientEnabled) {
+      const angle = Number.isFinite(Number(customThemeDraft.gradientAngle)) ? Number(customThemeDraft.gradientAngle) : 135
+      vars['--volt-bg-gradient'] = `linear-gradient(${angle}deg, ${customThemeDraft.gradientA}, ${customThemeDraft.gradientB})`
+    }
+
+    try {
+      const id = addCustomTheme({
+        name,
+        mode,
+        preview: [customThemeDraft.bgPrimary, customThemeDraft.primary],
+        vars
+      })
+      setTheme(id)
+    } catch (e) {
+      console.error(e)
+      setCustomThemeError('Could not save custom theme.')
+    }
+  }
 
   const enumerateDevices = async () => {
     try {
@@ -266,17 +360,20 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     setTestingCamera(false)
   }
 
-  const tabs = [
+  const allTabs = [
     { id: 'account', label: 'My Account', icon: User },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'voice', label: 'Voice & Video', icon: Volume2 },
     { id: 'privacy', label: 'Privacy', icon: Shield },
     { id: 'age', label: 'Age Verification', icon: Shield },
     { id: 'selfvolt', label: 'Self-Volt', icon: Globe },
-    { id: 'serverconfig', label: 'Server Config', icon: Settings },
+    { id: 'federation', label: 'Federation', icon: Network, adminOnly: true },
+    { id: 'bots', label: 'Bots', icon: Bot },
+    { id: 'serverconfig', label: 'Server Config', icon: Settings, adminOnly: true },
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'about', label: 'About', icon: Info },
   ]
+  const tabs = allTabs.filter(t => !t.adminOnly || isAdminUser)
 
   const loadAgeInfo = async () => {
     setAgeLoading(true)
@@ -322,7 +419,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
   return (
     <>
-    <div className="modal-overlay settings-overlay" onClick={onClose}>
+    <div className="modal-overlay settings-overlay" onClick={onClose} style={showAdminConfig ? { display: 'none' } : undefined}>
       <div className="modal-content settings-modal" onClick={e => e.stopPropagation()}>
         <div className="settings-container">
           <div className="settings-sidebar">
@@ -914,16 +1011,16 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
             {activeTab === 'appearance' && (
               <div className="settings-section">
                 <h2>Appearance</h2>
-                <p className="theme-description">Choose how VoltChat looks to you. 30+ curated palettes plus system sync.</p>
+                <p className="theme-description">Choose how VoltChat looks to you. 70+ curated palettes, custom themes, and gradients.</p>
                 <div className="theme-grid">
-                  {themes.map(t => (
+                  {allThemes.map(t => (
                     <button
                       key={t.id}
                       className={`theme-card ${theme === t.id ? 'active' : ''}`}
                       onClick={() => setTheme(t.id)}
                       aria-label={`Apply ${t.name} theme`}
                     >
-                      <div className="theme-card-preview" style={{ background: `linear-gradient(135deg, ${t.preview[0]}, ${t.preview[1]})` }}>
+                      <div className="theme-card-preview" style={{ background: getThemePreviewBackground(t) }}>
                         <div className="theme-card-sidebar"></div>
                         <div className="theme-card-content">
                           <div className="theme-card-header"></div>
@@ -935,16 +1032,250 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       </div>
                       <div className="theme-card-meta">
                         <div className="theme-name">{t.name}</div>
-                        <div className="theme-mode">{t.mode === 'auto' ? 'System' : t.mode === 'dark' ? 'Dark' : 'Light'}</div>
+                        <div className="theme-mode">
+                          {t.isCustom ? 'Custom' : t.mode === 'auto' ? 'System' : t.mode === 'dark' ? 'Dark' : 'Light'}
+                        </div>
                       </div>
+                      {t.isCustom && (
+                        <span
+                          className="theme-remove"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Remove ${t.name} theme`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeCustomTheme(t.id)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              removeCustomTheme(t.id)
+                            }
+                          }}
+                        >
+                          Remove
+                        </span>
+                      )}
                     </button>
                   ))}
+                </div>
+
+                <div className="divider" />
+
+                <div className="theme-customizer">
+                  <h3>Custom Theme</h3>
+                  <p className="theme-customizer-desc">Create your own palette and optionally add a background gradient.</p>
+
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label>Name</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={customThemeDraft.name}
+                        onChange={(e) => setCustomThemeDraft(p => ({ ...p, name: e.target.value }))}
+                        placeholder="My Theme"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Mode</label>
+                      <select
+                        className="input"
+                        value={customThemeDraft.mode}
+                        onChange={(e) => setCustomThemeDraft(p => ({ ...p, mode: e.target.value }))}
+                      >
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label>Primary</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.primary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, primary: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.primary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, primary: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Success</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.success} onChange={(e) => setCustomThemeDraft(p => ({ ...p, success: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.success} onChange={(e) => setCustomThemeDraft(p => ({ ...p, success: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Warning</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.warning} onChange={(e) => setCustomThemeDraft(p => ({ ...p, warning: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.warning} onChange={(e) => setCustomThemeDraft(p => ({ ...p, warning: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Danger</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.danger} onChange={(e) => setCustomThemeDraft(p => ({ ...p, danger: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.danger} onChange={(e) => setCustomThemeDraft(p => ({ ...p, danger: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Background (Primary)</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.bgPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgPrimary: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.bgPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgPrimary: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Background (Secondary)</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.bgSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgSecondary: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.bgSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgSecondary: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Background (Tertiary)</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.bgTertiary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgTertiary: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.bgTertiary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgTertiary: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Background (Quaternary)</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.bgQuaternary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgQuaternary: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.bgQuaternary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgQuaternary: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Text (Primary)</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.textPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textPrimary: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.textPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textPrimary: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Text (Secondary)</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.textSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textSecondary: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.textSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textSecondary: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Text (Muted)</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.textMuted} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textMuted: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.textMuted} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textMuted: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Border</label>
+                      <div className="color-input-row">
+                        <input type="color" className="color-picker" value={customThemeDraft.border} onChange={(e) => setCustomThemeDraft(p => ({ ...p, border: e.target.value }))} />
+                        <input type="text" className="input" value={customThemeDraft.border} onChange={(e) => setCustomThemeDraft(p => ({ ...p, border: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="custom-theme-gradient">
+                    <label className="custom-theme-gradient-toggle">
+                      <input
+                        type="checkbox"
+                        checked={customThemeDraft.gradientEnabled}
+                        onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientEnabled: e.target.checked }))}
+                      />
+                      Enable gradient background
+                    </label>
+
+                    {customThemeDraft.gradientEnabled && (
+                      <div className="form-grid">
+                        <div className="form-group">
+                          <label>Gradient Angle</label>
+                          <input
+                            type="number"
+                            className="input"
+                            value={customThemeDraft.gradientAngle}
+                            onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientAngle: e.target.value }))}
+                          />
+                        </div>
+
+                        <div className="form-group">
+                          <label>Gradient A</label>
+                          <div className="color-input-row">
+                            <input type="color" className="color-picker" value={customThemeDraft.gradientA} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientA: e.target.value }))} />
+                            <input type="text" className="input" value={customThemeDraft.gradientA} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientA: e.target.value }))} />
+                          </div>
+                        </div>
+
+                        <div className="form-group">
+                          <label>Gradient B</label>
+                          <div className="color-input-row">
+                            <input type="color" className="color-picker" value={customThemeDraft.gradientB} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientB: e.target.value }))} />
+                            <input type="text" className="input" value={customThemeDraft.gradientB} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientB: e.target.value }))} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {customThemeError && <div className="test-error" style={{ marginTop: 8 }}>{customThemeError}</div>}
+
+                  <div className="custom-theme-actions">
+                    <button className="btn btn-primary" type="button" onClick={handleCreateCustomTheme}>
+                      Save Custom Theme
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={() => {
+                        if (!customThemes.length) return
+                        const last = customThemes[customThemes.length - 1]
+                        if (last?.id) setTheme(last.id)
+                      }}
+                      disabled={!customThemes.length}
+                    >
+                      Apply Latest Custom
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
             {activeTab === 'selfvolt' && (
               <SelfVoltPanel />
+            )}
+
+            {activeTab === 'federation' && (
+              <div className="settings-section">
+                <h2>Federation</h2>
+                <p className="settings-description">
+                  Connect with other VoltChat mainlines to share invites and communicate across instances.
+                </p>
+                <FederationPanel />
+              </div>
+            )}
+
+            {activeTab === 'bots' && (
+              <div className="settings-section">
+                <h2>Bots</h2>
+                <p className="settings-description">
+                  Create and manage custom bots that can respond to messages, run commands, and automate your servers.
+                </p>
+                <BotPanel />
+              </div>
             )}
 
             {activeTab === 'serverconfig' && (
@@ -1003,7 +1334,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     )}
 
     {showAdminConfig && (
-      <AdminConfigModal onClose={() => setShowAdminConfig(false)} />
+      <AdminConfigModal onClose={() => setShowAdminConfig(false)} standalone />
     )}
     </>
   )

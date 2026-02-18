@@ -370,8 +370,8 @@ const VoiceChannel = ({ channel, onLeave, isMuted: externalMuted, isDeafened: ex
         hasJoinedRef.current = true
         hasLeftRef.current = false
         
-        // Play join sound for self
-        soundService.userJoined()
+        // Play join sound for self (ascending arpeggio)
+        soundService.callJoin()
         
         // Resume audio context on user interaction (required by browsers)
         const resumeAudio = () => {
@@ -396,7 +396,6 @@ const VoiceChannel = ({ channel, onLeave, isMuted: externalMuted, isDeafened: ex
           channelId: channel.id,
           peerId: user.id
         })
-        soundService.userJoined()
         console.log('[Voice] Emitted voice:join for channel:', channel.id)
       } catch (err) {
         console.error('[Voice] Failed to get microphone:', err)

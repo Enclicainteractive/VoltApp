@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { X, Link, ArrowRight } from 'lucide-react'
 import { apiService } from '../../services/apiService'
+import { soundService } from '../../services/soundService'
 import './Modal.css'
 import './JoinServerModal.css'
 
@@ -10,7 +11,7 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
   const [error, setError] = useState('')
 
   const extractInviteCode = (input) => {
-    // Handle full URLs like voltchat.app/invite/ABC123 or discord.gg/ABC123
+    // Handle full URLs like volt.voltagechat.app/invite/ABC123
     const urlMatch = input.match(/(?:invite\/|\.gg\/)([a-zA-Z0-9]+)/)
     if (urlMatch) return urlMatch[1]
     // Otherwise just use the raw input (assuming it's a code)
@@ -31,6 +32,7 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
 
     try {
       const res = await apiService.joinServer(code)
+      soundService.serverJoined()
       onSuccess?.(res.data)
       onClose()
     } catch (err) {
@@ -65,13 +67,13 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
               <input
                 type="text"
                 className="input"
-                placeholder="https://voltchatapp.enclicainteractive.com/invite/ABC123 or ABC123"
+                placeholder="https://volt.voltagechat.app/invite/ABC123 or ABC123"
                 value={inviteCode}
                 onChange={e => setInviteCode(e.target.value)}
                 autoFocus
               />
               <span className="input-hint">
-                Invites look like: voltchatapp.enclicainteractive.com/invite/hTKzmak or hTKzmak
+                Invites look like: volt.voltagechat.app/invite/hTKzmak or hTKzmak
               </span>
             </div>
 

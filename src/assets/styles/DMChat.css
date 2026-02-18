@@ -1,22 +1,52 @@
+/* ── Root ──────────────────────────────────────────────────────────────────── */
 .dm-chat {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--volt-bg-primary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary);
+  height: 100vh;
   position: relative;
+  overflow: hidden;
 }
 
-.dm-chat.dragging {
-  pointer-events: all;
+.dm-chat.dragging { pointer-events: all; }
+
+/* ── Drop overlay ────────────────────────────────────────────────────────── */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
 }
 
+.drop-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--volt-primary);
+  font-size: 24px;
+  font-weight: 600;
+  padding: 40px;
+  border: 3px dashed var(--volt-primary);
+  border-radius: 16px;
+  background: rgba(31, 182, 255, 0.1);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
 .dm-chat-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 20px;
-  background: var(--volt-bg-secondary);
+  padding: 0 16px;
+  height: 48px;
+  background: var(--volt-bg-primary);
   border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
 }
 
 .dm-recipient-info {
@@ -26,8 +56,10 @@
 }
 
 .dm-recipient-name {
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--volt-text-primary);
+  line-height: 1.2;
 }
 
 .dm-recipient-status {
@@ -36,22 +68,29 @@
   text-transform: capitalize;
 }
 
-.dm-recipient-status.online { color: var(--volt-success); }
-.dm-recipient-status.idle { color: var(--volt-warning); }
-.dm-recipient-status.dnd { color: var(--volt-danger); }
+.dm-recipient-status.online  { color: var(--volt-success); }
+.dm-recipient-status.idle    { color: var(--volt-warning); }
+.dm-recipient-status.dnd     { color: var(--volt-danger);  }
 
 .dm-header-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
 }
 
+/* ── Messages area ───────────────────────────────────────────────────────── */
 .dm-messages {
   flex: 1;
-  padding: 20px;
+  padding: 16px 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+}
+
+.dm-loading-more {
+  text-align: center;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--volt-text-muted);
 }
 
 .dm-loading,
@@ -66,108 +105,152 @@
   gap: 12px;
 }
 
-.dm-empty h3 {
-  color: var(--volt-text-primary);
-  margin: 0;
-}
+.dm-empty h3 { color: var(--volt-text-primary); margin: 0; }
+.dm-empty p  { margin: 0; }
+.dm-empty-icon { opacity: 0.5; color: var(--volt-text-muted); }
 
-.dm-empty-icon {
-  opacity: 0.5;
-  color: var(--volt-text-muted);
-}
-
-.dm-empty p {
-  margin: 0;
-}
-
+/* ── Individual message ──────────────────────────────────────────────────── */
 .dm-message {
   display: flex;
   flex-direction: column;
-  padding: 8px 48px 8px 16px;
-  border-radius: 4px;
+  padding: 2px 16px;
   position: relative;
+  transition: background 0.05s ease;
 }
 
-.dm-message:hover {
-  background: var(--volt-hover);
-}
+.dm-message:hover { background: var(--volt-hover); }
+.dm-message.grouped { padding-top: 1px; }
 
-.dm-message.grouped {
-  padding-top: 2px;
-}
+/* Top-level message with header gets a little more top space */
+.dm-message:not(.grouped) { padding-top: 8px; }
 
+/* ── Reply reference ─────────────────────────────────────────────────────── */
 .dm-message-reply {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: var(--volt-text-muted);
-  margin-bottom: 4px;
-  margin-left: 48px;
+  margin-bottom: 2px;
+  margin-left: 52px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* ── Header row ──────────────────────────────────────────────────────────── */
 .dm-message-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .dm-message-author {
   font-weight: 600;
   color: var(--volt-text-primary);
   cursor: pointer;
+  font-size: 15px;
 }
-
-.dm-message-author:hover {
-  text-decoration: underline;
-}
+.dm-message-author:hover { text-decoration: underline; }
 
 .dm-message-time {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--volt-text-muted);
 }
 
+/* ── Content wrapper (indent under avatar) ───────────────────────────────── */
 .dm-message-content-wrapper {
   display: flex;
   align-items: flex-start;
   margin-left: 44px;
+  position: relative;
 }
 
-.dm-message.grouped .dm-message-content-wrapper {
-  margin-left: 44px;
+.dm-message.grouped .dm-message-content-wrapper { margin-left: 44px; }
+
+/* ── Message body (text + attachments + reactions stacked) ───────────────── */
+.dm-message-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .dm-message-content {
   color: var(--volt-text-primary);
   word-break: break-word;
-  line-height: 1.4;
+  line-height: 1.5;
+  font-size: 15px;
 }
 
 .edited-indicator {
   font-size: 11px;
   color: var(--volt-text-muted);
-  margin-left: 6px;
+  margin-left: 4px;
 }
 
+/* ── Attachments ─────────────────────────────────────────────────────────── */
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ── Reactions ───────────────────────────────────────────────────────────── */
+.dm-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.dm-reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--volt-text-secondary);
+  transition: background 0.12s ease;
+}
+
+.dm-reaction-btn:hover {
+  background: var(--volt-bg-tertiary);
+  border-color: var(--volt-primary);
+}
+
+.dm-reaction-btn.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--volt-primary);
+  color: var(--volt-text-primary);
+}
+
+.dm-reaction-btn span { font-size: 12px; }
+
+/* ── Hover action toolbar ────────────────────────────────────────────────── */
 .dm-message-actions {
-  display: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: -18px;
+  right: 0;
   background: var(--volt-bg-secondary);
   border: 1px solid var(--volt-border);
   border-radius: 6px;
-  padding: 4px;
-  gap: 4px;
+  padding: 3px 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 10;
 }
 
-.dm-message:hover .dm-message-actions {
-  display: flex;
-}
-
-.dm-message-actions button {
+.dm-action-btn {
   width: 28px;
   height: 28px;
   display: flex;
@@ -178,37 +261,115 @@
   color: var(--volt-text-muted);
   cursor: pointer;
   border-radius: 4px;
+  font-size: 14px;
+  transition: background 0.1s, color 0.1s;
 }
 
-.dm-message-actions button:hover {
+.dm-action-btn:hover {
   background: var(--volt-bg-tertiary);
   color: var(--volt-text-primary);
 }
 
+.dm-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.dm-action-btn.reaction-quick { font-size: 15px; }
+
+/* Per-message emoji picker */
+.dm-message-emoji-picker {
+  position: absolute;
+  top: 16px;
+  right: 0;
+  z-index: 100;
+}
+
+/* ── Edit in-place ───────────────────────────────────────────────────────── */
 .dm-message-edit {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.dm-message-edit .input {
+.message-edit-input {
   width: 100%;
+  padding: 8px 12px;
+  background: var(--volt-bg-primary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  color: var(--volt-text-primary);
+  font-size: 15px;
+  outline: none;
 }
 
-.edit-actions {
+.message-edit-input:focus { border-color: var(--volt-primary); }
+
+.message-edit-actions {
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
+  font-size: 12px;
+  color: var(--volt-text-muted);
 }
 
+.edit-cancel,
+.edit-save {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.edit-cancel {
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-secondary);
+}
+.edit-cancel:hover { background: var(--volt-hover); }
+
+.edit-save {
+  background: var(--volt-primary);
+  color: white;
+}
+.edit-save:hover { opacity: 0.85; }
+
+/* ── Scroll-to-bottom button ─────────────────────────────────────────────── */
+.dm-scroll-to-bottom {
+  position: absolute;
+  bottom: 140px;
+  right: 24px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  color: var(--volt-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 20;
+  transition: background 0.15s;
+}
+.dm-scroll-to-bottom:hover { background: var(--volt-hover); }
+
+/* ── Typing indicator ────────────────────────────────────────────────────── */
 .dm-typing-indicator {
-  padding: 8px 20px;
+  padding: 4px 20px 4px;
   font-size: 13px;
   color: var(--volt-text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  min-height: 24px;
 }
 
 .typing-dots {
@@ -229,18 +390,32 @@
 
 @keyframes typing-bounce {
   0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
+  40%           { transform: scale(1); }
 }
 
+/* ── Send error banner ───────────────────────────────────────────────────── */
+.age-warning-banner {
+  margin: 0 16px 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #2f1b1c;
+  color: #fca5a5;
+  border: 1px solid #7f1d1d;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* ── Reply preview bar ───────────────────────────────────────────────────── */
 .dm-reply-preview {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 20px;
+  padding: 8px 16px;
   background: var(--volt-bg-secondary);
   border-top: 1px solid var(--volt-border);
   font-size: 13px;
   color: var(--volt-text-secondary);
+  flex-shrink: 0;
 }
 
 .dm-reply-preview button {
@@ -250,78 +425,90 @@
   color: var(--volt-text-muted);
   cursor: pointer;
   padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
 }
+.dm-reply-preview button:hover { color: var(--volt-text-primary); }
 
-.dm-reply-preview button:hover {
-  color: var(--volt-text-primary);
-}
-
+/* ── Input container ─────────────────────────────────────────────────────── */
 .dm-input-container {
-  padding: 16px 20px;
-  background: var(--volt-bg-secondary);
-  border-top: 1px solid var(--volt-border);
-  position: relative;
+  padding: 16px;
+  background: var(--volt-bg-primary);
+  flex-shrink: 0;
 }
 
 .dm-input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   background: var(--volt-bg-tertiary);
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: var(--border-radius-md, 8px);
+  position: relative;
 }
 
-.dm-input {
-  flex: 1;
-  background: none;
-  border: none;
-  color: var(--volt-text-primary);
-  font-size: 14px;
-  outline: none;
+/* Attachment preview bar (reuse ChatArea styles) */
+.attachment-preview-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
-.dm-input::placeholder {
-  color: var(--volt-text-muted);
-}
-
-.input-action-btn {
-  width: 32px;
-  height: 32px;
+.attachment-preview-item {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.attachment-name {
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-remove {
   background: none;
   border: none;
   color: var(--volt-text-muted);
   cursor: pointer;
+  padding: 2px;
   border-radius: 4px;
-}
-
-.input-action-btn:hover {
-  color: var(--volt-text-primary);
-  background: var(--volt-bg-quaternary);
-}
-
-.send-btn {
-  width: 32px;
-  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--volt-primary);
-  border: none;
-  color: white;
+}
+.attachment-remove:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+/* Emoji picker popover inside input wrapper */
+.dm-input-wrapper .emoji-picker-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 1000;
+}
+
+/* ── Mention styling (reuse MessageList classes) ─────────────────────────── */
+.mention-other {
+  color: #818cf8;
+  font-weight: 600;
   cursor: pointer;
+  padding: 0 1px;
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+.mention-other:hover { background: rgba(99,102,241,0.15); }
+
+.mention-user {
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+  border: 1px solid rgba(99,102,241,0.35);
+  padding: 1px 4px;
   border-radius: 4px;
-  transition: opacity 0.2s;
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.send-btn:not(:disabled):hover {
-  background: var(--volt-primary-dark);
+  font-weight: 600;
 }

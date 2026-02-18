@@ -10,7 +10,7 @@
 }
 
 .modal-content {
-  background: var(--volt-bg-secondary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary);
   border-radius: var(--border-radius-lg);
   width: 90%;
   max-width: 440px;

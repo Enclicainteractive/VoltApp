@@ -3,7 +3,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--volt-bg-primary) 0%, var(--volt-bg-secondary) 100%);
+  background: var(--volt-bg-gradient, linear-gradient(135deg, var(--volt-bg-primary) 0%, var(--volt-bg-secondary) 100%));
   padding: 20px;
 }
 
@@ -189,4 +189,59 @@
   border-radius: 8px;
   margin-bottom: 16px;
   font-size: 14px;
+}
+
+.invite-federation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(31, 182, 255, 0.1);
+  border: 1px solid rgba(31, 182, 255, 0.25);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--volt-primary, #1fb6ff);
+  margin-bottom: 12px;
+}
+
+.federation-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(31, 182, 255, 0.08);
+  border: 1px solid rgba(31, 182, 255, 0.2);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--volt-primary, #1fb6ff);
+}
+
+.server-description {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  margin-top: 10px;
+  line-height: 1.4;
+}
+
+.invite-host-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--volt-border, #2a2f3e);
+  background: var(--volt-bg-tertiary, #1a1f2e);
+  color: var(--volt-text-primary, #e0e0e0);
+  font-size: 15px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.invite-host-input:focus {
+  border-color: var(--volt-primary, #1fb6ff);
+}
+
+.invite-host-input::placeholder {
+  color: var(--volt-text-muted, #8a8f9e);
 }

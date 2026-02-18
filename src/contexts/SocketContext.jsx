@@ -137,12 +137,6 @@ export const SocketProvider = ({ children }) => {
     const id = Date.now() + Math.random()
     const newNotification = { ...notification, id, timestamp: new Date() }
     setNotifications(prev => [newNotification, ...prev].slice(0, 50)) // Keep last 50
-    
-    // Play mention sound
-    if (notification.type === 'mention') {
-      soundService.mention()
-    }
-    
     // Auto-remove after 5 seconds
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== id))
@@ -164,7 +158,7 @@ export const SocketProvider = ({ children }) => {
     }
 
     const server = getStoredServer()
-    const socketUrl = server?.socketUrl || 'https://voltchatapp.enclicainteractive.com'
+    const socketUrl = server?.socketUrl || 'https://volt.voltagechat.app'
     
     if (serverUrlRef.current === socketUrl && socket?.connected) {
       return
@@ -227,13 +221,20 @@ export const SocketProvider = ({ children }) => {
       console.log('[Socket] Mention notification:', data)
       addNotification({
         type: 'mention',
-        title: data.type === 'everyone' ? '@everyone mentioned you' : 
-               data.type === 'here' ? '@here notification' : `${data.senderName} mentioned you`,
+        title: data.type === 'everyone' ? '@everyone mentioned you' :
+               data.type === 'here'     ? '@here notification' :
+               `${data.senderName} mentioned you`,
         message: data.content,
         channelId: data.channelId,
         messageId: data.messageId,
         senderName: data.senderName
       })
+      // Distinct sound: personal mention vs broadcast
+      if (data.type === 'user') {
+        soundService.dmMention()
+      } else {
+        soundService.mention()
+      }
     })
 
     newSocket.on('server:updated', handleServerUpdate)
@@ -244,6 +245,26 @@ export const SocketProvider = ({ children }) => {
     newSocket.on('role:created', handleRoleCreate)
     newSocket.on('role:updated', handleRoleUpdate)
     newSocket.on('role:deleted', handleRoleDelete)
+
+    newSocket.on('bot:added', (data) => {
+      console.log('[Socket] Bot added to server:', data)
+    })
+
+    newSocket.on('bot:removed', (data) => {
+      console.log('[Socket] Bot removed from server:', data)
+    })
+
+    newSocket.on('e2e:epoch-advanced', (data) => {
+      console.log('[Socket] E2EE epoch advanced:', data)
+    })
+
+    newSocket.on('e2e:member-added', (data) => {
+      console.log('[Socket] E2EE member added:', data)
+    })
+
+    newSocket.on('e2e:member-removed', (data) => {
+      console.log('[Socket] E2EE member removed:', data)
+    })
 
     setSocket(newSocket)
 

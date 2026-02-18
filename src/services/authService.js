@@ -20,13 +20,13 @@ function getServerConfig() {
   
   return {
     clientId: 'app_54f92e4d526840789998b4cca492aea1',
-    redirectUri: 'https://voltchatapp.enclicainteractive.com/callback',
+    redirectUri: 'https://volt.voltagechat.app/callback',
     authUrl: 'https://enclicainteractive.com/oauth/authorize',
     tokenUrl: 'https://api.enclicainteractive.com/api/oauth/token',
     revokeUrl: 'https://api.enclicainteractive.com/api/oauth/revoke',
-    localAuthUrl: 'https://voltchatapp.enclicainteractive.com/api/auth',
-    apiUrl: 'https://voltchatapp.enclicainteractive.com',
-    socketUrl: 'https://voltchatapp.enclicainteractive.com',
+    localAuthUrl: 'https://volt.voltagechat.app/api/auth',
+    apiUrl: 'https://volt.voltagechat.app',
+    socketUrl: 'https://volt.voltagechat.app',
     host: 'enclicainteractive.com',
     isOAuth: true,
     isLocal: false

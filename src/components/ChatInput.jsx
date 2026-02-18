@@ -1,7 +1,7 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react'
+import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import '../assets/styles/ChatInput.css'
 
-const ChatInput = ({ 
+const ChatInput = forwardRef(({ 
   value, 
   onChange, 
   placeholder, 
@@ -11,10 +11,56 @@ const ChatInput = ({
   onAttachClick,
   onEmojiClick,
   className = ''
-}) => {
+}, ref) => {
   const editorRef = useRef(null)
   const [isFocused, setIsFocused] = useState(false)
   const [contextMenu, setContextMenu] = useState(null)
+
+  // Expose the inner contentEditable node so parent can read cursor position
+  useImperativeHandle(ref, () => ({
+    getEditor: () => editorRef.current,
+    focus: () => editorRef.current?.focus(),
+    // Return caret offset within the plain text content
+    getCaretPosition: () => {
+      const el = editorRef.current
+      if (!el) return 0
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0) return el.innerText.length
+      const range = sel.getRangeAt(0)
+      const preRange = range.cloneRange()
+      preRange.selectNodeContents(el)
+      preRange.setEnd(range.startContainer, range.startOffset)
+      return preRange.toString().length
+    },
+    // Set caret to a specific character offset
+    setCaretPosition: (offset) => {
+      const el = editorRef.current
+      if (!el) return
+      el.focus()
+      const sel = window.getSelection()
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      let remaining = offset
+      let node = walker.nextNode()
+      while (node) {
+        if (remaining <= node.textContent.length) {
+          const range = document.createRange()
+          range.setStart(node, remaining)
+          range.collapse(true)
+          sel.removeAllRanges()
+          sel.addRange(range)
+          return
+        }
+        remaining -= node.textContent.length
+        node = walker.nextNode()
+      }
+      // fallback: move to end
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      range.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+  }), [])
 
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerText !== value) {
@@ -208,6 +254,8 @@ const ChatInput = ({
       </div>
     </div>
   )
-}
+})
+
+ChatInput.displayName = 'ChatInput'
 
 export default ChatInput

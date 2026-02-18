@@ -19,7 +19,7 @@ export default defineConfig({
   preview: {
     port: 3000,
     host: true,
-    allowedHosts: ['voltchatapp.enclicainteractive.com']
+    allowedHosts: ['voltchatapp.enclicainteractive.com','volt.voltagechat.app']
   },
   vitePWA: {
     registerType: 'autoUpdate',

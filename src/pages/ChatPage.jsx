@@ -22,6 +22,7 @@ import NotificationToast from '../components/NotificationToast'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useE2e } from '../contexts/E2eContext'
+import { useE2eTrue } from '../contexts/E2eTrueContext'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
 import { settingsService } from '../services/settingsService'
@@ -37,6 +38,7 @@ const ChatPage = () => {
     isEncryptionEnabled, 
     hasDecryptedKey 
   } = useE2e()
+  const e2eTrue = useE2eTrue()
   
   const [servers, setServers] = useState([])
   const [currentServer, setCurrentServer] = useState(null)
@@ -112,10 +114,12 @@ const ChatPage = () => {
     if (!socket || !connected) return
     
     const handleNewFriendRequest = () => {
+      soundService.notification()
       loadNotifications()
     }
     
     const handleDMNotification = (data) => {
+      soundService.dmReceived()
       loadNotifications()
     }
     
@@ -258,7 +262,17 @@ const ChatPage = () => {
       
       let processedMessage = { ...message }
       
-      if (message.encrypted && serverId && isEncryptionEnabled(serverId) && hasDecryptedKey(serverId)) {
+      // Try True E2EE decryption first (has epoch field)
+      if (message.encrypted && message.epoch && serverId && e2eTrue) {
+        try {
+          const decrypted = await e2eTrue.decryptMessage(message, serverId)
+          processedMessage.content = decrypted
+          processedMessage._decrypted = true
+        } catch (err) {
+          console.error('[ChatPage] True E2EE decryption error:', err)
+          processedMessage.content = '[Encrypted message - could not decrypt]'
+        }
+      } else if (message.encrypted && serverId && isEncryptionEnabled(serverId) && hasDecryptedKey(serverId)) {
         try {
           const encryptedData = JSON.parse(message.content)
           if (encryptedData._encrypted) {
@@ -270,7 +284,7 @@ const ChatPage = () => {
             processedMessage._decrypted = true
           }
         } catch (err) {
-          console.error('[ChatPage] Decryption error:', err)
+          console.error('[ChatPage] Legacy decryption error:', err)
           processedMessage.content = '[Encrypted message - could not decrypt]'
         }
       }

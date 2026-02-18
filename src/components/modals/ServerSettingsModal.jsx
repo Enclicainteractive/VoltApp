@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Server, Users, Shield, Link, Trash2, Hash, Volume2, ChevronDown, ChevronRight, Crown, UserMinus, Ban, Settings, Plus, Edit2, Check, Copy, Palette, Globe, CheckCircle, Clock, Lock, Key, RefreshCw, Download, Upload, Music, Palette as PaletteIcon, FlaskConical, GraduationCap, Film, Trophy, Briefcase, Gamepad2 } from 'lucide-react'
+import { X, Server, Users, Shield, Link, Trash2, Hash, Volume2, ChevronDown, ChevronRight, Crown, UserMinus, Ban, Settings, Plus, Edit2, Check, Copy, Palette, Globe, CheckCircle, Clock, Lock, Key, RefreshCw, Download, Upload, Music, Palette as PaletteIcon, FlaskConical, GraduationCap, Film, Trophy, Briefcase, Gamepad2, Bot } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import { getStoredServer } from '../../services/serverConfig'
 import { useAuth } from '../../contexts/AuthContext'
 import { useE2e } from '../../contexts/E2eContext'
 import Avatar from '../Avatar'
 import BioEditor from '../BioEditor'
+import ServerBots from '../ServerBots'
 import './Modal.css'
 import './ServerSettingsModal.css'
 import '../../assets/styles/RichTextEditor.css'
@@ -271,7 +272,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleCopyInvite = (code) => {
-    navigator.clipboard.writeText(`https://voltchatapp.enclicainteractive.com/invite/${code}`)
+    navigator.clipboard.writeText(`https://volt.voltagechat.app/invite/${code}`)
   }
 
   const handleDeleteInvite = async (code) => {
@@ -538,6 +539,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     { id: 'members', label: 'Members', icon: Users },
     { id: 'invites', label: 'Invites', icon: Link },
     { id: 'discovery', label: 'Discovery', icon: Globe },
+    { id: 'bots', label: 'Bots', icon: Bot },
     { id: 'security', label: 'Security', icon: Lock },
     ...(isOwner ? [{ id: 'danger', label: 'Danger Zone', icon: Trash2 }] : [])
   ]
@@ -1208,7 +1210,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
                 {newInvite && (
                   <div className="new-invite-box">
-                    <span className="invite-code">voltchat.app/invite/{newInvite.code}</span>
+                    <span className="invite-code">volt.voltagechat.app/invite/{newInvite.code}</span>
                     <button className="btn btn-secondary" onClick={() => handleCopyInvite(newInvite.code)}>
                       <Copy size={16} /> Copy
                     </button>
@@ -1314,6 +1316,16 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'bots' && (
+              <div className="settings-section">
+                <h2>Server Bots</h2>
+                <p className="section-desc">
+                  Manage bots installed in this server. Bots can respond to messages, run commands, and automate tasks.
+                </p>
+                <ServerBots serverId={server?.id} isOwner={isOwner} canManage={hasPermission('manage_server')} />
               </div>
             )}
 

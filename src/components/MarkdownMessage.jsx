@@ -1,7 +1,9 @@
-import React from 'react'
+import React, { useMemo } from 'react'
+import InviteEmbed from './InviteEmbed'
 import '../assets/styles/MarkdownMessage.css'
 
 const URL_REGEX = /(https?:\/\/[^\s]+)/g
+const INVITE_URL_REGEX = /https?:\/\/[^\s]*\/invite\/([a-zA-Z0-9_-]+)/g
 
 const BOLD_REGEX = /\*\*([^*]+)\*\*/g
 const ITALIC_REGEX = /(?:^|[^*])\*([^*]+)\*(?:[^*]|$)|_([^_]+)_/g
@@ -45,6 +47,21 @@ const LANGUAGES = {
 
 const MarkdownMessage = ({ content }) => {
   if (!content) return null
+
+  const inviteEmbeds = useMemo(() => {
+    const embeds = []
+    const seen = new Set()
+    let match
+    const regex = new RegExp(INVITE_URL_REGEX.source, 'g')
+    while ((match = regex.exec(content)) !== null) {
+      const code = match[1]
+      if (!seen.has(code)) {
+        seen.add(code)
+        embeds.push({ code, url: match[0] })
+      }
+    }
+    return embeds
+  }, [content])
 
   let processedContent = content
 
@@ -104,10 +121,15 @@ const MarkdownMessage = ({ content }) => {
   processedContent = processedContent.replace(/\n/g, '<br />')
 
   return (
-    <span 
-      className="markdown-message"
-      dangerouslySetInnerHTML={{ __html: processedContent }}
-    />
+    <>
+      <span 
+        className="markdown-message"
+        dangerouslySetInnerHTML={{ __html: processedContent }}
+      />
+      {inviteEmbeds.map(({ code, url }) => (
+        <InviteEmbed key={code} inviteCode={code} inviteUrl={url} />
+      ))}
+    </>
   )
 }
 

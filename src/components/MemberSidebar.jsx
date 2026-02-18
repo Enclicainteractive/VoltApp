@@ -12,6 +12,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
   const { socket, connected } = useSocket()
   const { user: currentUser } = useAuth()
   const [memberStatuses, setMemberStatuses] = useState({})
+  const [extraBotMembers, setExtraBotMembers] = useState([])
   const [contextMenu, setContextMenu] = useState(null)
   
   const currentServer = getStoredServer()
@@ -56,12 +57,37 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
       }))
     }
 
+    const handleBotAdded = ({ serverId, bot }) => {
+      if (serverId !== server?.id) return
+      setExtraBotMembers(prev => {
+        if (prev.some(b => b.id === bot.id)) return prev
+        return [...prev, {
+          id: bot.id,
+          username: bot.name,
+          avatar: bot.avatar || null,
+          status: bot.status || 'offline',
+          roles: [],
+          role: null,
+          isBot: true
+        }]
+      })
+    }
+
+    const handleBotRemoved = ({ serverId, botId }) => {
+      if (serverId !== server?.id) return
+      setExtraBotMembers(prev => prev.filter(b => b.id !== botId))
+    }
+
     socket.on('user:status', handleStatusUpdate)
+    socket.on('bot:added', handleBotAdded)
+    socket.on('bot:removed', handleBotRemoved)
 
     return () => {
       socket.off('user:status', handleStatusUpdate)
+      socket.off('bot:added', handleBotAdded)
+      socket.off('bot:removed', handleBotRemoved)
     }
-  }, [socket, connected])
+  }, [socket, connected, server?.id])
 
   const getMemberStatus = (member) => {
     return memberStatuses[member.id]?.status || member.status || 'online'
@@ -159,11 +185,17 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
     }
   }
 
-  const onlineMembers = members.filter(m => {
+  // Merge bots added dynamically (via socket) that aren't already in the members list
+  const allMembers = [
+    ...members,
+    ...extraBotMembers.filter(b => !members.some(m => m.id === b.id))
+  ]
+
+  const onlineMembers = allMembers.filter(m => {
     const status = getMemberStatus(m)
     return status === 'online' || status === 'idle' || status === 'dnd'
   })
-  const offlineMembers = members.filter(m => {
+  const offlineMembers = allMembers.filter(m => {
     const status = getMemberStatus(m)
     return status === 'offline' || status === 'invisible'
   })
@@ -197,8 +229,9 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                 </div>
                 <div className="member-info">
                   <div className="member-name">
-                    {getRoleIcon(member)}
+                    {!member.isBot && getRoleIcon(member)}
                     <span>{member.username}</span>
+                    {member.isBot && <span className="member-bot-badge">Bot</span>}
                   </div>
                 </div>
               </div>
@@ -230,8 +263,9 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                 </div>
                 <div className="member-info">
                   <div className="member-name">
-                    {getRoleIcon(member)}
+                    {!member.isBot && getRoleIcon(member)}
                     <span>{member.username}</span>
+                    {member.isBot && <span className="member-bot-badge">Bot</span>}
                   </div>
                 </div>
               </div>

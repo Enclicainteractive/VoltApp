@@ -1,6 +1,6 @@
 .member-sidebar {
   width: 240px;
-  background: var(--volt-bg-secondary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary);
   overflow-y: auto;
   height: 100vh;
 }
@@ -168,4 +168,20 @@
 
 .member-status-text.offline::before {
   background: #6b7280;
+}
+
+.member-bot-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  height: 15px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  background: var(--volt-primary, #1fb6ff);
+  color: #fff;
+  margin-left: 2px;
+  line-height: 15px;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
 }

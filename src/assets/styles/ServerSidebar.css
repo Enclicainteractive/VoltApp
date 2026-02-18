@@ -1,6 +1,6 @@
 .server-sidebar {
   width: 72px;
-  background: var(--volt-bg-primary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary);
   display: flex;
   flex-direction: column;
   align-items: center;

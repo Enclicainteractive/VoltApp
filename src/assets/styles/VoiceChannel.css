@@ -2,7 +2,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--volt-bg-primary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary);
 }
 
 .voice-header {

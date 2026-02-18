@@ -53,6 +53,10 @@ export const apiService = {
   getInvite: (code) => api.get(`/invites/${code}`),
   joinServer: (inviteCode) => api.post(`/invites/${inviteCode}/join`),
   joinServerById: (serverId) => api.post(`/servers/${serverId}/join`),
+  getCrossHostInvite: (code) => api.get(`/invites/cross-host/${code}`),
+  joinCrossHostInvite: (code) => api.post(`/invites/cross-host/${code}/join`),
+  resolveExternalInvite: (host, code) => api.get('/invites/resolve-external', { params: { host, code } }),
+  joinExternalInvite: (host, code) => api.post('/invites/resolve-external/join', { host, code }),
   
   // Server Members
   getServerMembers: (serverId) => api.get(`/servers/${serverId}/members`),
@@ -281,5 +285,52 @@ export const apiService = {
   getMutualServers: (userId) => api.get(`/user/${userId}/mutual-servers`),
   getServerEmojis: (serverId) => api.get(`/servers/${serverId}/emojis`),
   addServerEmoji: (serverId, name, url) => api.post(`/servers/${serverId}/emojis`, { name, url }),
-  deleteServerEmoji: (serverId, emojiId) => api.delete(`/servers/${serverId}/emojis/${emojiId}`)
+  deleteServerEmoji: (serverId, emojiId) => api.delete(`/servers/${serverId}/emojis/${emojiId}`),
+
+  // Federation
+  getFederationPeers: () => api.get('/federation/peers'),
+  getFederationPeer: (peerId) => api.get(`/federation/peers/${peerId}`),
+  addFederationPeer: (data) => api.post('/federation/peers', data),
+  acceptFederationPeer: (peerId) => api.post(`/federation/peers/${peerId}/accept`),
+  rejectFederationPeer: (peerId) => api.post(`/federation/peers/${peerId}/reject`),
+  removeFederationPeer: (peerId) => api.delete(`/federation/peers/${peerId}`),
+  shareFederationInvite: (data) => api.post('/federation/invites/share', data),
+  getFederationInvites: () => api.get('/federation/invites'),
+  getPublicFederationInvites: (host) => api.get('/federation/invites/public', { params: { host } }),
+  useFederationInvite: (inviteId) => api.post(`/federation/invites/${inviteId}/use`),
+  removeFederationInvite: (inviteId) => api.delete(`/federation/invites/${inviteId}`),
+  sendFederationRelay: (peerId, data) => api.post(`/federation/relay/${peerId}`, data),
+  getFederationInfo: () => api.get('/federation/info'),
+
+  // Bots
+  getMyBots: () => api.get('/bots/my'),
+  createBot: (data) => api.post('/bots', data),
+  getBot: (botId) => api.get(`/bots/${botId}`),
+  updateBot: (botId, data) => api.put(`/bots/${botId}`, data),
+  deleteBot: (botId) => api.delete(`/bots/${botId}`),
+  regenerateBotToken: (botId) => api.post(`/bots/${botId}/regenerate-token`),
+  addBotToServer: (botId, serverId) => api.post(`/bots/${botId}/servers/${serverId}`),
+  removeBotFromServer: (botId, serverId) => api.delete(`/bots/${botId}/servers/${serverId}`),
+  getServerBots: (serverId) => api.get(`/bots/server/${serverId}`),
+  getPublicBots: () => api.get('/bots/public/browse'),
+  getBotCommands: (botId) => api.get(`/bots/${botId}/commands`),
+  getBotProfile: (botId) => api.get(`/bots/${botId}/profile`),
+
+  // True E2EE
+  uploadDeviceKeys: (data) => api.post('/e2e-true/devices/keys', data),
+  getDeviceKeys: (userId, deviceId) => api.get(`/e2e-true/devices/keys/${userId}/${deviceId}`),
+  getUserDevices: (userId) => api.get(`/e2e-true/devices/${userId}`),
+  removeDevice: (deviceId) => api.delete(`/e2e-true/devices/${deviceId}`),
+  getGroupEpoch: (groupId) => api.get(`/e2e-true/groups/${groupId}/epoch`),
+  initGroupE2ee: (groupId, deviceId) => api.post(`/e2e-true/groups/${groupId}/init`, { deviceId }),
+  advanceEpoch: (groupId, reason) => api.post(`/e2e-true/groups/${groupId}/advance-epoch`, { reason }),
+  addGroupMember: (groupId, userId, deviceIds) => api.post(`/e2e-true/groups/${groupId}/members`, { userId, deviceIds }),
+  removeGroupMember: (groupId, userId) => api.delete(`/e2e-true/groups/${groupId}/members/${userId}`),
+  getGroupMembers: (groupId) => api.get(`/e2e-true/groups/${groupId}/members`),
+  storeSenderKey: (groupId, data) => api.post(`/e2e-true/groups/${groupId}/sender-keys`, data),
+  distributeSenderKeys: (groupId, data) => api.post(`/e2e-true/groups/${groupId}/sender-keys/distribute`, data),
+  getSenderKeys: (groupId, epoch, deviceId) => api.get(`/e2e-true/groups/${groupId}/sender-keys/${epoch}`, { params: { deviceId } }),
+  getQueuedKeyUpdates: (deviceId) => api.get('/e2e-true/queue/key-updates', { params: { deviceId } }),
+  getQueuedMessages: (deviceId, limit) => api.get('/e2e-true/queue/messages', { params: { deviceId, limit } }),
+  computeSafetyNumber: (myKey, theirKey) => api.post('/e2e-true/safety-number', { myIdentityKey: myKey, theirIdentityKey: theirKey })
 }

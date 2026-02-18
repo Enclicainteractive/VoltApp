@@ -234,25 +234,90 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
     )
   }
 
-  const renderMessageContent = (content, mentions) => {
+  const renderEmbeds = (embeds) => {
+    if (!embeds || embeds.length === 0) return null
+    return (
+      <div className="message-embeds">
+        {embeds.map((embed, i) => {
+          const borderColor = embed.color || 'var(--volt-primary)'
+          return (
+            <div key={i} className="message-embed" style={{ borderLeftColor: borderColor }}>
+              {embed.author && (
+                <div className="embed-author">
+                  {embed.author.iconUrl && <img src={embed.author.iconUrl} alt="" className="embed-author-icon" />}
+                  {embed.author.url
+                    ? <a href={embed.author.url} target="_blank" rel="noopener noreferrer">{embed.author.name}</a>
+                    : <span>{embed.author.name}</span>}
+                </div>
+              )}
+              {embed.title && (
+                embed.url
+                  ? <a href={embed.url} target="_blank" rel="noopener noreferrer" className="embed-title">{embed.title}</a>
+                  : <div className="embed-title">{embed.title}</div>
+              )}
+              {embed.description && <div className="embed-description">{embed.description}</div>}
+              {embed.fields && embed.fields.length > 0 && (
+                <div className="embed-fields">
+                  {embed.fields.map((field, fi) => (
+                    <div key={fi} className={`embed-field${field.inline ? ' embed-field-inline' : ''}`}>
+                      <div className="embed-field-name">{field.name}</div>
+                      <div className="embed-field-value">{field.value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {embed.image && <img src={embed.image.url} alt="" className="embed-image" />}
+              {embed.thumbnail && <img src={embed.thumbnail.url} alt="" className="embed-thumbnail" />}
+              {(embed.footer || embed.timestamp) && (
+                <div className="embed-footer">
+                  {embed.footer?.iconUrl && <img src={embed.footer.iconUrl} alt="" className="embed-footer-icon" />}
+                  {embed.footer?.text && <span>{embed.footer.text}</span>}
+                  {embed.footer?.text && embed.timestamp && <span className="embed-footer-sep">•</span>}
+                  {embed.timestamp && <span>{new Date(embed.timestamp).toLocaleString()}</span>}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const renderMessageContent = (content, mentions, messageAuthorUsername) => {
     if (!content) return null
     
-    // First process mentions
+    // Split on @mention tokens
     const parts = content.split(/(@[a-zA-Z0-9_\-\.]+)/gi)
     
     return parts.map((part, i) => {
       if (part.startsWith('@')) {
         const mentionName = part.slice(1).toLowerCase()
-        const isMentioned = 
-          mentionName === 'everyone' ||
-          mentionName === 'here' ||
-          (mentions?.users?.includes(currentUserId)) ||
-          part === `@${currentUserId}`
-        
-        if (isMentioned || mentionName === 'everyone' || mentionName === 'here') {
-          return <span key={i} className="mention-highlight">{part}</span>
+        const isEveryone = mentionName === 'everyone'
+        const isHere = mentionName === 'here'
+        // User is directly mentioned if the server included their id in mentions.users,
+        // OR if the @handle matches the currentUserId directly (legacy), 
+        // OR if mentions.usernames list includes this handle
+        const isDirectMention =
+          (mentions?.users && mentions.users.includes(currentUserId)) ||
+          (mentions?.usernames && mentions.usernames.some(u => u.toLowerCase() === mentionName))
+
+        if (isEveryone || isHere || isDirectMention) {
+          return (
+            <span
+              key={i}
+              className={`mention-highlight ${isEveryone ? 'mention-everyone' : isHere ? 'mention-here' : 'mention-user'}`}
+              title={isEveryone ? 'Mentions everyone' : isHere ? 'Mentions online members' : 'You were mentioned'}
+            >
+              {part}
+            </span>
+          )
         }
-        return part
+        // Other @mentions — styled as clickable but not highlighted as a personal ping
+        return (
+          <span key={i} className="mention-other">
+            {part}
+          </span>
+        )
       }
       // For non-mention parts, use MarkdownMessage
       return <MarkdownMessage key={i} content={part} />
@@ -385,6 +450,12 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
                       onClick={() => onShowProfile?.(message.userId)}
                     />
                     <span className="message-author" onClick={() => onShowProfile?.(message.userId)}>{message.username}</span>
+                    {message.bot && (
+                      <span className="bot-badge">BOT</span>
+                    )}
+                    {message.encrypted && (
+                      <span className="encrypted-badge" title="End-to-end encrypted">E2EE</span>
+                    )}
                     <span className="message-timestamp">
                       {formatDistance(new Date(message.timestamp), new Date(), { addSuffix: true })}
                     </span>
@@ -415,7 +486,7 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
                   </div>
                 ) : (
                   <div className="message-content">
-                    {renderMessageContent(message.content, message.mentions)}
+                    {renderMessageContent(message.content, message.mentions, message.username)}
                     {message.edited && <span className="edited-tag">(edited)</span>}
                   </div>
                 )}
@@ -427,6 +498,8 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
                     ))}
                   </div>
                 )}
+
+                {renderEmbeds(message.embeds)}
 
                 {renderReactions(message)}
 

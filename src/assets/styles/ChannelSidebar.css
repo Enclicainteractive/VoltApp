@@ -1,6 +1,6 @@
 .channel-sidebar {
   width: 240px;
-  background: var(--volt-bg-secondary);
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary);
   display: flex;
   flex-direction: column;
   height: 100vh;
