@@ -23,7 +23,15 @@ const EMBED_PATTERNS = {
   steam: /store\.steampowered\.com\/app\/(\d+)/,
   tenor: /tenor\.com\/view\/[a-zA-Z0-9_-]+-(\d+)/,
   giphy: /giphy\.com\/gifs\/(?:[a-zA-Z0-9-]+-)*([a-zA-Z0-9]+)/,
+  // Age-restricted embeds (require age verification)
+  e621: /e621\.net\/posts\/(\d+)/,
+  furaffinity: /furaffinity\.net\/(?:view|full)\/(\d+)/,
+  // fxfuraffinity - direct image embed service (replaces furaffinity.net with fxfuraffinity.net)
+  fxfuraffinity: /fxfuraffinity\.net\/view\/(\d+)/,
 }
+
+// Patterns that require age verification
+const AGE_RESTRICTED_EMBEDS = new Set(['e621', 'furaffinity', 'fxfuraffinity'])
 
 // ─── Detect embed type from URL ────────────────────────────────────────────
 export function detectEmbedType(url) {
@@ -500,8 +508,227 @@ function GiphyEmbed({ id, url }) {
   )
 }
 
+// ─── e621 Embed (Age-restricted) ────────────────────────────────────────────
+function E621Embed({ postId, url }) {
+  const [postData, setPostData] = useState(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    // e621 API endpoint
+    fetch(`https://e621.net/posts/${postId}.json`, {
+      headers: {
+        'User-Agent': 'VoltChat/1.0 (link embed preview)'
+      }
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => { if (!cancelled) setPostData(data) })
+      .catch(() => { if (!cancelled) setError(true) })
+    return () => { cancelled = true }
+  }, [postId])
+
+  if (error || !postData?.post) {
+    return (
+      <div className="link-embed e621-embed">
+        <div className="embed-provider">
+          <span className="embed-provider-icon" style={{ fontWeight: 700, fontSize: 12, color: '#00549E' }}>e621</span>
+          <span>e621</span>
+        </div>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="embed-link-title">
+          View on e621 →
+        </a>
+      </div>
+    )
+  }
+
+  const post = postData.post
+  const previewUrl = post.preview?.url
+  const fileUrl = post.file?.url
+  const artist = post.tags?.artist?.join(', ') || 'Unknown'
+  const rating = post.rating
+
+  return (
+    <div className="link-embed e621-embed">
+      <div className="embed-provider">
+        <span className="embed-provider-icon" style={{ fontWeight: 700, fontSize: 12, color: '#00549E' }}>e621</span>
+        <span>e621</span>
+        {rating && (
+          <span className={`embed-rating rating-${rating}`}>
+            {rating === 's' ? 'Safe' : rating === 'q' ? 'Questionable' : 'Explicit'}
+          </span>
+        )}
+      </div>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="embed-link-title">
+        Post #{postId}
+      </a>
+      <div className="embed-description">
+        <span className="embed-artist">by {artist}</span>
+      </div>
+      {previewUrl && (
+        <div className="embed-image-container">
+          <a href={fileUrl || previewUrl} target="_blank" rel="noopener noreferrer">
+            <img
+              src={previewUrl}
+              alt={`e621 post ${postId}`}
+              className="embed-preview-image"
+              loading="lazy"
+            />
+          </a>
+        </div>
+      )}
+      <a href={url} target="_blank" rel="noopener noreferrer" className="embed-link-footer">
+        View on e621 →
+      </a>
+    </div>
+  )
+}
+
+// ─── FurAffinity Embed (Age-restricted) ─────────────────────────────────────
+function FurAffinityEmbed({ submissionId, url }) {
+  // FurAffinity doesn't have a public API, so we show a preview card
+  return (
+    <div className="link-embed furaffinity-embed">
+      <div className="embed-provider">
+        <span className="embed-provider-icon" style={{ fontWeight: 700, fontSize: 12, color: '#FAAF3A' }}>FA</span>
+        <span>FurAffinity</span>
+        <span className="embed-rating rating-mature">18+</span>
+      </div>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="embed-link-title">
+        Submission #{submissionId}
+      </a>
+      <div className="embed-description">
+        <p>FurAffinity submission. Click to view on the site.</p>
+      </div>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="embed-link-footer">
+        View on FurAffinity →
+      </a>
+    </div>
+  )
+}
+
+// ─── FxFurAffinity Embed (Direct image embed via fxfuraffinity.net) ─────────
+function FxFurAffinityEmbed({ submissionId, url }) {
+  const [errored, setErrored] = useState(false)
+  // Check if URL has ?full parameter for fullsize image
+  const useFullsize = url.includes('?full')
+  // fxfuraffinity.net serves the image directly
+  const imageUrl = `https://fxfuraffinity.net/view/${submissionId}${useFullsize ? '?full' : ''}`
+
+  if (errored) {
+    return (
+      <div className="link-embed furaffinity-embed">
+        <div className="embed-provider">
+          <span className="embed-provider-icon" style={{ fontWeight: 700, fontSize: 12, color: '#FAAF3A' }}>FA</span>
+          <span>FurAffinity</span>
+        </div>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="embed-link-title">
+          View Submission →
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <div className="link-embed furaffinity-embed">
+      <div className="embed-provider">
+        <span className="embed-provider-icon" style={{ fontWeight: 700, fontSize: 12, color: '#FAAF3A' }}>FA</span>
+        <span>FurAffinity</span>
+        {useFullsize && <span className="embed-rating rating-full">Full</span>}
+      </div>
+      <div className="embed-image-container">
+        <a href={imageUrl} target="_blank" rel="noopener noreferrer">
+          <img
+            src={imageUrl}
+            alt={`FurAffinity submission ${submissionId}`}
+            className="embed-preview-image"
+            onError={() => setErrored(true)}
+            loading="lazy"
+          />
+        </a>
+      </div>
+      <a href={`https://www.furaffinity.net/view/${submissionId}`} target="_blank" rel="noopener noreferrer" className="embed-link-footer">
+        View on FurAffinity →
+      </a>
+    </div>
+  )
+}
+
+// ─── Age Gate for restricted embeds ─────────────────────────────────────────
+function AgeGatedEmbed({ type, postId, url, isAgeVerified }) {
+  const [showContent, setShowContent] = useState(false)
+
+  // If user is age verified, show content directly
+  if (isAgeVerified || showContent) {
+    if (type === 'e621') {
+      return <E621Embed postId={postId} url={url} />
+    }
+    if (type === 'furaffinity') {
+      return <FurAffinityEmbed submissionId={postId} url={url} />
+    }
+    if (type === 'fxfuraffinity') {
+      return <FxFurAffinityEmbed submissionId={postId} url={url} />
+    }
+    return null
+  }
+
+  // Determine provider name
+  const getProviderInfo = () => {
+    if (type === 'e621') return { icon: 'e621', name: 'e621' }
+    if (type === 'fxfuraffinity') return { icon: 'FA', name: 'FurAffinity' }
+    return { icon: 'FA', name: 'FurAffinity' }
+  }
+  const provider = getProviderInfo()
+
+  // Show age gate
+  return (
+    <div className="link-embed age-gated-embed">
+      <div className="embed-provider">
+        <span className="embed-provider-icon" style={{ fontWeight: 700, fontSize: 12 }}>
+          {provider.icon}
+        </span>
+        <span>{provider.name}</span>
+      </div>
+      <div className="age-gate-content">
+        <div className="age-gate-icon">🔞</div>
+        <div className="age-gate-text">
+          <h4>Age-Restricted Content</h4>
+          <p>This embed contains adult content.</p>
+        </div>
+        <div className="age-gate-actions">
+          <button 
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowContent(true)}
+          >
+            Show Content
+          </button>
+          <a 
+            href={url} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="btn btn-secondary btn-sm"
+          >
+            Open Link
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main LinkEmbed dispatcher ─────────────────────────────────────────────
-const LinkEmbed = ({ url, type, match }) => {
+const LinkEmbed = ({ url, type, match, isAgeVerified }) => {
+  // Handle age-restricted embeds
+  if (AGE_RESTRICTED_EMBEDS.has(type)) {
+    return (
+      <AgeGatedEmbed 
+        type={type} 
+        postId={match[1]} 
+        url={url} 
+        isAgeVerified={isAgeVerified}
+      />
+    )
+  }
+
   switch (type) {
     case 'youtube':
       return <YouTubeEmbed videoId={match[1]} url={url} />
@@ -549,3 +776,4 @@ const LinkEmbed = ({ url, type, match }) => {
 }
 
 export default LinkEmbed
+export { AGE_RESTRICTED_EMBEDS }

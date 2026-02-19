@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Mic, MicOff, Headphones, VolumeX, PhoneOff, Settings, Volume2, Video, VideoOff, Monitor, MonitorOff } from 'lucide-react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { Mic, MicOff, Headphones, VolumeX, PhoneOff, Settings, Volume2, Video, VideoOff, Monitor, MonitorOff, GripVertical } from 'lucide-react'
 import { useVoice } from '../contexts/VoiceContext'
 import { useAuth } from '../contexts/AuthContext'
 import Avatar from './Avatar'
@@ -30,6 +30,91 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
   const [speaking, setSpeaking] = useState({})
   const [participantMenu, setParticipantMenu] = useState(null)
   const [pinnedParticipant, setPinnedParticipant] = useState(null)
+  
+  // Draggable mini view state
+  const [miniPosition, setMiniPosition] = useState(() => {
+    const saved = localStorage.getItem('voltchat_mini_voice_position')
+    if (saved) {
+      try { return JSON.parse(saved) } catch { return null }
+    }
+    return null // null means use CSS default (bottom right)
+  })
+  const [isDragging, setIsDragging] = useState(false)
+  const miniRef = useRef(null)
+  const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 })
+  
+  // Save position to localStorage
+  useEffect(() => {
+    if (miniPosition) {
+      localStorage.setItem('voltchat_mini_voice_position', JSON.stringify(miniPosition))
+    }
+  }, [miniPosition])
+  
+  // Drag handlers
+  const handleDragStart = useCallback((e) => {
+    if (e.target.closest('.voice-mini-btn')) return // Don't drag when clicking buttons
+    
+    setIsDragging(true)
+    const clientX = e.clientX || e.touches?.[0]?.clientX || 0
+    const clientY = e.clientY || e.touches?.[0]?.clientY || 0
+    
+    dragStartRef.current = {
+      x: clientX,
+      y: clientY,
+      posX: miniPosition?.x ?? 0,
+      posY: miniPosition?.y ?? 0
+    }
+    
+    e.preventDefault()
+  }, [miniPosition])
+  
+  const handleDragMove = useCallback((e) => {
+    if (!isDragging) return
+    
+    const clientX = e.clientX || e.touches?.[0]?.clientX || 0
+    const clientY = e.clientY || e.touches?.[0]?.clientY || 0
+    
+    const deltaX = clientX - dragStartRef.current.x
+    const deltaY = clientY - dragStartRef.current.y
+    
+    const newX = dragStartRef.current.posX + deltaX
+    const newY = dragStartRef.current.posY + deltaY
+    
+    // Get mini element dimensions for boundary checking
+    const rect = miniRef.current?.getBoundingClientRect()
+    const width = rect?.width || 280
+    const height = rect?.height || 100
+    
+    // Constrain to viewport
+    const constrainedX = Math.max(0, Math.min(newX, window.innerWidth - width))
+    const constrainedY = Math.max(0, Math.min(newY, window.innerHeight - height))
+    
+    setMiniPosition({ x: constrainedX, y: constrainedY })
+  }, [isDragging])
+  
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false)
+  }, [])
+  
+  // Global mouse/touch events for dragging
+  useEffect(() => {
+    if (!isDragging) return
+    
+    const handleMove = (e) => handleDragMove(e)
+    const handleEnd = () => handleDragEnd()
+    
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleEnd)
+    window.addEventListener('touchmove', handleMove, { passive: false })
+    window.addEventListener('touchend', handleEnd)
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleEnd)
+      window.removeEventListener('touchmove', handleMove)
+      window.removeEventListener('touchend', handleEnd)
+    }
+  }, [isDragging, handleDragMove, handleDragEnd])
   
   // Speaking detection
   useEffect(() => {
@@ -129,8 +214,32 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
   const connectionStatus = getConnectionStatus()
   
   if (viewMode === 'mini') {
+    const isConnecting = connectionState === 'connecting' || !isConnected
+    
     return (
-      <div className="voice-channel-mini">
+      <div 
+        ref={miniRef}
+        className={`voice-channel-mini ${isDragging ? 'dragging' : ''} ${isConnecting ? 'connecting' : ''}`}
+        style={miniPosition ? { 
+          left: miniPosition.x, 
+          top: miniPosition.y, 
+          right: 'auto', 
+          bottom: 'auto' 
+        } : undefined}
+        onMouseDown={handleDragStart}
+        onTouchStart={handleDragStart}
+      >
+        {/* Drag handle */}
+        <div className="voice-mini-drag-handle" />
+        
+        {/* Connecting overlay */}
+        {isConnecting && (
+          <div className="voice-mini-connecting-overlay">
+            <div className="voice-mini-connecting-spinner" />
+            <span className="voice-mini-connecting-text">Connecting...</span>
+          </div>
+        )}
+        
         <div className="voice-mini-header">
           <span className="voice-mini-channel">{channel?.name}</span>
           <span className={`voice-mini-status ${connectionStatus.class}`}>

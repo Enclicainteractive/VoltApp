@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react'
 import InviteEmbed from './InviteEmbed'
-import LinkEmbed, { extractEmbedUrls } from './LinkEmbed'
+import LinkEmbed, { extractEmbedUrls, AGE_RESTRICTED_EMBEDS } from './LinkEmbed'
+import { useAuth } from '../contexts/AuthContext'
 import '../assets/styles/MarkdownMessage.css'
 
 // ─── Language map for syntax highlighting labels ───────────────────────────
@@ -475,6 +476,9 @@ function renderCustomEmojis(text, serverEmojis) {
 }
 
 const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionClick, serverEmojis }) => {
+  const { user } = useAuth()
+  const isAgeVerified = user?.ageVerification?.verified && user?.ageVerification?.category === 'adult'
+  
   if (!content) return null
 
   const mentionProps = { currentUserId, mentions, members, onMentionClick }
@@ -517,7 +521,7 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
         <InviteEmbed key={code} inviteCode={code} inviteUrl={url} />
       ))}
       {extractEmbedUrls(content).map((embed, i) => (
-        <LinkEmbed key={`link-embed-${i}-${embed.url}`} url={embed.url} type={embed.type} match={embed.match} />
+        <LinkEmbed key={`link-embed-${i}-${embed.url}`} url={embed.url} type={embed.type} match={embed.match} isAgeVerified={isAgeVerified} />
       ))}
     </span>
   )

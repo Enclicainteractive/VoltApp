@@ -9,6 +9,21 @@ import { soundService } from './services/soundService'
 // before any individual sound method is called.
 soundService.init()
 
+// Desktop app detection - inline implementation
+// Checks for Tauri desktop environment
+const isDesktopApp = () => {
+  if (typeof window === 'undefined') return false
+  return window.__TAURI__ !== undefined || 
+         window.tauri !== undefined ||
+         navigator.userAgent.includes('VoltDesktop')
+}
+
+// Set up desktop app environment detection
+if (isDesktopApp()) {
+  console.log('[VoltApp] Running in desktop mode')
+  window.__IS_DESKTOP_APP__ = true
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <App />
 )

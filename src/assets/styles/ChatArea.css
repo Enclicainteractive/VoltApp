@@ -10,6 +10,32 @@
   overflow: hidden;
 }
 
+/* Server-assigned chat background - fills entire area including header */
+.chat-area::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--server-background) center/cover no-repeat;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Ensure all content is above the background */
+.chat-area > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Text shadow for all chat text for better readability */
+.chat-area .message-content,
+.chat-area .message-author,
+.chat-area .channel-title,
+.chat-area .channel-info,
+.chat-area .typing-indicator,
+.chat-area .chat-header * {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 8px rgba(0, 0, 0, 0.3);
+}
+
 .chat-area-main {
   display: flex;
   flex-direction: column;
@@ -61,7 +87,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: var(--volt-bg-primary);
+  background: linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.6)), var(--server-banner) center/var(--server-banner-position, cover) no-repeat, var(--volt-bg-primary);
   flex-shrink: 0;
 }
 

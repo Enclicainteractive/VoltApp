@@ -2,6 +2,44 @@ const MAIN_SERVERS_KEY = 'voltchat_main_servers'
 const CURRENT_SERVER_KEY = 'voltchat_current_server'
 const CONFIG_VERSION = 3
 
+// Desktop app local server configuration
+const LOCAL_DESKTOP_SERVER = {
+  version: CONFIG_VERSION,
+  id: 'local-desktop',
+  name: 'Local Server',
+  host: 'localhost',
+  apiUrl: 'http://localhost:5000',
+  imageApiUrl: 'http://localhost:5000',
+  authUrl: 'http://localhost:5000/api/auth',
+  tokenUrl: 'http://localhost:5000/api/oauth/token',
+  revokeUrl: 'http://localhost:5000/api/oauth/revoke',
+  socketUrl: 'http://localhost:5000',
+  clientId: 'desktop_local',
+  website: 'http://localhost:5000',
+  icon: null,
+  isLocalDesktop: true
+}
+
+/**
+ * Check if running in a desktop app environment
+ */
+export function isDesktopApp() {
+  if (typeof window === 'undefined') return false;
+  return window.__IS_DESKTOP_APP__ === true ||
+         window.__TAURI__ !== undefined ||
+         window.tauri !== undefined;
+}
+
+/**
+ * Get the desktop server config if in desktop mode
+ */
+export function getDesktopServerConfig() {
+  if (isDesktopApp()) {
+    return LOCAL_DESKTOP_SERVER;
+  }
+  return null;
+}
+
 const migrateServerConfig = (stored) => {
   if (!stored) return null
   
@@ -139,6 +177,15 @@ export function storeServer(server) {
 }
 
 export function getStoredServer() {
+  // If running in desktop app, return the local desktop server config
+  if (isDesktopApp()) {
+    const desktopConfig = getDesktopServerConfig()
+    if (desktopConfig) {
+      console.log('[ServerConfig] Using desktop local server config')
+      return desktopConfig
+    }
+  }
+  
   try {
     const stored = localStorage.getItem(CURRENT_SERVER_KEY)
     if (stored) {

@@ -101,9 +101,11 @@ export const apiService = {
   deleteMessage: (messageId) => api.delete(`/messages/${messageId}`),
   
   // Direct Messages
-  getDirectMessages: () => api.get('/dms'),
+  getDirectMessages: (search) => api.get('/dms', { params: { search } }),
+  searchDMUsers: (query) => api.get('/dms/search', { params: { q: query } }),
   createDirectMessage: (userId) => api.post('/dms', { userId }),
   getDMMessages: (conversationId, params) => api.get(`/dms/${conversationId}/messages`, { params }),
+  searchDMMessages: (query) => api.get('/dms/search/messages', { params: { q: query } }),
   sendDMMessage: (conversationId, data) => api.post(`/dms/${conversationId}/messages`, data),
   editDMMessage: (conversationId, messageId, content) => api.put(`/dms/${conversationId}/messages/${messageId}`, { content }),
   deleteDMMessage: (conversationId, messageId) => api.delete(`/dms/${conversationId}/messages/${messageId}`),
@@ -187,6 +189,7 @@ export const apiService = {
   submitToDiscovery: (serverId, data) => api.post('/discovery/submit', { serverId, ...data }),
   removeFromDiscovery: (serverId) => api.delete(`/discovery/${serverId}`),
   getDiscoveryStatus: (serverId) => api.get(`/discovery/status/${serverId}`),
+  getDiscoveryServer: (serverId) => api.get(`/discovery/server/${serverId}`),
   getPendingSubmissions: () => api.get('/discovery/admin/pending'),
   approveSubmission: (submissionId) => api.post(`/discovery/admin/approve/${submissionId}`),
   rejectSubmission: (submissionId) => api.post(`/discovery/admin/reject/${submissionId}`),

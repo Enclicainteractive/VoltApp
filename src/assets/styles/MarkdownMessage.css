@@ -7,6 +7,15 @@
   word-wrap: break-word;
   overflow-wrap: break-word;
   white-space: pre-wrap;
+  display: inline;
+}
+
+/* Make embeds block-level to prevent inline flow issues */
+.markdown-message .link-embed,
+.markdown-message .invite-embed,
+.markdown-message .gif-embed {
+  display: block;
+  clear: both;
 }
 
 /* ── GIF embed ─────────────────────────────────────────────────────────────── */
@@ -127,6 +136,8 @@
   font-size: 13px;
   line-height: 1.5;
   max-width: 100%;
+  display: block;
+  clear: both;
 }
 
 .markdown-message .code-block-header {
@@ -227,6 +238,7 @@
   border-left: 4px solid #4e5058;
   color: var(--volt-text-primary);
   border-radius: 0 3px 3px 0;
+  display: block;
 }
 
 /* ── Headers ───────────────────────────────────────────────────────────────── */
@@ -239,6 +251,7 @@
   color: var(--volt-text-primary);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 4px;
+  display: block;
 }
 
 .markdown-message .md-h2 {
@@ -247,6 +260,7 @@
   line-height: 1.2;
   margin: 6px 0 3px;
   color: var(--volt-text-primary);
+  display: block;
 }
 
 .markdown-message .md-h3 {
@@ -255,6 +269,7 @@
   line-height: 1.2;
   margin: 4px 0 2px;
   color: var(--volt-text-primary);
+  display: block;
 }
 
 /* ── Lists ─────────────────────────────────────────────────────────────────── */
@@ -262,11 +277,13 @@
 .markdown-message .md-list {
   margin: 4px 0;
   padding-left: 20px;
+  display: block;
 }
 
 .markdown-message .md-list li {
   margin: 2px 0;
   line-height: 1.4;
+  display: list-item;
 }
 
 /* ── Horizontal rule ───────────────────────────────────────────────────────── */
@@ -275,6 +292,7 @@
   border: none;
   border-top: 2px solid rgba(255, 255, 255, 0.08);
   margin: 8px 0;
+  display: block;
 }
 
 /* ── Mention styles (shared, also used by MessageList/DMChat inline spans) ── */

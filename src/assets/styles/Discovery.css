@@ -287,8 +287,18 @@
   font-size: 12px;
 }
 
+.discovery-card-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.discovery-card-info {
+  padding: 12px;
+  border-radius: 8px;
+}
+
 .discovery-card-join {
-  width: 100%;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -300,6 +310,229 @@
 
 .discovery-card-join:hover {
   background: var(--volt-primary-hover);
+}
+
+/* Server Profile Modal */
+.server-profile-modal {
+  max-width: 600px;
+  width: 95%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--volt-bg-secondary);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  padding: 0;
+}
+
+.server-profile-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--volt-text-muted);
+}
+
+.server-profile-banner {
+  height: 180px;
+  position: relative;
+  overflow: hidden;
+}
+
+.server-profile-banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.server-profile-banner-placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.server-profile-banner .modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.server-profile-banner .modal-close:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.server-profile-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  padding: 0 24px;
+  margin-top: -40px;
+  position: relative;
+}
+
+.server-profile-icon {
+  border-radius: 50%;
+  padding: 4px;
+  background: var(--volt-bg-secondary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.server-profile-icon .avatar {
+  border-radius: 50%;
+}
+
+.server-profile-title {
+  flex: 1;
+  padding-bottom: 8px;
+}
+
+.server-profile-title h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+}
+
+.server-profile-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 12px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.server-profile-content {
+  padding: 24px;
+}
+
+.server-profile-description {
+  margin-bottom: 24px;
+}
+
+.server-profile-description h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--volt-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.server-profile-description p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--volt-text-primary);
+  line-height: 1.6;
+}
+
+.server-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 12px;
+}
+
+.server-profile-stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--volt-text-secondary);
+}
+
+.stat-online-dot {
+  width: 20px;
+  height: 20px;
+  background: var(--volt-success);
+  border-radius: 50%;
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.server-profile-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.server-profile-detail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--volt-text-secondary);
+}
+
+.server-profile-detail.verification {
+  color: var(--volt-warning);
+}
+
+.server-profile-actions {
+  display: flex;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--volt-border);
+}
+
+.server-profile-actions .btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 20px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+@media (max-width: 600px) {
+  .server-profile-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .server-profile-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-top: -50px;
+  }
+  
+  .server-profile-title {
+    text-align: center;
+    padding-bottom: 0;
+    margin-top: 12px;
+  }
 }
 
 .discovery-submit-modal {

@@ -532,13 +532,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [146.83]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.015, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -550,13 +550,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [220]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -568,13 +568,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [130.81]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.015, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -586,13 +586,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [246.94]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -760,23 +760,95 @@ class SoundService {
     })
   }
 
+  // 8-note ambient melodic ringtone - pentatonic scale with effects
+  // Notes: C5, D5, E5, G5, A5, C6, D6, E6 (pentatonic - naturally melodic)
   callRingtone() {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 2, 2)
-      const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+
+      // Create effects chain for ambient feel
+      const rev = this._reverb(ctx, 3, 2.5)  // Longer reverb for spaciousness
+      const dly = this._delay(ctx, 0.2, 0.35)  // Subtle delay for depth
+      const rg = this._gain(ctx, 0.12)  // Reverb wet gain
+      const dg = this._gain(ctx, 0.25)  // Delay wet gain
+
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
-      const notes = [440]
-      ;[0, 0.1, 0.2].forEach((dt) => {
-        notes.forEach((freq) => {
-          const g = this._ambient(ctx, freq, t + dt, 0.08, 0.015, 0.01)
-          g.connect(out); g.connect(dly.node); g.connect(rev)
-        })
+
+      // Pentatonic scale frequencies (C major pentatonic, ascending)
+      // C5=523.25, D5=587.33, E5=659.25, G5=783.99, A5=880, C6=1046.5, D6=1174.66, E6=1318.51
+      const notes = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51]
+
+      // Note duration and gap for clean separation
+      const noteDuration = 0.25
+      const noteGap = 0.08
+      const attack = 0.02
+
+      notes.forEach((freq, i) => {
+        const startTime = t + i * (noteDuration + noteGap)
+
+        // Main tone with soft sine wave
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+
+        osc.type = 'sine'
+        osc.frequency.value = freq
+
+        // Slight detune for warmth (two oscillators slightly detuned)
+        const osc2 = ctx.createOscillator()
+        const gain2 = ctx.createGain()
+        osc2.type = 'sine'
+        osc2.frequency.value = freq * 1.003  // 3 cents detune
+        osc2.detune.value = 5
+
+        // Envelope for each note - soft attack, gentle decay
+        const vol = 0.06
+        gain.gain.setValueAtTime(0.0001, startTime)
+        gain.gain.linearRampToValueAtTime(vol, startTime + attack)
+        gain.gain.setValueAtTime(vol, startTime + noteDuration * 0.6)
+        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + noteDuration)
+
+        gain2.gain.setValueAtTime(0.0001, startTime)
+        gain2.gain.linearRampToValueAtTime(vol * 0.5, startTime + attack)
+        gain2.gain.setValueAtTime(vol * 0.5, startTime + noteDuration * 0.6)
+        gain2.gain.exponentialRampToValueAtTime(0.0001, startTime + noteDuration)
+
+        // Connect oscillators
+        osc.connect(gain)
+        osc2.connect(gain2)
+
+        // Route to output and effects
+        gain.connect(out)
+        gain.connect(dly.node)
+        gain.connect(rev)
+        gain2.connect(out)
+        gain2.connect(dly.node)
+        gain2.connect(rev)
+
+        osc.start(startTime)
+        osc.stop(startTime + noteDuration + 0.1)
+        osc2.start(startTime)
+        osc2.stop(startTime + noteDuration + 0.1)
+
+        this._playingSources.push(osc, osc2)
       })
+
+      // Add a subtle low drone for warmth (C4)
+      const droneOsc = ctx.createOscillator()
+      const droneGain = ctx.createGain()
+      droneOsc.type = 'sine'
+      droneOsc.frequency.value = 261.63  // C4
+      droneGain.gain.setValueAtTime(0.0001, t)
+      droneGain.gain.linearRampToValueAtTime(0.015, t + 0.1)
+      droneGain.gain.setValueAtTime(0.015, t + notes.length * (noteDuration + noteGap) - 0.3)
+      droneGain.gain.exponentialRampToValueAtTime(0.0001, t + notes.length * (noteDuration + noteGap))
+      droneOsc.connect(droneGain)
+      droneGain.connect(out)
+      droneGain.connect(rev)
+      droneOsc.start(t)
+      droneOsc.stop(t + notes.length * (noteDuration + noteGap) + 0.5)
+      this._playingSources.push(droneOsc)
     })
   }
 

@@ -1,0 +1,258 @@
+.dm-call-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  background: linear-gradient(145deg, #2a2d36 0%, #1e2028 100%);
+  border-radius: 12px;
+  padding: 24px;
+  overflow: hidden;
+}
+
+/* Video area */
+.dm-call-video-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #000;
+}
+
+.dm-call-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dm-call-local-video-container {
+  position: absolute;
+  bottom: 100px;
+  right: 16px;
+  width: 150px;
+  height: 200px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  z-index: 10;
+}
+
+.dm-call-local-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* Mirror effect */
+}
+
+/* Avatar area (audio-only) */
+.dm-call-avatar-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 48px;
+  margin-bottom: 24px;
+  position: relative;
+  z-index: 2;
+}
+
+.dm-call-participant {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.dm-call-participant .participant-name {
+  font-size: 0.875rem;
+  color: #b9bbbe;
+  font-weight: 500;
+}
+
+.dm-call-participant.self .avatar.muted {
+  opacity: 0.6;
+}
+
+.dm-call-participant .mute-indicator {
+  color: #ed4245;
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: #2a2d36;
+  border-radius: 50%;
+  padding: 4px;
+}
+
+/* Call info */
+.dm-call-info {
+  text-align: center;
+  margin-bottom: 24px;
+  position: relative;
+  z-index: 2;
+}
+
+.dm-call-username {
+  margin: 0 0 8px 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.dm-call-status {
+  font-size: 0.875rem;
+  color: #b9bbbe;
+  font-weight: 500;
+}
+
+.dm-call-status.active {
+  color: #3ba55c;
+}
+
+.dm-call-status.connecting {
+  color: #faa61a;
+}
+
+.dm-call-status.ringing {
+  color: #5865f2;
+}
+
+/* Call controls */
+.dm-call-controls {
+  display: flex;
+  gap: 16px;
+  position: relative;
+  z-index: 2;
+}
+
+.dm-call-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 50%;
+  background: #36393f;
+  color: #b9bbbe;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dm-call-btn:hover {
+  background: #4f545c;
+  color: #fff;
+  transform: scale(1.05);
+}
+
+.dm-call-btn.active {
+  background: #ed4245;
+  color: #fff;
+}
+
+.dm-call-btn.active-video {
+  background: #5865f2;
+  color: #fff;
+}
+
+.dm-call-btn.end {
+  background: #ed4245;
+  color: #fff;
+}
+
+.dm-call-btn.end:hover {
+  background: #f04749;
+  transform: scale(1.1);
+}
+
+/* Connecting overlay */
+.dm-call-connecting-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 20;
+}
+
+.connecting-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #5865f2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Ringing overlay */
+.dm-call-ringing-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 20;
+}
+
+.ringing-animation {
+  animation: ring-bounce 0.5s ease-in-out infinite alternate;
+}
+
+.ringing-phone {
+  color: #3ba55c;
+}
+
+@keyframes ring-bounce {
+  from { transform: rotate(-15deg); }
+  to { transform: rotate(15deg); }
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .dm-call-view {
+    padding: 16px;
+    min-height: 250px;
+  }
+
+  .dm-call-avatar-area {
+    gap: 24px;
+  }
+
+  .dm-call-participant .avatar {
+    width: 60px !important;
+    height: 60px !important;
+  }
+
+  .dm-call-username {
+    font-size: 1.25rem;
+  }
+
+  .dm-call-btn {
+    width: 48px;
+    height: 48px;
+  }
+
+  .dm-call-local-video-container {
+    width: 100px;
+    height: 140px;
+    bottom: 80px;
+    right: 8px;
+  }
+}

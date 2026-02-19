@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Search, Plus, Globe, Users, ArrowRight, Filter, Star, X, Hash, Gamepad2, Music, Palette, FlaskConical, GraduationCap, Film, Trophy, Briefcase } from 'lucide-react'
+import { Search, Plus, Globe, Users, ArrowRight, Filter, Star, X, Hash, Gamepad2, Music, Palette, FlaskConical, GraduationCap, Film, Trophy, Briefcase, Calendar, Shield, Info, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
@@ -32,6 +32,9 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
   const [submitSuccess, setSubmitSuccess] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [submitCategory, setSubmitCategory] = useState('')
+  const [selectedServerProfile, setSelectedServerProfile] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileError, setProfileError] = useState('')
 
   useEffect(() => {
     loadCategories()
@@ -137,6 +140,41 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
     return true
   })
 
+  const handleOpenServerProfile = async (server) => {
+    setProfileLoading(true)
+    setProfileError('')
+    setSelectedServerProfile(null)
+    
+    try {
+      const response = await apiService.getDiscoveryServer(server.serverId)
+      setSelectedServerProfile(response.data)
+    } catch (error) {
+      console.error('Failed to load server profile:', error)
+      setProfileError('Failed to load server details')
+      // Show basic info from the card as fallback
+      setSelectedServerProfile({
+        ...server,
+        id: server.serverId,
+        description: server.description || 'No description available.',
+        memberCount: server.memberCount || 0,
+        onlineCount: 0,
+        channelCount: 0,
+        roleCount: 0
+      })
+    } finally {
+      setProfileLoading(false)
+    }
+  }
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Unknown'
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })
+  }
+
   return (
     <div className="discovery-page">
       <div className="discovery-header">
@@ -231,19 +269,149 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
                       </span>
                     )}
                   </div>
-                  <button 
-                    className="btn btn-primary discovery-card-join"
-                    onClick={() => handleJoinServer(server)}
-                  >
-                    Join Server
-                    <ArrowRight size={16} />
-                  </button>
+                  <div className="discovery-card-actions">
+                    <button 
+                      className="btn btn-secondary discovery-card-info"
+                      onClick={() => handleOpenServerProfile(server)}
+                      title="View Details"
+                    >
+                      <Info size={16} />
+                    </button>
+                    <button 
+                      className="btn btn-primary discovery-card-join"
+                      onClick={() => handleJoinServer(server)}
+                    >
+                      Join Server
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Server Profile Modal */}
+      {selectedServerProfile && (
+        <div className="modal-overlay" onClick={() => setSelectedServerProfile(null)}>
+          <div className="modal-content server-profile-modal" onClick={(e) => e.stopPropagation()}>
+            {profileLoading ? (
+              <div className="server-profile-loading">
+                <div className="loading-spinner"></div>
+                <p>Loading server details...</p>
+              </div>
+            ) : (
+              <>
+                <div className="server-profile-banner">
+                  {selectedServerProfile.bannerUrl ? (
+                    <img src={selectedServerProfile.bannerUrl} alt="" />
+                  ) : (
+                    <div className="server-profile-banner-placeholder" style={{ 
+                      background: selectedServerProfile.themeColor 
+                        ? `linear-gradient(135deg, ${selectedServerProfile.themeColor}, ${selectedServerProfile.themeColor}88)`
+                        : 'var(--volt-bg-tertiary)'
+                    }}></div>
+                  )}
+                  <button className="modal-close" onClick={() => setSelectedServerProfile(null)}>
+                    <X size={20} />
+                  </button>
+                </div>
+                
+                <div className="server-profile-header">
+                  <div className="server-profile-icon">
+                    <Avatar 
+                      src={selectedServerProfile.icon} 
+                      fallback={selectedServerProfile.name} 
+                      size={80} 
+                    />
+                  </div>
+                  <div className="server-profile-title">
+                    <h2>{selectedServerProfile.name}</h2>
+                    {selectedServerProfile.category && (
+                      <span className="server-profile-category">
+                        {(() => {
+                          const IconComponent = CATEGORY_ICONS[selectedServerProfile.category] || Globe
+                          return <IconComponent size={14} />
+                        })()}
+                        {categories.find(c => c.id === selectedServerProfile.category)?.name || selectedServerProfile.category}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="server-profile-content">
+                  {profileError && (
+                    <div className="alert alert-warning">{profileError}</div>
+                  )}
+                  
+                  <div className="server-profile-description">
+                    <h3>About</h3>
+                    <p>{selectedServerProfile.description || 'No description available.'}</p>
+                  </div>
+
+                  <div className="server-profile-stats">
+                    <div className="server-profile-stat">
+                      <Users size={20} />
+                      <div className="stat-info">
+                        <span className="stat-value">{selectedServerProfile.memberCount || 0}</span>
+                        <span className="stat-label">Members</span>
+                      </div>
+                    </div>
+                    <div className="server-profile-stat">
+                      <div className="stat-online-dot"></div>
+                      <div className="stat-info">
+                        <span className="stat-value">{selectedServerProfile.onlineCount || 0}</span>
+                        <span className="stat-label">Online</span>
+                      </div>
+                    </div>
+                    <div className="server-profile-stat">
+                      <Hash size={20} />
+                      <div className="stat-info">
+                        <span className="stat-value">{selectedServerProfile.channelCount || 0}</span>
+                        <span className="stat-label">Channels</span>
+                      </div>
+                    </div>
+                    <div className="server-profile-stat">
+                      <Shield size={20} />
+                      <div className="stat-info">
+                        <span className="stat-value">{selectedServerProfile.roleCount || 0}</span>
+                        <span className="stat-label">Roles</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="server-profile-details">
+                    <div className="server-profile-detail">
+                      <Calendar size={16} />
+                      <span>Created {formatDate(selectedServerProfile.createdAt)}</span>
+                    </div>
+                    {selectedServerProfile.verificationRequired && (
+                      <div className="server-profile-detail verification">
+                        <Shield size={16} />
+                        <span>Verification required to join</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="server-profile-actions">
+                    <button 
+                      className="btn btn-primary"
+                      onClick={() => {
+                        handleJoinServer(selectedServerProfile)
+                        setSelectedServerProfile(null)
+                      }}
+                    >
+                      Join Server
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {showSubmitModal && (
         <div className="modal-overlay" onClick={() => setShowSubmitModal(false)}>

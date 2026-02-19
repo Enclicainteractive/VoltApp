@@ -72,9 +72,9 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
     }
   }, [socket, connected])
 
-  const loadConversations = async () => {
+  const loadConversations = async (search = '') => {
     try {
-      const res = await apiService.getDirectMessages()
+      const res = await apiService.getDirectMessages(search)
       setConversations(res.data)
     } catch (err) {
       console.error('Failed to load conversations:', err)
@@ -84,6 +84,18 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
 
   const handleSearchUsers = async (query) => {
     setSearchQuery(query)
+    
+    // If not in new DM mode, filter existing conversations
+    if (!showNewDM) {
+      if (query.length >= 2) {
+        loadConversations(query)
+      } else if (query.length === 0) {
+        loadConversations()
+      }
+      return
+    }
+
+    // In new DM mode, search for users to start a conversation with
     if (query.length < 2) {
       setSearchUsers([])
       return
@@ -91,7 +103,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
 
     setSearching(true)
     try {
-      const res = await apiService.searchUsers(query)
+      const res = await apiService.searchDMUsers(query)
       setSearchUsers(res.data)
     } catch (err) {
       console.error('Failed to search users:', err)
@@ -140,10 +152,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
             placeholder="Find or start a conversation"
             className="input"
             value={searchQuery}
-            onChange={e => type === 'dms' && !showNewDM 
-              ? setSearchQuery(e.target.value)
-              : handleSearchUsers(e.target.value)
-            }
+            onChange={e => handleSearchUsers(e.target.value)}
           />
         </div>
       </div>

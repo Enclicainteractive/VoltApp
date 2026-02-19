@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { MessageSquare, Lock, Menu, ChevronLeft, Users } from 'lucide-react'
+import { MessageSquare, Lock, Menu, ChevronLeft, Users, Maximize2, Minimize2 } from 'lucide-react'
 import ServerSidebar from '../components/ServerSidebar'
 import ChannelSidebar from '../components/ChannelSidebar'
 import ChatArea from '../components/ChatArea'
@@ -1196,11 +1196,8 @@ const ChatPage = () => {
           <div className="voice-container-header">
             <span>{activeVoiceChannel.name}</span>
             <div className="voice-view-controls">
-              <button onClick={() => setContentCollapsed(!contentCollapsed)} title={contentCollapsed ? 'Show Chat' : 'Hide Chat'}>
-                {contentCollapsed ? '▶' : '◀'}
-              </button>
-              <button onClick={toggleVoiceViewMode} title={voiceViewMode === 'full' ? 'Minimize' : 'Maximize'}>
-                {voiceViewMode === 'full' ? '−' : '□'}
+              <button onClick={toggleVoiceViewMode} title={selectedVoiceChannelId ? 'Minimize' : 'Maximize'}>
+                {selectedVoiceChannelId ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               </button>
             </div>
           </div>

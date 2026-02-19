@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef } from 'react'
-import { Phone, Video, Search, Smile, Edit2, Trash2, Reply, X, FileText, MessageSquare, Check, ArrowDown, Copy, AtSign } from 'lucide-react'
+import { Phone, Video, Search, Smile, Edit2, Trash2, Reply, X, FileText, MessageSquare, Check, ArrowDown, Copy, AtSign, PhoneOff, VideoOff } from 'lucide-react'
 import { formatDistance } from 'date-fns'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useCall } from '../contexts/CallContext'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
 import Avatar from './Avatar'
@@ -10,6 +11,7 @@ import EmojiPicker from './EmojiPicker'
 import ChatInput from './ChatInput'
 import FileAttachment from './FileAttachment'
 import MarkdownMessage from './MarkdownMessage'
+import DMCallView from './DMCallView'
 import '../assets/styles/DMChat.css'
 import '../assets/styles/ChatInput.css'
 
@@ -18,6 +20,13 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥']
 const DMChat = ({ conversation, onClose, onShowProfile }) => {
   const { socket, connected } = useSocket()
   const { user } = useAuth()
+  const { 
+    activeCall, 
+    callStatus, 
+    initiateCall, 
+    endCall, 
+    formatDuration 
+  } = useCall()
 
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
@@ -35,6 +44,13 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [sendError, setSendError] = useState('')
+  
+  // Search state
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -358,6 +374,83 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
     )
   }
 
+  // ─── Search messages ─────────────────────────────────────────────────────
+
+  const handleSearchMessages = useCallback(async (query) => {
+    setSearchQuery(query)
+    if (query.length < 2) {
+      setSearchResults([])
+      return
+    }
+    
+    setSearching(true)
+    try {
+      // Search within current conversation's messages
+      const res = await apiService.getDMMessages(conversation.id, { search: query, limit: 100 })
+      setSearchResults(res.data || [])
+    } catch (err) {
+      console.error('[DMChat] Search failed:', err)
+    }
+    setSearching(false)
+  }, [conversation?.id])
+
+  const scrollToMessage = useCallback((messageId) => {
+    const messageEl = document.querySelector(`[data-message-id="${messageId}"]`)
+    if (messageEl) {
+      messageEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightedMessageId(messageId)
+      setTimeout(() => setHighlightedMessageId(null), 2000)
+    }
+    setShowSearch(false)
+    setSearchQuery('')
+    setSearchResults([])
+  }, [])
+
+  // ─── Render call log message ─────────────────────────────────────────────
+
+  const renderCallLogMessage = (message) => {
+    const { callLog } = message
+    if (!callLog) return null
+
+    const isOwn = callLog.callerId === user?.id
+    const otherUser = isOwn ? recipient : { id: callLog.callerId }
+    
+    let statusText = ''
+    let statusClass = ''
+    let icon = callLog.type === 'video' ? '📹' : '📞'
+    
+    switch (callLog.status) {
+      case 'missed':
+        statusText = 'Missed call'
+        statusClass = 'missed'
+        break
+      case 'declined':
+        statusText = 'Call declined'
+        statusClass = 'declined'
+        break
+      case 'cancelled':
+        statusText = 'Call cancelled'
+        statusClass = 'cancelled'
+        break
+      default:
+        const mins = Math.floor(callLog.duration / 60)
+        const secs = callLog.duration % 60
+        const durationStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+        statusText = `Call ended • ${durationStr}`
+        statusClass = 'ended'
+    }
+
+    return (
+      <div className={`dm-call-log-message ${statusClass}`}>
+        <span className="call-log-icon">{icon}</span>
+        <span className="call-log-status">{statusText}</span>
+        {callLog.type === 'video' && (
+          <span className="call-log-type" title="Video call">📹</span>
+        )}
+      </div>
+    )
+  }
+
   // ─── JSX ──────────────────────────────────────────────────────────────────
 
   return (
@@ -376,6 +469,11 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
         </div>
       )}
 
+      {/* Active Call View */}
+      {activeCall && activeCall.conversationId === conversation?.id && (
+        <DMCallView />
+      )}
+
       {/* Header */}
       <div className="dm-chat-header">
         <Avatar src={recipient?.avatar} fallback={recipient?.username} size={32} />
@@ -388,11 +486,93 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
           </span>
         </div>
         <div className="dm-header-actions">
-          <button className="icon-btn" title="Voice Call"><Phone size={20} /></button>
-          <button className="icon-btn" title="Video Call"><Video size={20} /></button>
-          <button className="icon-btn" title="Search"><Search size={20} /></button>
+          {activeCall && activeCall.conversationId === conversation?.id ? (
+            <>
+              <span className="dm-call-indicator">
+                {callStatus === 'active' ? formatDuration(activeCall.duration || 0) : callStatus}
+              </span>
+              <button className="icon-btn active-call" title="End Call" onClick={endCall}>
+                <PhoneOff size={20} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button 
+                className="icon-btn" 
+                title="Voice Call" 
+                onClick={() => initiateCall(recipient?.id || conversation.recipientId, conversation.id, 'audio')}
+                disabled={!recipient?.status || recipient.status === 'offline'}
+              >
+                <Phone size={20} />
+              </button>
+              <button 
+                className="icon-btn" 
+                title="Video Call" 
+                onClick={() => initiateCall(recipient?.id || conversation.recipientId, conversation.id, 'video')}
+                disabled={!recipient?.status || recipient.status === 'offline'}
+              >
+                <Video size={20} />
+              </button>
+            </>
+          )}
+          <button className="icon-btn" title="Search" onClick={() => setShowSearch(!showSearch)}><Search size={20} /></button>
         </div>
       </div>
+
+      {/* Search Panel */}
+      {showSearch && (
+        <div className="dm-search-panel">
+          <div className="dm-search-input-wrapper">
+            <Search size={16} />
+            <input
+              type="text"
+              className="dm-search-input"
+              placeholder="Search messages..."
+              value={searchQuery}
+              onChange={e => handleSearchMessages(e.target.value)}
+              autoFocus
+            />
+            {searchQuery && (
+              <button className="dm-search-clear" onClick={() => { setSearchQuery(''); setSearchResults([]) }}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          
+          {searching && (
+            <div className="dm-search-loading">Searching...</div>
+          )}
+          
+          {searchResults.length > 0 && (
+            <div className="dm-search-results">
+              <div className="dm-search-results-header">
+                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+              </div>
+              {searchResults.slice(0, 20).map(msg => (
+                <button
+                  key={msg.id}
+                  className="dm-search-result-item"
+                  onClick={() => scrollToMessage(msg.id)}
+                >
+                  <div className="dm-search-result-header">
+                    <span className="dm-search-result-author">{msg.username}</span>
+                    <span className="dm-search-result-time">
+                      {formatDistance(new Date(msg.timestamp), new Date(), { addSuffix: true })}
+                    </span>
+                  </div>
+                  <div className="dm-search-result-content">
+                    {msg.content?.slice(0, 100)}{msg.content?.length > 100 ? '...' : ''}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          
+          {searchQuery.length >= 2 && !searching && searchResults.length === 0 && (
+            <div className="dm-search-no-results">No messages found</div>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div
@@ -422,10 +602,13 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
               new Date(message.timestamp) - new Date(prev.timestamp) < 300000
             const isHovered = hoveredMessage === message.id
 
+            const isHighlighted = highlightedMessageId === message.id
+            
             return (
               <div
                 key={message.id}
-                className={`dm-message ${isOwn ? 'own' : ''} ${grouped ? 'grouped' : ''}`}
+                data-message-id={message.id}
+                className={`dm-message ${isOwn ? 'own' : ''} ${grouped ? 'grouped' : ''} ${isHighlighted ? 'highlighted' : ''}`}
                 onMouseEnter={() => setHoveredMessage(message.id)}
                 onMouseLeave={() => setHoveredMessage(null)}
               >
@@ -484,18 +667,25 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
                     </div>
                   ) : (
                     <div className="dm-message-body">
-                      <div className="dm-message-content">
-                        {renderMessageContent(message.content, message.mentions)}
-                        {message.edited && <span className="edited-indicator">(edited)</span>}
-                      </div>
+                      {/* Call log message */}
+                      {message.system && message.callLog ? (
+                        renderCallLogMessage(message)
+                      ) : (
+                        <>
+                          <div className="dm-message-content">
+                            {renderMessageContent(message.content, message.mentions)}
+                            {message.edited && <span className="edited-indicator">(edited)</span>}
+                          </div>
 
-                      {/* Attachments rendered below content, same as server chat */}
-                      {message.attachments?.length > 0 && (
-                        <div className="message-attachments">
-                          {message.attachments.map((att, i) => (
-                            <FileAttachment key={i} attachment={att} />
-                          ))}
-                        </div>
+                          {/* Attachments rendered below content, same as server chat */}
+                          {message.attachments?.length > 0 && (
+                            <div className="message-attachments">
+                              {message.attachments.map((att, i) => (
+                                <FileAttachment key={i} attachment={att} />
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {/* Reactions */}

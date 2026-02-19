@@ -75,6 +75,36 @@
 .dm-header-actions {
   display: flex;
   gap: 4px;
+  align-items: center;
+}
+
+.dm-call-indicator {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--volt-success);
+  padding: 4px 12px;
+  background: rgba(59, 165, 92, 0.15);
+  border-radius: 12px;
+  animation: call-pulse 2s ease-in-out infinite;
+}
+
+@keyframes call-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.icon-btn.active-call {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.icon-btn.active-call:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ── Messages area ───────────────────────────────────────────────────────── */
@@ -511,4 +541,206 @@
   padding: 1px 4px;
   border-radius: 4px;
   font-weight: 600;
+}
+
+/* ── Call log messages ───────────────────────────────────────────────────── */
+.dm-call-log-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--volt-bg-secondary);
+  border-radius: 8px;
+  border-left: 3px solid var(--volt-primary);
+  font-size: 14px;
+}
+
+.dm-call-log-message .call-log-icon {
+  font-size: 18px;
+}
+
+.dm-call-log-message .call-log-status {
+  color: var(--volt-text-primary);
+  font-weight: 500;
+}
+
+.dm-call-log-message .call-log-type {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* Call status variations */
+.dm-call-log-message.missed {
+  border-left-color: #ed4245;
+}
+
+.dm-call-log-message.missed .call-log-status {
+  color: #ed4245;
+}
+
+.dm-call-log-message.declined {
+  border-left-color: #faa61a;
+}
+
+.dm-call-log-message.declined .call-log-status {
+  color: #faa61a;
+}
+
+.dm-call-log-message.cancelled {
+  border-left-color: #747f8d;
+}
+
+.dm-call-log-message.cancelled .call-log-status {
+  color: #747f8d;
+}
+
+.dm-call-log-message.ended {
+  border-left-color: #3ba55c;
+}
+
+.dm-call-log-message.ended .call-log-status {
+  color: #3ba55c;
+}
+
+/* ── Search Panel ────────────────────────────────────────────────────────── */
+.dm-search-panel {
+  background: var(--volt-bg-secondary);
+  border-bottom: 1px solid var(--volt-border);
+  padding: 12px 16px;
+  flex-shrink: 0;
+}
+
+.dm-search-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--volt-bg-primary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.dm-search-input-wrapper:focus-within {
+  border-color: var(--volt-primary);
+}
+
+.dm-search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--volt-text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.dm-search-input::placeholder {
+  color: var(--volt-text-muted);
+}
+
+.dm-search-clear {
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-search-clear:hover {
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-primary);
+}
+
+.dm-search-loading {
+  padding: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--volt-text-muted);
+}
+
+.dm-search-results {
+  margin-top: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dm-search-results-header {
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--volt-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dm-search-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--volt-bg-primary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.dm-search-result-item:hover {
+  background: var(--volt-hover);
+  border-color: var(--volt-primary);
+}
+
+.dm-search-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dm-search-result-author {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+}
+
+.dm-search-result-time {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+}
+
+.dm-search-result-content {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-search-no-results {
+  padding: 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--volt-text-muted);
+}
+
+/* ── Highlighted message (from search) ───────────────────────────────────── */
+.dm-message.highlighted {
+  background: rgba(99, 102, 241, 0.15);
+  border-left: 3px solid var(--volt-primary);
+  animation: highlight-fade 2s ease-out forwards;
+}
+
+@keyframes highlight-fade {
+  0% {
+    background: rgba(99, 102, 241, 0.3);
+  }
+  100% {
+    background: transparent;
+  }
 }
