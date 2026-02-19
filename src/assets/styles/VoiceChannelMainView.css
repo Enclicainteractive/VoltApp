@@ -28,6 +28,9 @@
   font-size: 16px;
   font-weight: 700;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vc-active-badge {
@@ -38,11 +41,98 @@
   border: 1px solid rgba(34,197,94,0.3);
   border-radius: 20px;
   padding: 2px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .vc-main-actions {
   display: flex;
   gap: 8px;
+}
+
+.vc-main-actions .btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Voice Controls ── */
+.vc-main-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--volt-bg-tertiary);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.vc-controls-group {
+  display: flex;
+  gap: 8px;
+}
+
+.vc-control-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vc-control-btn:hover {
+  background: var(--volt-border);
+}
+
+.vc-control-btn.active {
+  background: var(--volt-danger);
+  color: white;
+}
+
+.vc-control-btn.active.danger {
+  background: var(--volt-danger);
+}
+
+.vc-control-btn:not(.active):hover {
+  background: var(--volt-bg-quaternary);
+}
+
+.vc-controls-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vc-participant-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.vc-info-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.vc-info-btn:hover {
+  background: var(--volt-border);
+  color: var(--volt-text-primary);
 }
 
 /* ── Body ── */
@@ -115,6 +205,26 @@
 
 .vc-tile.muted {
   opacity: 0.7;
+}
+
+.vc-tile.connecting {
+  opacity: 0.6;
+}
+
+.vc-tile-connecting-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.4);
+  color: var(--volt-warning);
+}
+
+.vc-tile-pending {
+  font-size: 11px;
+  color: var(--volt-warning);
+  font-style: italic;
 }
 
 /* Video inside tile */
@@ -270,4 +380,87 @@
   background: var(--volt-bg-tertiary);
   border-radius: 0 0 6px 6px;
   margin-top: -2px;
+}
+
+.vc-hint {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+  margin-top: 8px;
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .vc-main-view {
+    padding-bottom: var(--mobile-nav-height);
+  }
+
+  .vc-main-header {
+    padding: 0 12px;
+    height: 48px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .vc-main-title {
+    font-size: 14px;
+  }
+
+  .vc-active-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .vc-main-actions .btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .vc-main-controls {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .vc-controls-group {
+    order: 2;
+  }
+
+  .vc-controls-info {
+    order: 1;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .vc-main-body {
+    padding: 16px;
+  }
+
+  .vc-participants-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+
+  .vc-tile:not(.has-video) {
+    min-height: 100px;
+  }
+
+  .vc-tile-avatar .avatar {
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  .vc-empty {
+    padding: 40px 20px;
+  }
+
+  .vc-empty p {
+    font-size: 14px;
+  }
+
+  .vc-empty .btn {
+    margin-top: 12px;
+  }
 }

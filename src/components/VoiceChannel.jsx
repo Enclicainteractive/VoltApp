@@ -162,13 +162,43 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     return (user?.id || '') < remoteId
   }, [user?.id])
 
-  // Multi-peer connection management for stability
+  // Tiered connection management helpers for scaling to 100 peers
+  const getTierConfig = useCallback(() => {
+    const peerCount = Object.keys(peerConnections.current).length + connectionQueueRef.current.length
+    if (peerCount <= TIER_CONFIG.small.maxPeers) return TIER_CONFIG.small
+    if (peerCount <= TIER_CONFIG.medium.maxPeers) return TIER_CONFIG.medium
+    if (peerCount <= TIER_CONFIG.large.maxPeers) return TIER_CONFIG.large
+    return TIER_CONFIG.massive
+  }, [])
+
+  const canAcceptPeer = useCallback((peerId) => {
+    const currentPeers = Object.keys(peerConnections.current).length
+    if (priorityPeersRef.current.has(peerId)) return true
+    if (currentPeers >= MAX_CONNECTED_PEERS) {
+      console.log(`[WebRTC] Peer limit reached (${currentPeers}/${MAX_CONNECTED_PEERS}), rejecting ${peerId}`)
+      return false
+    }
+    return true
+  }, [])
+
+  // Multi-peer connection management for stability - supports up to 100 peers
   const connectionQueueRef = useRef([])      // Queue of peer IDs waiting to connect
   const isProcessingQueueRef = useRef(false) // Whether currently processing queue
   const activeNegotiationsRef = useRef(0)    // Current active negotiations
   const connectionCooldownsRef = useRef(new Map()) // peerId -> timestamp of last attempt
-  const MAX_CONCURRENT_CONNECTIONS = 2
-  const CONNECTION_COOLDOWN_MS = 1500
+  const isMassJoinInProgressRef = useRef(false) // Flag for batch processing
+  const pendingPeerCountRef = useRef(0)      // Track expected peer count during mass joins
+
+  // Tiered configuration for scaling to 100+ peers
+  const TIER_CONFIG = {
+    small: { maxPeers: 10, concurrent: 2, cooldown: 1000, staggerBase: 400, staggerPerPeer: 300, batchSize: 10 },
+    medium: { maxPeers: 25, concurrent: 2, cooldown: 1500, staggerBase: 800, staggerPerPeer: 500, batchSize: 15 },
+    large: { maxPeers: 50, concurrent: 1, cooldown: 2000, staggerBase: 1500, staggerPerPeer: 700, batchSize: 20 },
+    massive: { maxPeers: 100, concurrent: 1, cooldown: 3000, staggerBase: 2500, staggerPerPeer: 900, batchSize: 25 }
+  }
+
+  const MAX_CONNECTED_PEERS = 100
+  const priorityPeersRef = useRef(new Set()) // High priority peer IDs (speakers)
 
   const createPeerConnection = useCallback((targetUserId) => {
     // Destroy stale closed/failed connection before creating a new one
@@ -508,12 +538,15 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     createPeerConnection(targetUserId)
   }, [createPeerConnection, user?.id])
 
-  // Process the connection queue with limited concurrency for stability
+  // Process the connection queue with tiered concurrency for scaling to 100 peers
   const processConnectionQueue = useCallback(async () => {
     if (isProcessingQueueRef.current) return
     isProcessingQueueRef.current = true
 
-    while (connectionQueueRef.current.length > 0 && activeNegotiationsRef.current < MAX_CONCURRENT_CONNECTIONS) {
+    const tier = getTierConfig()
+    const maxConcurrent = tier.concurrent
+
+    while (connectionQueueRef.current.length > 0 && activeNegotiationsRef.current < maxConcurrent) {
       const targetUserId = connectionQueueRef.current.shift()
 
       // Double-check state before connecting
@@ -529,7 +562,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       activeNegotiationsRef.current++
       connectionCooldownsRef.current.set(targetUserId, Date.now())
 
-      console.log(`[WebRTC] Processing connection to ${targetUserId} (${activeNegotiationsRef.current}/${MAX_CONCURRENT_CONNECTIONS} active negotiations)`)
+      console.log(`[WebRTC] Processing connection to ${targetUserId} (${activeNegotiationsRef.current}/${maxConcurrent} active, tier: ${tier.maxPeers} max)`)
 
       try {
         initiateCall(targetUserId)
@@ -545,9 +578,9 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         activeNegotiationsRef.current = Math.max(0, activeNegotiationsRef.current - 1)
       }
 
-      // Small delay between starting connections to prevent flooding
+      // Tiered delay between starting connections to prevent flooding
       if (connectionQueueRef.current.length > 0) {
-        await new Promise(r => setTimeout(r, 300))
+        await new Promise(r => setTimeout(r, tier.staggerPerPeer))
       }
     }
 
@@ -555,17 +588,70 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
 
     // If queue still has items, schedule another processing round
     if (connectionQueueRef.current.length > 0) {
-      setTimeout(() => processConnectionQueue(), 800)
+      setTimeout(() => processConnectionQueue(), tier.staggerBase)
     }
-  }, [initiateCall])
+  }, [initiateCall, getTierConfig])
 
-  // Queue a connection to prevent overwhelming the system with simultaneous negotiations
+  // Process large groups in batches to prevent overwhelming the system
+  const processPeerBatches = useCallback((peerIds, tier) => {
+    const batchSize = tier.batchSize
+    const batches = []
+    
+    // Split into batches
+    for (let i = 0; i < peerIds.length; i += batchSize) {
+      batches.push(peerIds.slice(i, i + batchSize))
+    }
+    
+    console.log(`[WebRTC] Split ${peerIds.length} peers into ${batches.length} batches of ~${batchSize}`)
+    
+    // Process batches with delays
+    batches.forEach((batch, batchIndex) => {
+      const batchDelay = batchIndex * 6000 // 6 seconds between batches
+      
+      setTimeout(() => {
+        console.log(`[WebRTC] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} peers)`)
+        
+        batch.forEach((peerId, index) => {
+          // Skip if at capacity
+          if (!canAcceptPeer(peerId)) return
+          
+          // Skip if already connected
+          const existing = peerConnections.current[peerId]
+          if (existing) {
+            const s = existing.connectionState
+            if (s === 'connected' || s === 'connecting' || s === 'completed') return
+          }
+          
+          const delay = tier.staggerBase + (index * tier.staggerPerPeer) + (Math.random() * 200)
+          setTimeout(() => queueConnection(peerId), delay)
+        })
+        
+        // Mark mass join complete after last batch
+        if (batchIndex === batches.length - 1) {
+          setTimeout(() => {
+            isMassJoinInProgressRef.current = false
+            pendingPeerCountRef.current = 0
+            console.log('[WebRTC] Mass join processing complete')
+          }, 12000)
+        }
+      }, batchDelay)
+    })
+  }, [canAcceptPeer, queueConnection])
+
+  // Queue a connection with tiered cooldown management for 100+ peer support
   const queueConnection = useCallback((targetUserId) => {
     if (!targetUserId || targetUserId === user?.id) return
 
+    // Check capacity
+    if (!canAcceptPeer(targetUserId)) {
+      console.log(`[WebRTC] Cannot queue ${targetUserId}: at capacity`)
+      return
+    }
+
     // Check cooldown to prevent rapid reconnection attempts
+    const tier = getTierConfig()
     const lastAttempt = connectionCooldownsRef.current.get(targetUserId)
-    if (lastAttempt && Date.now() - lastAttempt < CONNECTION_COOLDOWN_MS) {
+    if (lastAttempt && Date.now() - lastAttempt < tier.cooldown) {
       console.log(`[WebRTC] Connection to ${targetUserId} on cooldown, skipping`)
       return
     }
@@ -589,7 +675,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     connectionQueueRef.current.push(targetUserId)
     console.log(`[WebRTC] Queued connection to ${targetUserId} (queue length: ${connectionQueueRef.current.length})`)
     processConnectionQueue()
-  }, [user?.id, processConnectionQueue])
+  }, [user?.id, processConnectionQueue, canAcceptPeer, getTierConfig])
 
   useEffect(() => {
     if (!socket || !channel) return
@@ -772,10 +858,27 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       console.log(`[WebRTC] Received participants list: ${peerIds.length} peers —`, peerIds)
       setParticipants(data.participants || [])
       
-      // Use longer staggered delays for multiple peers to prevent offer flooding
-      // Base delay increases with peer count to spread out the load
-      const baseDelay = peerIds.length > 3 ? 1000 : 600
-      const staggerMs = peerIds.length > 3 ? 800 : 400
+      // Detect mass join scenario (>10 peers joining at once)
+      if (peerIds.length > 10) {
+        isMassJoinInProgressRef.current = true
+        pendingPeerCountRef.current = peerIds.length
+        console.log(`[WebRTC] Mass join detected: ${peerIds.length} peers. Using batch processing.`)
+      }
+      
+      // Get tier configuration based on peer count
+      const tier = getTierConfig()
+      console.log(`[WebRTC] Using tier config: concurrent=${tier.concurrent}, cooldown=${tier.cooldown}ms`)
+      
+      // For massive groups, process in batches
+      if (peerIds.length > tier.batchSize) {
+        console.log(`[WebRTC] Large group (${peerIds.length} peers), processing in batches of ${tier.batchSize}`)
+        processPeerBatches(peerIds, tier)
+        return
+      }
+      
+      // Use tiered staggered delays
+      const baseDelay = tier.staggerBase
+      const staggerMs = tier.staggerPerPeer
       
       peerIds.forEach((peerId, index) => {
         // Skip if already connected
@@ -784,6 +887,9 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
           const s = existing.connectionState
           if (s === 'connected' || s === 'connecting' || s === 'completed') return
         }
+        
+        // Skip if at capacity
+        if (!canAcceptPeer(peerId)) return
         
         // Stagger connections with increasing delays
         const delay = baseDelay + (index * staggerMs) + (Math.random() * 300)
@@ -799,11 +905,18 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       })
       if (userInfo.id !== user.id) {
         soundService.userJoined()
-        // Longer delay for new joiners to ensure their client is fully ready
-        // This prevents the "glitching" when multiple people join simultaneously
+        
+        // Check capacity before connecting
+        if (!canAcceptPeer(userInfo.id)) {
+          console.log(`[WebRTC] Cannot accept peer ${userInfo.id}: at capacity`)
+          return
+        }
+        
+        // Use tiered delays based on current peer count
+        const tier = getTierConfig()
         const peerCount = Object.keys(peerConnections.current).length
-        const delay = 1000 + (peerCount * 250) + (Math.random() * 400)
-        console.log(`[WebRTC] Scheduling connection to new peer ${userInfo.id} in ${Math.round(delay)}ms (we have ${peerCount} existing peers)`)
+        const delay = tier.staggerBase + (peerCount * tier.staggerPerPeer * 0.5) + (Math.random() * 400)
+        console.log(`[WebRTC] Scheduling connection to new peer ${userInfo.id} in ${Math.round(delay)}ms (we have ${peerCount} existing peers, tier: ${tier.maxPeers} max)`)
         setTimeout(() => queueConnection(userInfo.id), delay)
       }
     })

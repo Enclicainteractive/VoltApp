@@ -1034,6 +1034,11 @@ const ChatPage = () => {
               }
               onJoin={() => handleChannelChange(selectedVoiceChannelId, true)}
               onLeave={handleLeaveVoice}
+              isMuted={isMuted}
+              isDeafened={isDeafened}
+              onToggleMute={() => setIsMuted(!isMuted)}
+              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
+              onShowConnectionInfo={() => setShowVoiceInfo(true)}
             />
           ) : channelId && channelId !== 'null' ? (
             <>

@@ -432,4 +432,8 @@
     font-weight: 600;
     color: var(--volt-text-primary);
   }
+
+  .voice-container {
+    display: none !important;
+  }
 }
