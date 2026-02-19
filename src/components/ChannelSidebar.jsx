@@ -1,36 +1,120 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { Hash, Volume2, Settings, ChevronDown, Plus, UserPlus, Lock, Mic, MicOff, Headphones, Edit2, Trash2, Bell, BellOff, Copy } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Hash, Volume2, Settings, ChevronDown, Plus, UserPlus, Lock, Mic, MicOff, Headphones, Edit2, Trash2, Copy, Folder, FolderOpen, GripVertical } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
 import { soundService } from '../services/soundService'
+import { apiService } from '../services/apiService'
+import { useAppStore } from '../store/useAppStore'
 import CreateChannelModal from './modals/CreateChannelModal'
+import CreateCategoryModal from './modals/CreateCategoryModal'
 import ChannelSettingsModal from './modals/ChannelSettingsModal'
+import CategorySettingsModal from './modals/CategorySettingsModal'
 import ContextMenu from './ContextMenu'
 import StatusSelector from './StatusSelector'
 import Avatar from './Avatar'
 import '../assets/styles/ChannelSidebar.css'
 
-const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChannelId, onChannelChange, onCreateChannel, onOpenServerSettings, onOpenSettings, onVoicePreview, activeVoiceChannel, voiceParticipantsByChannel = {}, onDeleteChannel, onRefreshChannels, onInvite, isMuted, isDeafened, onToggleMute, onToggleDeafen, leavingVoiceChannelId }) => {
-  const { user, logout } = useAuth()
-  const { socket, connected } = useSocket()
+const ChannelSidebar = ({ 
+  server, 
+  channels, 
+  categories: categoriesProp, 
+  currentChannelId, 
+  selectedVoiceChannelId, 
+  onChannelChange, 
+  onCreateChannel, 
+  onOpenServerSettings, 
+  onOpenSettings, 
+  onVoicePreview, 
+  activeVoiceChannel, 
+  voiceParticipantsByChannel = {}, 
+  onDeleteChannel, 
+  onRefreshChannels, 
+  onInvite, 
+  leavingVoiceChannelId, 
+  onLeaveVoice, 
+  onReturnToVoice, 
+  isMuted = false, 
+  isDeafened = false, 
+  onToggleMute, 
+  onToggleDeafen 
+}) => {
+  const { user } = useAuth()
+  const { socket, connected, serverUpdates } = useSocket()
+  const { setCategories: setStoreCategories } = useAppStore()
+  
+  // Combine categories from props with real-time updates
+  const categories = React.useMemo(() => {
+    const baseCategories = categoriesProp || []
+    const serverUpdate = serverUpdates[server?.id]
+    if (serverUpdate?.categories) {
+      // Merge base categories with real-time updates
+      const merged = [...baseCategories]
+      serverUpdate.categories.forEach(cat => {
+        const existingIndex = merged.findIndex(c => c.id === cat.id)
+        if (existingIndex >= 0) {
+          merged[existingIndex] = cat
+        } else {
+          merged.push(cat)
+        }
+      })
+      return merged
+    }
+    return baseCategories
+  }, [categoriesProp, serverUpdates, server?.id])
+  
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false)
   const [showChannelSettings, setShowChannelSettings] = useState(null)
-  const [expandedCategories, setExpandedCategories] = useState({ text: true, voice: true })
+  const [showCategorySettings, setShowCategorySettings] = useState(null)
+  const [expandedCategories, setExpandedCategories] = useState({})
   const [showServerMenu, setShowServerMenu] = useState(false)
   const [userStatus, setUserStatus] = useState({ status: 'online', customStatus: '' })
   const [contextMenu, setContextMenu] = useState(null)
-  // Local participant map for channels the user is NOT currently in
   const [sidebarParticipants, setSidebarParticipants] = useState({})
-  const clickTimeoutRef = useRef(null)
+  const [draggedChannel, setDraggedChannel] = useState(null)
+  const [dragOverCategory, setDragOverCategory] = useState(null)
 
-  // Fetch participants for all voice channels on mount / channel list change,
-  // and keep them in sync via voice:user-joined / voice:user-left events.
+  // Fetch categories when server changes (only if not provided via props)
+  useEffect(() => {
+    if (!server?.id) return
+    
+    // Skip fetching if categories are provided via props (even if empty array)
+    if (categoriesProp !== undefined) {
+      const initialExpanded = {}
+      categoriesProp.forEach(cat => {
+        initialExpanded[cat.id] = true
+      })
+      initialExpanded['uncategorized'] = true
+      setExpandedCategories(initialExpanded)
+      return
+    }
+    
+    const fetchCategories = async () => {
+      try {
+        const response = await apiService.getCategories(server.id)
+        setStoreCategories(response.data || [])
+        
+        // Initialize expanded state for all categories
+        const initialExpanded = {}
+        response.data?.forEach(cat => {
+          initialExpanded[cat.id] = true
+        })
+        initialExpanded['uncategorized'] = true
+        setExpandedCategories(initialExpanded)
+      } catch (err) {
+        console.error('Failed to fetch categories:', err)
+        setStoreCategories([])
+      }
+    }
+    
+    fetchCategories()
+  }, [server?.id, categoriesProp])
+
+  // Voice channel participants handling
   useEffect(() => {
     if (!socket || !connected) return
 
     const voiceChannels = channels.filter(c => c.type === 'voice')
-
-    // Request initial participant lists for every voice channel
     voiceChannels.forEach(ch => {
       socket.emit('voice:get-participants', { channelId: ch.id })
     })
@@ -43,7 +127,6 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
     }
 
     const handleUserJoined = (userInfo) => {
-      // userInfo should carry channelId from the server event
       const cid = userInfo.channelId
       if (!cid) return
       setSidebarParticipants(prev => {
@@ -72,37 +155,30 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
       })
     }
 
-    socket.on('voice:participants',   handleParticipants)
-    socket.on('voice:user-joined',    handleUserJoined)
-    socket.on('voice:user-left',      handleUserLeft)
-    socket.on('voice:user-updated',   handleUserUpdated)
+    socket.on('voice:participants', handleParticipants)
+    socket.on('voice:user-joined', handleUserJoined)
+    socket.on('voice:user-left', handleUserLeft)
+    socket.on('voice:user-updated', handleUserUpdated)
 
     return () => {
-      socket.off('voice:participants',  handleParticipants)
-      socket.off('voice:user-joined',   handleUserJoined)
-      socket.off('voice:user-left',     handleUserLeft)
-      socket.off('voice:user-updated',  handleUserUpdated)
+      socket.off('voice:participants', handleParticipants)
+      socket.off('voice:user-joined', handleUserJoined)
+      socket.off('voice:user-left', handleUserLeft)
+      socket.off('voice:user-updated', handleUserUpdated)
     }
   }, [socket, connected, channels])
 
-  // When the local user leaves a channel, immediately clear it from sidebarParticipants
-  // and re-fetch the live list from the server (which no longer includes us).
   useEffect(() => {
     if (!leavingVoiceChannelId || !socket || !connected) return
-    // Optimistically clear so the sidebar shows empty instantly
     setSidebarParticipants(prev => ({ ...prev, [leavingVoiceChannelId]: [] }))
-    // Then re-fetch the authoritative list (server-side will have removed us by now)
     const refetch = () => {
       socket.emit('voice:get-participants', { channelId: leavingVoiceChannelId })
     }
-    // Small delay to let the server process the leave before we ask
     const timer = setTimeout(refetch, 600)
     return () => clearTimeout(timer)
   }, [leavingVoiceChannelId, socket, connected])
 
-  // Merge local sidebar data with the live data from the active voice channel
   const getMergedParticipants = (channelId) => {
-    // Active channel: prefer the live data passed down from VoiceChannel
     if (activeVoiceChannel?.id === channelId && voiceParticipantsByChannel[channelId]) {
       return voiceParticipantsByChannel[channelId]
     }
@@ -153,24 +229,36 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
     }
   }
 
-  const textChannels = channels.filter(c => c.type === 'text')
-  const voiceChannels = channels.filter(c => c.type === 'voice')
-
-  const toggleCategory = (category) => {
-    setExpandedCategories(prev => ({ ...prev, [category]: !prev[category] }))
+  const toggleCategory = (categoryId) => {
+    setExpandedCategories(prev => ({ ...prev, [categoryId]: !prev[categoryId] }))
   }
 
   const handleChannelClick = (channel, isVoice) => {
     if (isVoice) {
-      // Single click = join / select the voice channel
+      onVoicePreview?.(channel)
       onChannelChange(channel.id, true)
     } else {
       onChannelChange(channel.id, false)
     }
   }
 
+  const handleChannelDoubleClick = (channel, isVoice) => {
+    if (isVoice) {
+      onChannelChange(channel.id, true)
+      onVoicePreview?.(channel, true)
+    }
+  }
+
+  const handleJoinVoice = (channel, e) => {
+    e?.stopPropagation()
+    onChannelChange(channel.id, true)
+    onVoicePreview?.(channel, true)
+  }
+
   const handleChannelContextMenu = (e, channel) => {
     e.preventDefault()
+    e.stopPropagation()
+    
     const items = [
       {
         icon: <Edit2 size={16} />,
@@ -181,7 +269,20 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
       {
         icon: <Copy size={16} />,
         label: 'Copy Channel ID',
-        onClick: () => navigator.clipboard.writeText(channel.id)
+        onClick: async () => {
+          try {
+            await navigator.clipboard.writeText(channel.id)
+            console.log('[ChannelSidebar] Copied channel ID:', channel.id)
+          } catch (err) {
+            console.error('[ChannelSidebar] Failed to copy channel ID:', err)
+            const textArea = document.createElement('textarea')
+            textArea.value = channel.id
+            document.body.appendChild(textArea)
+            textArea.select()
+            document.execCommand('copy')
+            document.body.removeChild(textArea)
+          }
+        }
       },
       { type: 'separator' },
       {
@@ -200,7 +301,229 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
         onClick: () => onRefreshChannels?.()
       }
     ]
-    setContextMenu({ x: e.clientX, y: e.clientY, items })
+    
+    // Force close any existing menu first, then open new one
+    setContextMenu(null)
+    requestAnimationFrame(() => {
+      setContextMenu({ x: e.clientX, y: e.clientY, items })
+    })
+  }
+
+  const handleCategoryContextMenu = (e, category) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const isUncategorized = category.id === 'uncategorized'
+    
+    const items = [
+      {
+        icon: <Edit2 size={16} />,
+        label: 'Edit Category',
+        onClick: () => setShowCategorySettings(category),
+        disabled: !isAdmin || isUncategorized
+      },
+      {
+        icon: <Plus size={16} />,
+        label: 'Create Channel',
+        onClick: () => setShowCreateModal(true),
+        disabled: !isAdmin
+      },
+      { type: 'separator' },
+      {
+        icon: <Trash2 size={16} />,
+        label: 'Delete Category',
+        onClick: () => {
+          if (confirm(`Delete category "${category.name}"? Channels will be moved to "No Category".`)) {
+            handleDeleteCategory(category.id)
+          }
+        },
+        danger: true,
+        disabled: !isAdmin || isUncategorized
+      }
+    ]
+    
+    // Force close any existing menu first, then open new one
+    setContextMenu(null)
+    requestAnimationFrame(() => {
+      setContextMenu({ x: e.clientX, y: e.clientY, items })
+    })
+  }
+
+  const handleDeleteCategory = async (categoryId) => {
+    try {
+      await apiService.deleteCategory(categoryId)
+      setCategories(categories.filter(c => c.id !== categoryId))
+    } catch (err) {
+      console.error('Failed to delete category:', err)
+    }
+  }
+
+  // Group channels by category
+  const channelsByCategory = () => {
+    const grouped = {}
+    
+    // Initialize with all categories
+    categories.forEach(cat => {
+      grouped[cat.id] = { category: cat, channels: [] }
+    })
+    
+    // Add uncategorized group
+    grouped['uncategorized'] = { category: { id: 'uncategorized', name: 'No Category' }, channels: [] }
+    
+    // Sort channels into groups
+    channels.forEach(channel => {
+      // categoryId can be null, undefined, or a category ID
+      const catId = channel.categoryId != null ? channel.categoryId : 'uncategorized'
+      if (grouped[catId]) {
+        grouped[catId].channels.push(channel)
+      } else {
+        // Category doesn't exist anymore, put in uncategorized
+        grouped['uncategorized'].channels.push(channel)
+      }
+    })
+    
+    // Sort categories by position
+    const sortedCategoryIds = categories
+      .sort((a, b) => (a.position || 0) - (b.position || 0))
+      .map(c => c.id)
+    
+    // Only add uncategorized if there are channels in it
+    const uncategorizedChannels = grouped['uncategorized']?.channels || []
+    if (uncategorizedChannels.length > 0) {
+      sortedCategoryIds.push('uncategorized')
+    }
+    
+    return { grouped, order: sortedCategoryIds }
+  }
+
+  const { grouped: groupedChannels, order: categoryOrder } = channelsByCategory()
+
+  // Render channel item
+  const renderChannel = (channel) => {
+    const isVoice = channel.type === 'voice'
+    
+    if (isVoice) {
+      const participants = getMergedParticipants(channel.id)
+      const isConnected = activeVoiceChannel?.id === channel.id
+      const isSelected = selectedVoiceChannelId === channel.id
+      
+      return (
+        <div key={channel.id} className="voice-channel-group">
+          <button
+            className={`channel-item voice ${isConnected ? 'connected' : ''} ${isSelected ? 'selected' : ''}`}
+            onClick={() => handleChannelClick(channel, true)}
+            onDoubleClick={() => handleChannelDoubleClick(channel, true)}
+            onContextMenu={(e) => handleChannelContextMenu(e, channel)}
+            draggable={isAdmin}
+            onDragStart={() => setDraggedChannel(channel)}
+            onDragEnd={() => {
+              setDraggedChannel(null)
+              setDragOverCategory(null)
+            }}
+          >
+            <Volume2 size={20} />
+            <span className="channel-name">{channel.name}</span>
+            {isConnected && (
+              <span className="voice-connected-badge">Connected</span>
+            )}
+            {!isConnected && participants.length > 0 && (
+              <span className="voice-count-badge">{participants.length}</span>
+            )}
+            {isAdmin && (
+              <span 
+                className="channel-settings-btn"
+                role="button"
+                tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
+              >
+                <Settings size={14} />
+              </span>
+            )}
+          </button>
+          {!isConnected && (
+            <button 
+              className="voice-join-btn"
+              onClick={(e) => handleJoinVoice(channel, e)}
+            >
+              Join
+            </button>
+          )}
+          {participants.length > 0 && (
+            <div className={`voice-participant-list${selectedVoiceChannelId === channel.id ? ' expanded' : ''}`}>
+              {participants.map(p => (
+                <div key={p.id} className="voice-participant-row">
+                  <div className="voice-participant-avatar-wrap">
+                    <Avatar src={p.avatar} fallback={p.username} size={20} />
+                    {(p.muted) && (
+                      <span className="voice-participant-muted-dot" title="Muted">
+                        <MicOff size={8} />
+                      </span>
+                    )}
+                  </div>
+                  <span className={`voice-participant-name ${p.muted ? 'muted' : ''}`}>
+                    {p.username}
+                    {p.id === user?.id ? ' (You)' : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )
+    }
+    
+    return (
+      <button
+        key={channel.id}
+        className={`channel-item ${currentChannelId === channel.id ? 'active' : ''}`}
+        onClick={() => handleChannelClick(channel, false)}
+        onContextMenu={(e) => handleChannelContextMenu(e, channel)}
+        draggable={isAdmin}
+        onDragStart={() => setDraggedChannel(channel)}
+        onDragEnd={() => {
+          setDraggedChannel(null)
+          setDragOverCategory(null)
+        }}
+      >
+        <Hash size={20} />
+        <span className="channel-name">{channel.name}</span>
+        {channel.private && <Lock size={14} className="channel-lock" />}
+        {isAdmin && (
+          <span 
+            className="channel-settings-btn"
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
+          >
+            <Settings size={14} />
+          </span>
+        )}
+      </button>
+    )
+  }
+
+  // Handle drag and drop for channels
+  const handleDragOver = (e, categoryId) => {
+    e.preventDefault()
+    setDragOverCategory(categoryId)
+  }
+
+  const handleDrop = async (e, targetCategoryId) => {
+    e.preventDefault()
+    setDragOverCategory(null)
+    
+    if (!draggedChannel) return
+    
+    const actualCategoryId = targetCategoryId === 'uncategorized' ? null : targetCategoryId
+    
+    if (draggedChannel.categoryId !== actualCategoryId) {
+      try {
+        await apiService.updateChannel(draggedChannel.id, { categoryId: actualCategoryId })
+        onRefreshChannels?.()
+      } catch (err) {
+        console.error('Failed to move channel:', err)
+      }
+    }
   }
 
   return (
@@ -225,8 +548,11 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
               <button onClick={() => { onOpenServerSettings?.(); setShowServerMenu(false) }}>
                 <Settings size={16} /> Server Settings
               </button>
-              <button onClick={() => setShowCreateModal(true)}>
+              <button onClick={() => { setShowCreateModal(true); setShowServerMenu(false) }}>
                 <Plus size={16} /> Create Channel
+              </button>
+              <button onClick={() => { setShowCreateCategoryModal(true); setShowServerMenu(false) }}>
+                <Folder size={16} /> Create Category
               </button>
               <button onClick={() => { onInvite?.(); setShowServerMenu(false) }}>
                 <UserPlus size={16} /> Invite People
@@ -236,148 +562,129 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
         </div>
 
         <div className="channel-list">
-          <div className="channel-category">
-            <div 
-              className="category-header"
-              onClick={() => toggleCategory('text')}
-              role="button"
-              tabIndex={0}
-            >
-              <ChevronDown 
-                size={12} 
-                style={{ transform: expandedCategories.text ? 'rotate(0deg)' : 'rotate(-90deg)' }}
-              />
-              <span>TEXT CHANNELS</span>
-              <button 
-                className="category-add-btn"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowCreateModal(true)
-                }}
-                title="Create Channel"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
+          {categoryOrder.map(categoryId => {
+            const group = groupedChannels[categoryId]
+            if (!group) return null
             
-            {expandedCategories.text && (
-              <div className="channel-items">
-                {textChannels.map(channel => (
-                  <button
-                    key={channel.id}
-                    className={`channel-item ${currentChannelId === channel.id ? 'active' : ''}`}
-                    onClick={() => handleChannelClick(channel, false)}
-                    onContextMenu={(e) => handleChannelContextMenu(e, channel)}
+            const { category, channels: catChannels } = group
+            const isExpanded = expandedCategories[categoryId] !== false
+            const isDragOver = dragOverCategory === categoryId
+            
+            if (catChannels.length === 0 && categoryId !== 'uncategorized') {
+              return (
+                <div 
+                  key={categoryId} 
+                  className={`channel-category empty ${isDragOver ? 'drag-over' : ''}`}
+                  onDragOver={(e) => handleDragOver(e, categoryId)}
+                  onDrop={(e) => handleDrop(e, categoryId)}
+                  onContextMenu={(e) => handleCategoryContextMenu(e, category)}
+                >
+                  <div 
+                    className="category-header"
+                    onClick={() => toggleCategory(categoryId)}
+                    role="button"
+                    tabIndex={0}
                   >
-                    <Hash size={20} />
-                    <span className="channel-name">{channel.name}</span>
-                    {channel.private && <Lock size={14} className="channel-lock" />}
+                    <ChevronDown 
+                      size={12} 
+                      style={{ transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                    />
+                    <span>{category.name.toUpperCase()}</span>
                     {isAdmin && (
-                      <span 
-                        className="channel-settings-btn"
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowChannelSettings(channel) } }}
+                      <button 
+                        className="category-add-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowCreateModal(true)
+                        }}
+                        title="Create Channel"
                       >
-                        <Settings size={14} />
-                      </span>
-                    )}
-                  </button>
-                ))}
-                {textChannels.length === 0 && (
-                  <div className="no-channels">No text channels</div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="channel-category">
-            <div 
-              className="category-header"
-              onClick={() => toggleCategory('voice')}
-              role="button"
-              tabIndex={0}
-            >
-              <ChevronDown 
-                size={12} 
-                style={{ transform: expandedCategories.voice ? 'rotate(0deg)' : 'rotate(-90deg)' }}
-              />
-              <span>VOICE CHANNELS</span>
-              <button 
-                className="category-add-btn"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowCreateModal(true)
-                }}
-                title="Create Channel"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-            
-            {expandedCategories.voice && (
-              <div className="channel-items">
-                {voiceChannels.map(channel => {
-                  const participants = getMergedParticipants(channel.id)
-                  const isConnected = activeVoiceChannel?.id === channel.id
-                  return (
-                    <div key={channel.id} className="voice-channel-group">
-                      <button
-                        className={`channel-item voice ${isConnected ? 'connected' : ''} ${selectedVoiceChannelId === channel.id ? 'selected' : ''}`}
-                        onClick={() => handleChannelClick(channel, true)}
-                        onContextMenu={(e) => handleChannelContextMenu(e, channel)}
-                      >
-                        <Volume2 size={20} />
-                        <span className="channel-name">{channel.name}</span>
-                        {isConnected && (
-                          <span className="voice-connected-badge">Connected</span>
-                        )}
-                        {!isConnected && participants.length > 0 && (
-                          <span className="voice-count-badge">{participants.length}</span>
-                        )}
-                        {isAdmin && (
-                          <span 
-                            className="channel-settings-btn"
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowChannelSettings(channel) } }}
-                          >
-                            <Settings size={14} />
-                          </span>
-                        )}
+                        <Plus size={16} />
                       </button>
-                      {participants.length > 0 && (
-                        <div className={`voice-participant-list${selectedVoiceChannelId === channel.id ? ' expanded' : ''}`}>
-                          {participants.map(p => (
-                            <div key={p.id} className="voice-participant-row">
-                              <div className="voice-participant-avatar-wrap">
-                                <Avatar src={p.avatar} fallback={p.username} size={20} />
-                                {(p.muted) && (
-                                  <span className="voice-participant-muted-dot" title="Muted">
-                                    <MicOff size={8} />
-                                  </span>
-                                )}
-                              </div>
-                              <span className={`voice-participant-name ${p.muted ? 'muted' : ''}`}>
-                                {p.username}
-                                {p.id === user?.id ? ' (You)' : ''}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {voiceChannels.length === 0 && (
-                  <div className="no-channels">No voice channels</div>
+                    )}
+                  </div>
+                </div>
+              )
+            }
+            
+            return (
+              <div 
+                key={categoryId} 
+                className={`channel-category ${isDragOver ? 'drag-over' : ''}`}
+                onDragOver={(e) => handleDragOver(e, categoryId)}
+                onDrop={(e) => handleDrop(e, categoryId)}
+                onContextMenu={(e) => handleCategoryContextMenu(e, category)}
+              >
+                <div 
+                  className="category-header"
+                  onClick={() => toggleCategory(categoryId)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <ChevronDown 
+                    size={12} 
+                    style={{ transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                  />
+                  <span>{category.name.toUpperCase()}</span>
+                  {isAdmin && (
+                    <button 
+                      className="category-add-btn"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowCreateModal(true)
+                      }}
+                      title="Create Channel"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
+                </div>
+                
+                {isExpanded && (
+                  <div className="channel-items">
+                    {catChannels.length > 0 ? (
+                      catChannels.map(channel => renderChannel(channel))
+                    ) : (
+                      <div className="no-channels">No channels</div>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+            )
+          })}
         </div>
+
+        {/* Voice Channel Panel */}
+        {activeVoiceChannel && (
+          <div className="voice-panel">
+            <div className="voice-panel-header">
+              <div className="voice-panel-info">
+                <div className="voice-panel-details">
+                  <div className="voice-panel-channel">{activeVoiceChannel.name}</div>
+                  <div className="voice-panel-count">
+                    {(voiceParticipantsByChannel[activeVoiceChannel.id] || []).length} connected
+                  </div>
+                </div>
+              </div>
+              <div className="voice-panel-actions">
+                <button 
+                  className="voice-panel-btn return"
+                  onClick={() => onReturnToVoice?.()}
+                  title="Return to voice"
+                >
+                  Return
+                </button>
+                <button 
+                  className="voice-panel-btn leave"
+                  onClick={() => onLeaveVoice?.()}
+                  title="Leave voice"
+                >
+                  Leave
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="user-panel">
           <div className="user-info">
@@ -432,10 +739,22 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
       {showCreateModal && (
         <CreateChannelModal
           serverId={server?.id}
+          categories={categories}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false)
             onCreateChannel()
+          }}
+        />
+      )}
+
+      {showCreateCategoryModal && (
+        <CreateCategoryModal
+          serverId={server?.id}
+          onClose={() => setShowCreateCategoryModal(false)}
+          onSuccess={() => {
+            setShowCreateCategoryModal(false)
+            onRefreshChannels?.()
           }}
         />
       )}
@@ -452,6 +771,21 @@ const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChann
           onDelete={() => {
             setShowChannelSettings(null)
             onCreateChannel()
+          }}
+        />
+      )}
+
+      {showCategorySettings && (
+        <CategorySettingsModal
+          category={showCategorySettings}
+          onClose={() => setShowCategorySettings(null)}
+          onUpdate={() => {
+            setShowCategorySettings(null)
+            onRefreshChannels?.()
+          }}
+          onDelete={() => {
+            setShowCategorySettings(null)
+            onRefreshChannels?.()
           }}
         />
       )}

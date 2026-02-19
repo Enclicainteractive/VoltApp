@@ -5,6 +5,7 @@ export const useAppStore = create((set, get) => ({
   user: null,
   servers: [],
   channels: [],
+  categories: [],
   currentChannel: null,
   messages: [],
   friends: [],
@@ -26,6 +27,7 @@ export const useAppStore = create((set, get) => ({
   setUser: (user) => set({ user }),
   setServers: (servers) => set({ servers }),
   setChannels: (channels) => set({ channels }),
+  setCategories: (categories) => set({ categories }),
   setCurrentChannel: (channel) => set({ currentChannel: channel }),
   setMessages: (messages) => set({ messages }),
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
@@ -46,8 +48,19 @@ export const useAppStore = create((set, get) => ({
   })),
   
   addChannel: (channel) => set((state) => ({ channels: [...state.channels, channel] })),
+  updateChannel: (channelId, updates) => set((state) => ({
+    channels: state.channels.map(c => c.id === channelId ? { ...c, ...updates } : c)
+  })),
   removeChannel: (channelId) => set((state) => ({ 
     channels: state.channels.filter(c => c.id !== channelId) 
+  })),
+  
+  addCategory: (category) => set((state) => ({ categories: [...state.categories, category] })),
+  updateCategory: (categoryId, updates) => set((state) => ({
+    categories: state.categories.map(c => c.id === categoryId ? { ...c, ...updates } : c)
+  })),
+  removeCategory: (categoryId) => set((state) => ({ 
+    categories: state.categories.filter(c => c.id !== categoryId) 
   })),
   
   addFriend: (friend) => set((state) => ({ friends: [...state.friends, friend] })),

@@ -532,7 +532,7 @@
   transition: all 0.2s ease;
 }
 
-.migration-type-card:hover:not(.unavailable) {
+.migration-type-card:hover {
   border-color: var(--volt-primary);
   background: var(--volt-hover);
 }
@@ -564,11 +564,12 @@
   font-size: 14px;
 }
 
-.current-badge, .unavailable-badge {
+.current-badge, .unavailable-badge, .driver-badge {
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 4px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .current-badge {
@@ -579,6 +580,18 @@
 .unavailable-badge {
   background: var(--volt-danger);
   color: white;
+}
+
+.driver-badge.ready {
+  background: rgba(72, 187, 120, 0.2);
+  color: var(--volt-success);
+  border: 1px solid rgba(72, 187, 120, 0.3);
+}
+
+.driver-badge.needs-install {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
 }
 
 .type-desc {
@@ -599,6 +612,45 @@
   margin-bottom: 16px;
   font-size: 16px;
   font-weight: 600;
+}
+
+.migration-driver-warning {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  color: #fbbf24;
+}
+
+.migration-driver-warning svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.migration-driver-warning strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.migration-driver-warning p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--volt-text-secondary);
+}
+
+.migration-driver-warning code {
+  background: rgba(251, 191, 36, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: #fbbf24;
 }
 
 .config-fields {

@@ -148,15 +148,24 @@ const AdminConfigModal = ({ onClose }) => {
 
   const getDefaultConfigFields = (typeId) => {
     switch (typeId) {
+      case 'json':
+        return [
+          { name: 'dataDir', label: 'Data Directory', type: 'text', default: './data' }
+        ]
+      case 'sqlite':
+        return [
+          { name: 'dbPath', label: 'Database Path', type: 'text', default: './data/voltage.db' }
+        ]
       case 'mysql':
       case 'mariadb':
         return [
           { name: 'host', label: 'Host', type: 'text', default: 'localhost' },
-          { name: 'port', label: 'Port', type: 'number', default: typeId === 'mysql' ? 3306 : 3306 },
+          { name: 'port', label: 'Port', type: 'number', default: 3306 },
           { name: 'database', label: 'Database', type: 'text', default: 'voltchat' },
           { name: 'user', label: 'Username', type: 'text', default: 'root' },
           { name: 'password', label: 'Password', type: 'password', default: '' },
-          { name: 'connectionLimit', label: 'Connection Limit', type: 'number', default: 10 }
+          { name: 'connectionLimit', label: 'Connection Limit', type: 'number', default: 10 },
+          { name: 'charset', label: 'Charset', type: 'text', default: 'utf8mb4' }
         ]
       case 'postgres':
       case 'cockroachdb':
@@ -174,7 +183,9 @@ const AdminConfigModal = ({ onClose }) => {
           { name: 'port', label: 'Port', type: 'number', default: 1433 },
           { name: 'database', label: 'Database', type: 'text', default: 'voltchat' },
           { name: 'user', label: 'Username', type: 'text', default: 'sa' },
-          { name: 'password', label: 'Password', type: 'password', default: '' }
+          { name: 'password', label: 'Password', type: 'password', default: '' },
+          { name: 'encrypt', label: 'Encrypt', type: 'checkbox', default: false },
+          { name: 'trustServerCertificate', label: 'Trust Server Certificate', type: 'checkbox', default: true }
         ]
       case 'mongodb':
         return [
@@ -299,13 +310,25 @@ const AdminConfigModal = ({ onClose }) => {
   }
 
   const updateConfig = (section, field, value) => {
-    setConfig(prev => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [field]: value
+    setConfig(prev => {
+      const sectionData = prev[section] || {}
+      if (typeof field === 'object' && !Array.isArray(field)) {
+        return {
+          ...prev,
+          [section]: {
+            ...sectionData,
+            ...field
+          }
+        }
       }
-    }))
+      return {
+        ...prev,
+        [section]: {
+          ...sectionData,
+          [field]: value
+        }
+      }
+    })
   }
 
   const updateNestedConfig = (section, subsection, field, value) => {
@@ -625,27 +648,199 @@ const AdminConfigModal = ({ onClose }) => {
                     <div className="config-field">
                       <label>Database Type</label>
                       <select value={config.storage.type || 'sqlite'} onChange={(e) => updateConfig('storage', 'type', e.target.value)}>
+                        <option value="json">JSON Files</option>
                         <option value="sqlite">SQLite</option>
-                        <option value="json">JSON File</option>
+                        <option value="mysql">MySQL</option>
+                        <option value="mariadb">MariaDB</option>
                         <option value="postgres">PostgreSQL</option>
+                        <option value="cockroachdb">CockroachDB</option>
+                        <option value="mssql">SQL Server</option>
+                        <option value="mongodb">MongoDB</option>
+                        <option value="redis">Redis</option>
                       </select>
                     </div>
+                    
+                    {config.storage.json && (
+                      <div className="config-field">
+                        <label>Data Directory</label>
+                        <input type="text" value={config.storage.json.dataDir || ''} onChange={(e) => updateConfig('storage', 'json', { ...config.storage.json, dataDir: e.target.value })} />
+                      </div>
+                    )}
+                    
                     {config.storage.sqlite && (
                       <div className="config-field">
                         <label>Database Path</label>
-                        <input type="text" value={config.storage.sqlite.dbPath || ''} disabled />
-                        <small>Change in config file for security</small>
+                        <input type="text" value={config.storage.sqlite.dbPath || ''} onChange={(e) => updateConfig('storage', 'sqlite', { ...config.storage.sqlite, dbPath: e.target.value })} />
                       </div>
                     )}
-                    {config.storage.postgres && (
+                    
+                    {(config.storage.mysql || config.storage.type === 'mysql') && (
+                      <>
+                        <div className="config-field">
+                          <label>MySQL Host</label>
+                          <input type="text" value={config.storage.mysql?.host || ''} onChange={(e) => updateConfig('storage', 'mysql', { ...config.storage.mysql, host: e.target.value })} placeholder="localhost" />
+                        </div>
+                        <div className="config-field">
+                          <label>MySQL Port</label>
+                          <input type="number" value={config.storage.mysql?.port || 3306} onChange={(e) => updateConfig('storage', 'mysql', { ...config.storage.mysql, port: parseInt(e.target.value) })} />
+                        </div>
+                        <div className="config-field">
+                          <label>MySQL Database</label>
+                          <input type="text" value={config.storage.mysql?.database || ''} onChange={(e) => updateConfig('storage', 'mysql', { ...config.storage.mysql, database: e.target.value })} placeholder="voltchat" />
+                        </div>
+                        <div className="config-field">
+                          <label>MySQL Username</label>
+                          <input type="text" value={config.storage.mysql?.user || ''} onChange={(e) => updateConfig('storage', 'mysql', { ...config.storage.mysql, user: e.target.value })} placeholder="root" />
+                        </div>
+                        <div className="config-field">
+                          <label>MySQL Password</label>
+                          <input type="password" value={config.storage.mysql?.password || ''} onChange={(e) => updateConfig('storage', 'mysql', { ...config.storage.mysql, password: e.target.value })} placeholder="Enter password" />
+                        </div>
+                      </>
+                    )}
+                    
+                    {(config.storage.mariadb || config.storage.type === 'mariadb') && (
+                      <>
+                        <div className="config-field">
+                          <label>MariaDB Host</label>
+                          <input type="text" value={config.storage.mariadb?.host || ''} onChange={(e) => updateConfig('storage', 'mariadb', { ...config.storage.mariadb, host: e.target.value })} placeholder="localhost" />
+                        </div>
+                        <div className="config-field">
+                          <label>MariaDB Port</label>
+                          <input type="number" value={config.storage.mariadb?.port || 3306} onChange={(e) => updateConfig('storage', 'mariadb', { ...config.storage.mariadb, port: parseInt(e.target.value) })} />
+                        </div>
+                        <div className="config-field">
+                          <label>MariaDB Database</label>
+                          <input type="text" value={config.storage.mariadb?.database || ''} onChange={(e) => updateConfig('storage', 'mariadb', { ...config.storage.mariadb, database: e.target.value })} placeholder="voltchat" />
+                        </div>
+                        <div className="config-field">
+                          <label>MariaDB Username</label>
+                          <input type="text" value={config.storage.mariadb?.user || ''} onChange={(e) => updateConfig('storage', 'mariadb', { ...config.storage.mariadb, user: e.target.value })} placeholder="root" />
+                        </div>
+                        <div className="config-field">
+                          <label>MariaDB Password</label>
+                          <input type="password" value={config.storage.mariadb?.password || ''} onChange={(e) => updateConfig('storage', 'mariadb', { ...config.storage.mariadb, password: e.target.value })} placeholder="Enter password" />
+                        </div>
+                      </>
+                    )}
+                    
+                    {(config.storage.postgres || config.storage.type === 'postgres') && (
                       <>
                         <div className="config-field">
                           <label>PostgreSQL Host</label>
-                          <input type="text" value={config.storage.postgres.host || ''} disabled placeholder="Set in config file" />
+                          <input type="text" value={config.storage.postgres?.host || ''} onChange={(e) => updateConfig('storage', 'postgres', { ...config.storage.postgres, host: e.target.value })} placeholder="localhost" />
+                        </div>
+                        <div className="config-field">
+                          <label>PostgreSQL Port</label>
+                          <input type="number" value={config.storage.postgres?.port || 5432} onChange={(e) => updateConfig('storage', 'postgres', { ...config.storage.postgres, port: parseInt(e.target.value) })} />
                         </div>
                         <div className="config-field">
                           <label>PostgreSQL Database</label>
-                          <input type="text" value={config.storage.postgres.database || ''} disabled placeholder="Set in config file" />
+                          <input type="text" value={config.storage.postgres?.database || ''} onChange={(e) => updateConfig('storage', 'postgres', { ...config.storage.postgres, database: e.target.value })} placeholder="voltchat" />
+                        </div>
+                        <div className="config-field">
+                          <label>PostgreSQL Username</label>
+                          <input type="text" value={config.storage.postgres?.user || ''} onChange={(e) => updateConfig('storage', 'postgres', { ...config.storage.postgres, user: e.target.value })} placeholder="postgres" />
+                        </div>
+                        <div className="config-field">
+                          <label>PostgreSQL Password</label>
+                          <input type="password" value={config.storage.postgres?.password || ''} onChange={(e) => updateConfig('storage', 'postgres', { ...config.storage.postgres, password: e.target.value })} placeholder="Enter password" />
+                        </div>
+                      </>
+                    )}
+                    
+                    {(config.storage.cockroachdb || config.storage.type === 'cockroachdb') && (
+                      <>
+                        <div className="config-field">
+                          <label>CockroachDB Host</label>
+                          <input type="text" value={config.storage.cockroachdb?.host || ''} onChange={(e) => updateConfig('storage', 'cockroachdb', { ...config.storage.cockroachdb, host: e.target.value })} placeholder="localhost" />
+                        </div>
+                        <div className="config-field">
+                          <label>CockroachDB Port</label>
+                          <input type="number" value={config.storage.cockroachdb?.port || 26257} onChange={(e) => updateConfig('storage', 'cockroachdb', { ...config.storage.cockroachdb, port: parseInt(e.target.value) })} />
+                        </div>
+                        <div className="config-field">
+                          <label>CockroachDB Database</label>
+                          <input type="text" value={config.storage.cockroachdb?.database || ''} onChange={(e) => updateConfig('storage', 'cockroachdb', { ...config.storage.cockroachdb, database: e.target.value })} placeholder="voltchat" />
+                        </div>
+                        <div className="config-field">
+                          <label>CockroachDB Username</label>
+                          <input type="text" value={config.storage.cockroachdb?.user || ''} onChange={(e) => updateConfig('storage', 'cockroachdb', { ...config.storage.cockroachdb, user: e.target.value })} placeholder="root" />
+                        </div>
+                        <div className="config-field">
+                          <label>CockroachDB Password</label>
+                          <input type="password" value={config.storage.cockroachdb?.password || ''} onChange={(e) => updateConfig('storage', 'cockroachdb', { ...config.storage.cockroachdb, password: e.target.value })} placeholder="Enter password" />
+                        </div>
+                      </>
+                    )}
+                    
+                    {(config.storage.mssql || config.storage.type === 'mssql') && (
+                      <>
+                        <div className="config-field">
+                          <label>SQL Server Host</label>
+                          <input type="text" value={config.storage.mssql?.host || ''} onChange={(e) => updateConfig('storage', 'mssql', { ...config.storage.mssql, host: e.target.value })} placeholder="localhost" />
+                        </div>
+                        <div className="config-field">
+                          <label>SQL Server Port</label>
+                          <input type="number" value={config.storage.mssql?.port || 1433} onChange={(e) => updateConfig('storage', 'mssql', { ...config.storage.mssql, port: parseInt(e.target.value) })} />
+                        </div>
+                        <div className="config-field">
+                          <label>SQL Server Database</label>
+                          <input type="text" value={config.storage.mssql?.database || ''} onChange={(e) => updateConfig('storage', 'mssql', { ...config.storage.mssql, database: e.target.value })} placeholder="voltchat" />
+                        </div>
+                        <div className="config-field">
+                          <label>SQL Server Username</label>
+                          <input type="text" value={config.storage.mssql?.user || ''} onChange={(e) => updateConfig('storage', 'mssql', { ...config.storage.mssql, user: e.target.value })} placeholder="sa" />
+                        </div>
+                        <div className="config-field">
+                          <label>SQL Server Password</label>
+                          <input type="password" value={config.storage.mssql?.password || ''} onChange={(e) => updateConfig('storage', 'mssql', { ...config.storage.mssql, password: e.target.value })} placeholder="Enter password" />
+                        </div>
+                      </>
+                    )}
+                    
+                    {(config.storage.mongodb || config.storage.type === 'mongodb') && (
+                      <>
+                        <div className="config-field">
+                          <label>MongoDB Host</label>
+                          <input type="text" value={config.storage.mongodb?.host || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, host: e.target.value })} placeholder="localhost" />
+                        </div>
+                        <div className="config-field">
+                          <label>MongoDB Port</label>
+                          <input type="number" value={config.storage.mongodb?.port || 27017} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, port: parseInt(e.target.value) })} />
+                        </div>
+                        <div className="config-field">
+                          <label>MongoDB Database</label>
+                          <input type="text" value={config.storage.mongodb?.database || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, database: e.target.value })} placeholder="voltchat" />
+                        </div>
+                        <div className="config-field">
+                          <label>MongoDB Username</label>
+                          <input type="text" value={config.storage.mongodb?.user || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, user: e.target.value })} placeholder="Enter username" />
+                        </div>
+                        <div className="config-field">
+                          <label>MongoDB Password</label>
+                          <input type="password" value={config.storage.mongodb?.password || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, password: e.target.value })} placeholder="Enter password" />
+                        </div>
+                      </>
+                    )}
+                    
+                    {(config.storage.redis || config.storage.type === 'redis') && (
+                      <>
+                        <div className="config-field">
+                          <label>Redis Host</label>
+                          <input type="text" value={config.storage.redis?.host || ''} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, host: e.target.value })} placeholder="localhost" />
+                        </div>
+                        <div className="config-field">
+                          <label>Redis Port</label>
+                          <input type="number" value={config.storage.redis?.port || 6379} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, port: parseInt(e.target.value) })} />
+                        </div>
+                        <div className="config-field">
+                          <label>Redis Password (optional)</label>
+                          <input type="password" value={config.storage.redis?.password || ''} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, password: e.target.value })} placeholder="Enter password" />
+                        </div>
+                        <div className="config-field">
+                          <label>Redis Database Number</label>
+                          <input type="number" value={config.storage.redis?.db || 0} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, db: parseInt(e.target.value) })} min={0} max={15} />
                         </div>
                       </>
                     )}
@@ -777,21 +972,26 @@ const AdminConfigModal = ({ onClose }) => {
                     
                     <div className="migration-types">
                       <h4>Select Target Database</h4>
+                      <p className="config-description" style={{ marginTop: 0 }}>
+                        All database types are available — the database can be running locally or on a remote server. 
+                        Select a target and enter connection details below.
+                      </p>
                       <div className="migration-grid">
                         {STORAGE_TYPES.map(type => {
-                          const isInstalled = migrationState.dependencies[type.id]?.available
                           const isCurrent = migrationState.currentType === type.id
+                          const driverInstalled = migrationState.dependencies[type.id]?.available
                           
                           return (
                             <div 
                               key={type.id}
-                              className={`migration-type-card ${migrationState.selectedType === type.id ? 'selected' : ''} ${isCurrent ? 'current' : ''} ${!isInstalled && !isCurrent ? 'unavailable' : ''}`}
-                              onClick={() => isInstalled || isCurrent ? handleSelectStorageType(type.id) : null}
+                              className={`migration-type-card ${migrationState.selectedType === type.id ? 'selected' : ''} ${isCurrent ? 'current' : ''}`}
+                              onClick={() => handleSelectStorageType(type.id)}
                             >
                               <div className="type-header">
                                 <span className="type-name">{type.name}</span>
                                 {isCurrent && <span className="current-badge">Current</span>}
-                                {!isInstalled && !isCurrent && <span className="unavailable-badge">Not Installed</span>}
+                                {!isCurrent && driverInstalled && <span className="driver-badge ready">Driver Ready</span>}
+                                {!isCurrent && !driverInstalled && type.id !== 'json' && <span className="driver-badge needs-install">Driver Needed</span>}
                               </div>
                               <p className="type-desc">{type.desc}</p>
                             </div>
@@ -803,6 +1003,24 @@ const AdminConfigModal = ({ onClose }) => {
                     {migrationState.showConfigForm && migrationState.selectedType && (
                       <div className="migration-config">
                         <h4>Configure {STORAGE_TYPES.find(t => t.id === migrationState.selectedType)?.name}</h4>
+                        
+                        {!migrationState.dependencies[migrationState.selectedType]?.available && migrationState.selectedType !== 'json' && (
+                          <div className="migration-driver-warning">
+                            <AlertTriangle size={16} />
+                            <div>
+                              <strong>Node.js driver not installed locally</strong>
+                              <p>
+                                The required npm package for {STORAGE_TYPES.find(t => t.id === migrationState.selectedType)?.name} is not installed on this server yet. 
+                                You can still configure the connection details for a remote database. 
+                                Install the driver before migrating: <code>npm install {migrationState.selectedType === 'sqlite' ? 'better-sqlite3' : migrationState.selectedType === 'postgres' || migrationState.selectedType === 'cockroachdb' ? 'pg' : migrationState.selectedType === 'mysql' ? 'mysql2' : migrationState.selectedType}</code>
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <p className="config-description" style={{ marginTop: 0, marginBottom: 16 }}>
+                          Enter the connection details below. The database can be on this server or a remote host.
+                        </p>
                         
                         <div className="config-fields">
                           {getDefaultConfigFields(migrationState.selectedType).map(field => (

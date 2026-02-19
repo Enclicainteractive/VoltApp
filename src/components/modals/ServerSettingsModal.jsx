@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Server, Users, Shield, Link, Trash2, Hash, Volume2, ChevronDown, ChevronRight, Crown, UserMinus, Ban, Settings, Plus, Edit2, Check, Copy, Palette, Globe, CheckCircle, Clock, Lock, Key, RefreshCw, Download, Upload, Music, Palette as PaletteIcon, FlaskConical, GraduationCap, Film, Trophy, Briefcase, Gamepad2, Bot } from 'lucide-react'
+import { X, Server, Users, Shield, Link, Trash2, Hash, Volume2, ChevronDown, ChevronRight, Crown, UserMinus, Ban, Settings, Plus, Edit2, Check, Copy, Palette, Globe, CheckCircle, Clock, Lock, Key, RefreshCw, Download, Upload, Music, Palette as PaletteIcon, FlaskConical, GraduationCap, Film, Trophy, Briefcase, Gamepad2, Bot, Folder, GripVertical, ArrowUp, ArrowDown, Smile } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import { getStoredServer } from '../../services/serverConfig'
 import { useAuth } from '../../contexts/AuthContext'
@@ -114,8 +114,11 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
   const [members, setMembers] = useState(server?.members || [])
   const [channels, setChannels] = useState([])
+  const [categories, setCategories] = useState([])
   const [draggedChannel, setDraggedChannel] = useState(null)
   const [dragOverChannel, setDragOverChannel] = useState(null)
+  const [draggedCategory, setDraggedCategory] = useState(null)
+  const [dragOverCategory, setDragOverCategory] = useState(null)
   const [roles, setRoles] = useState(server?.roles || [])
   const [editingRole, setEditingRole] = useState(null)
   const [editingRolePerms, setEditingRolePerms] = useState([])
@@ -128,6 +131,8 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const [newInvite, setNewInvite] = useState(null)
   const [editingChannel, setEditingChannel] = useState(null)
   const [newChannelName, setNewChannelName] = useState('')
+  const [editingCategory, setEditingCategory] = useState(null)
+  const [newCategoryName, setNewCategoryName] = useState('')
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteInput, setDeleteInput] = useState('')
@@ -137,6 +142,10 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [discoveryCategories, setDiscoveryCategories] = useState([])
   const [discoverySubmit, setDiscoverySubmit] = useState({ description: '', category: '' })
+  const [serverEmojis, setServerEmojis] = useState([])
+  const [newEmojiName, setNewEmojiName] = useState('')
+  const [uploadingEmoji, setUploadingEmoji] = useState(false)
+  const emojiFileInputRef = useRef(null)
   const bannerInputRef = useRef(null)
   const iconInputRef = useRef(null)
   const backgroundInputRef = useRef(null)
@@ -228,8 +237,48 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
   useEffect(() => {
     loadChannels()
+    loadCategories()
     loadInvites()
+    loadServerEmojis()
   }, [server?.id])
+
+  const loadServerEmojis = async () => {
+    try {
+      const res = await apiService.getServerEmojis(server.id)
+      setServerEmojis(res.data || [])
+    } catch (err) {
+      console.error('Failed to load server emojis:', err)
+    }
+  }
+
+  const handleEmojiUpload = async (file) => {
+    if (!file || !newEmojiName.trim()) return
+    setUploadingEmoji(true)
+    try {
+      const uploadRes = await apiService.uploadFiles([file], server?.id)
+      const url = uploadRes.data.attachments?.[0]?.url
+      if (url) {
+        const res = await apiService.addServerEmoji(server.id, newEmojiName.trim(), url)
+        setServerEmojis(prev => [...prev, res.data])
+        setNewEmojiName('')
+        if (emojiFileInputRef.current) emojiFileInputRef.current.value = ''
+      }
+    } catch (err) {
+      console.error('Failed to upload emoji:', err)
+    } finally {
+      setUploadingEmoji(false)
+    }
+  }
+
+  const handleDeleteEmoji = async (emojiId) => {
+    if (!confirm('Delete this emoji?')) return
+    try {
+      await apiService.deleteServerEmoji(server.id, emojiId)
+      setServerEmojis(prev => prev.filter(e => e.id !== emojiId))
+    } catch (err) {
+      console.error('Failed to delete emoji:', err)
+    }
+  }
 
   const loadChannels = async () => {
     try {
@@ -238,6 +287,17 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
       setChannels(sorted)
     } catch (err) {
       console.error('Failed to load channels:', err)
+    }
+  }
+
+  const loadCategories = async () => {
+    try {
+      const res = await apiService.getCategories(server.id)
+      const sorted = [...res.data].sort((a, b) => (a.position || 0) - (b.position || 0))
+      setCategories(sorted)
+    } catch (err) {
+      console.error('Failed to load categories:', err)
+      setCategories([])
     }
   }
 
@@ -443,6 +503,120 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     }
   }
 
+  // Category management functions
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return
+    try {
+      const res = await apiService.createCategory(server.id, { 
+        name: newCategoryName.trim(),
+        position: categories.length
+      })
+      setCategories([...categories, res.data])
+      setNewCategoryName('')
+    } catch (err) {
+      console.error('Failed to create category:', err)
+    }
+  }
+
+  const handleUpdateCategory = async (categoryId) => {
+    if (!newCategoryName.trim()) return
+    try {
+      await apiService.updateCategory(categoryId, { name: newCategoryName.trim() })
+      setCategories(categories.map(c => c.id === categoryId ? { ...c, name: newCategoryName.trim() } : c))
+      setEditingCategory(null)
+      setNewCategoryName('')
+    } catch (err) {
+      console.error('Failed to update category:', err)
+    }
+  }
+
+  const handleDeleteCategory = async (categoryId) => {
+    if (!confirm('Delete this category? Channels will be moved to "No Category". This cannot be undone.')) return
+    try {
+      await apiService.deleteCategory(categoryId)
+      setCategories(categories.filter(c => c.id !== categoryId))
+      // Move channels to uncategorized
+      setChannels(channels.map(c => c.categoryId === categoryId ? { ...c, categoryId: null } : c))
+    } catch (err) {
+      console.error('Failed to delete category:', err)
+    }
+  }
+
+  // Drag and drop for categories
+  const handleCategoryDragStart = (e, category) => {
+    setDraggedCategory(category)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', category.id)
+  }
+
+  const handleCategoryDragOver = (e, category) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (draggedCategory && draggedCategory.id !== category.id) {
+      setDragOverCategory(category.id)
+    }
+  }
+
+  const handleCategoryDragLeave = () => {
+    setDragOverCategory(null)
+  }
+
+  const handleCategoryDrop = async (e, targetCategory) => {
+    e.preventDefault()
+    if (!draggedCategory || draggedCategory.id === targetCategory.id) {
+      setDraggedCategory(null)
+      setDragOverCategory(null)
+      return
+    }
+
+    const draggedId = draggedCategory.id
+    const targetId = targetCategory.id
+
+    const newCategories = [...categories]
+    const draggedIndex = newCategories.findIndex(c => c.id === draggedId)
+    const targetIndex = newCategories.findIndex(c => c.id === targetId)
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedCategory(null)
+      setDragOverCategory(null)
+      return
+    }
+
+    const [draggedItem] = newCategories.splice(draggedIndex, 1)
+    newCategories.splice(targetIndex, 0, draggedItem)
+
+    const reorderedCategories = newCategories.map((c, index) => ({
+      ...c,
+      position: index
+    }))
+
+    setCategories(reorderedCategories)
+
+    try {
+      await apiService.updateCategoryOrder(server.id, reorderedCategories.map(c => c.id))
+    } catch (err) {
+      console.error('Failed to save category order:', err)
+    }
+
+    setDraggedCategory(null)
+    setDragOverCategory(null)
+  }
+
+  const handleCategoryDragEnd = () => {
+    setDraggedCategory(null)
+    setDragOverCategory(null)
+  }
+
+  // Move channel to category
+  const handleMoveChannelToCategory = async (channelId, categoryId) => {
+    try {
+      await apiService.updateChannel(channelId, { categoryId })
+      setChannels(channels.map(c => c.id === channelId ? { ...c, categoryId } : c))
+    } catch (err) {
+      console.error('Failed to move channel:', err)
+    }
+  }
+
   const availablePermissions = [
     { id: 'admin', name: 'Administrator', desc: 'Bypass all checks and manage everything', category: 'admin' },
     { id: 'manage_server', name: 'Manage Server', desc: 'Edit server settings and details', category: 'admin' },
@@ -539,6 +713,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     { id: 'members', label: 'Members', icon: Users },
     { id: 'invites', label: 'Invites', icon: Link },
     { id: 'discovery', label: 'Discovery', icon: Globe },
+    { id: 'emojis', label: 'Emojis', icon: Smile },
     { id: 'bots', label: 'Bots', icon: Bot },
     { id: 'security', label: 'Security', icon: Lock },
     ...(isOwner ? [{ id: 'danger', label: 'Danger Zone', icon: Trash2 }] : [])
@@ -791,97 +966,226 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'channels' && (
               <div className="settings-section">
-                <h2>Channels</h2>
-                <p className="section-desc">Manage your server's text and voice channels</p>
+                <h2>Channels & Categories</h2>
+                <p className="section-desc">Manage your server's channels and categories. Drag to reorder.</p>
 
-                <div className="channels-list-section">
-                  <h4>Text Channels</h4>
-                  {channels.filter(c => c.type === 'text').map(channel => (
-                    <div 
-                      key={channel.id} 
-                      className={`channel-manage-item ${draggedChannel?.id === channel.id ? 'dragging' : ''} ${dragOverChannel === channel.id ? 'drag-over' : ''}`}
-                      draggable={isAdmin}
-                      onDragStart={(e) => handleDragStart(e, channel)}
-                      onDragOver={(e) => handleDragOver(e, channel)}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDrop(e, channel)}
-                      onDragEnd={handleDragEnd}
-                    >
-                      <Hash size={18} className="drag-handle" />
-                      {editingChannel === channel.id ? (
+                {/* Categories Section */}
+                <div className="categories-section">
+                  <div className="section-header-with-action">
+                    <h4>Categories</h4>
+                    {isAdmin && (
+                      <div className="create-category-inline">
                         <input
                           type="text"
-                          className="input inline-edit"
-                          value={newChannelName}
-                          onChange={e => setNewChannelName(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && handleUpdateChannel(channel.id)}
-                          autoFocus
+                          className="input small"
+                          placeholder="New category name"
+                          value={newCategoryName}
+                          onChange={e => setNewCategoryName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleCreateCategory()}
                         />
-                      ) : (
-                        <span className="channel-manage-name">{channel.name}</span>
-                      )}
-                      {isAdmin && (
-                        <div className="channel-manage-actions">
-                          {editingChannel === channel.id ? (
-                            <button className="icon-btn" onClick={() => handleUpdateChannel(channel.id)}>
-                              <Check size={16} />
-                            </button>
-                          ) : (
-                            <button className="icon-btn" onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}>
-                              <Edit2 size={16} />
-                            </button>
-                          )}
-                          <button className="icon-btn danger" onClick={() => handleDeleteChannel(channel.id)}>
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        <button 
+                          className="btn btn-primary btn-small"
+                          onClick={handleCreateCategory}
+                          disabled={!newCategoryName.trim()}
+                        >
+                          <Plus size={14} /> Add
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                  <h4>Voice Channels</h4>
-                  {channels.filter(c => c.type === 'voice').map(channel => (
-                    <div 
-                      key={channel.id} 
-                      className={`channel-manage-item ${draggedChannel?.id === channel.id ? 'dragging' : ''} ${dragOverChannel === channel.id ? 'drag-over' : ''}`}
-                      draggable={isAdmin}
-                      onDragStart={(e) => handleDragStart(e, channel)}
-                      onDragOver={(e) => handleDragOver(e, channel)}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDrop(e, channel)}
-                      onDragEnd={handleDragEnd}
-                    >
-                      <Volume2 size={18} className="drag-handle" />
-                      {editingChannel === channel.id ? (
-                        <input
-                          type="text"
-                          className="input inline-edit"
-                          value={newChannelName}
-                          onChange={e => setNewChannelName(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && handleUpdateChannel(channel.id)}
-                          autoFocus
-                        />
-                      ) : (
-                        <span className="channel-manage-name">{channel.name}</span>
-                      )}
-                      {isAdmin && (
-                        <div className="channel-manage-actions">
-                          {editingChannel === channel.id ? (
-                            <button className="icon-btn" onClick={() => handleUpdateChannel(channel.id)}>
-                              <Check size={16} />
+                  <div className="categories-list">
+                    {categories.map((category, index) => (
+                      <div
+                        key={category.id}
+                        className={`category-manage-item ${draggedCategory?.id === category.id ? 'dragging' : ''} ${dragOverCategory === category.id ? 'drag-over' : ''}`}
+                        draggable={isAdmin}
+                        onDragStart={(e) => handleCategoryDragStart(e, category)}
+                        onDragOver={(e) => handleCategoryDragOver(e, category)}
+                        onDragLeave={handleCategoryDragLeave}
+                        onDrop={(e) => handleCategoryDrop(e, category)}
+                        onDragEnd={handleCategoryDragEnd}
+                      >
+                        <GripVertical size={16} className="drag-handle" />
+                        <Folder size={18} className="category-icon" />
+                        {editingCategory === category.id ? (
+                          <input
+                            type="text"
+                            className="input inline-edit"
+                            value={newCategoryName}
+                            onChange={e => setNewCategoryName(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleUpdateCategory(category.id)}
+                            onBlur={() => { setEditingCategory(null); setNewCategoryName('') }}
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="category-manage-name">{category.name}</span>
+                        )}
+                        <span className="category-channel-count">
+                          {channels.filter(c => c.categoryId === category.id).length} channels
+                        </span>
+                        {isAdmin && (
+                          <div className="category-manage-actions">
+                            {editingCategory === category.id ? (
+                              <button className="icon-btn" onClick={() => handleUpdateCategory(category.id)}>
+                                <Check size={16} />
+                              </button>
+                            ) : (
+                              <button className="icon-btn" onClick={() => { setEditingCategory(category.id); setNewCategoryName(category.name) }}>
+                                <Edit2 size={16} />
+                              </button>
+                            )}
+                            <button className="icon-btn danger" onClick={() => handleDeleteCategory(category.id)}>
+                              <Trash2 size={16} />
                             </button>
-                          ) : (
-                            <button className="icon-btn" onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}>
-                              <Edit2 size={16} />
-                            </button>
-                          )}
-                          <button className="icon-btn danger" onClick={() => handleDeleteChannel(channel.id)}>
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {categories.length === 0 && (
+                      <div className="no-items-message">No categories yet. Create one above!</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Channels by Category */}
+                <div className="channels-by-category-section">
+                  <h4>Channels</h4>
+                  
+                  {/* Uncategorized channels */}
+                  <div className="channel-category-group">
+                    <div className="category-group-header">
+                      <Folder size={16} />
+                      <span>No Category</span>
+                      <span className="channel-count">{channels.filter(c => !c.categoryId).length}</span>
                     </div>
-                  ))}
+                    {channels.filter(c => !c.categoryId).map(channel => (
+                      <div
+                        key={channel.id}
+                        className={`channel-manage-item indented ${draggedChannel?.id === channel.id ? 'dragging' : ''} ${dragOverChannel === channel.id ? 'drag-over' : ''}`}
+                        draggable={isAdmin}
+                        onDragStart={(e) => handleDragStart(e, channel)}
+                        onDragOver={(e) => handleDragOver(e, channel)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, channel)}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <GripVertical size={16} className="drag-handle" />
+                        {channel.type === 'voice' ? <Volume2 size={18} /> : <Hash size={18} />}
+                        {editingChannel === channel.id ? (
+                          <input
+                            type="text"
+                            className="input inline-edit"
+                            value={newChannelName}
+                            onChange={e => setNewChannelName(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleUpdateChannel(channel.id)}
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="channel-manage-name">{channel.name}</span>
+                        )}
+                        {isAdmin && (
+                          <>
+                            <select
+                              className="input category-select"
+                              value={channel.categoryId || ''}
+                              onChange={e => handleMoveChannelToCategory(channel.id, e.target.value || null)}
+                            >
+                              <option value="">No Category</option>
+                              {categories.map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                              ))}
+                            </select>
+                            <div className="channel-manage-actions">
+                              {editingChannel === channel.id ? (
+                                <button className="icon-btn" onClick={() => handleUpdateChannel(channel.id)}>
+                                  <Check size={16} />
+                                </button>
+                              ) : (
+                                <button className="icon-btn" onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}>
+                                  <Edit2 size={16} />
+                                </button>
+                              )}
+                              <button className="icon-btn danger" onClick={() => handleDeleteChannel(channel.id)}>
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Channels grouped by category */}
+                  {categories.map(category => {
+                    const categoryChannels = channels.filter(c => c.categoryId === category.id)
+                    if (categoryChannels.length === 0) return null
+                    
+                    return (
+                      <div key={category.id} className="channel-category-group">
+                        <div className="category-group-header">
+                          <Folder size={16} />
+                          <span>{category.name}</span>
+                          <span className="channel-count">{categoryChannels.length}</span>
+                        </div>
+                        {categoryChannels.map(channel => (
+                          <div
+                            key={channel.id}
+                            className={`channel-manage-item indented ${draggedChannel?.id === channel.id ? 'dragging' : ''} ${dragOverChannel === channel.id ? 'drag-over' : ''}`}
+                            draggable={isAdmin}
+                            onDragStart={(e) => handleDragStart(e, channel)}
+                            onDragOver={(e) => handleDragOver(e, channel)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, channel)}
+                            onDragEnd={handleDragEnd}
+                          >
+                            <GripVertical size={16} className="drag-handle" />
+                            {channel.type === 'voice' ? <Volume2 size={18} /> : <Hash size={18} />}
+                            {editingChannel === channel.id ? (
+                              <input
+                                type="text"
+                                className="input inline-edit"
+                                value={newChannelName}
+                                onChange={e => setNewChannelName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleUpdateChannel(channel.id)}
+                                autoFocus
+                              />
+                            ) : (
+                              <span className="channel-manage-name">{channel.name}</span>
+                            )}
+                            {isAdmin && (
+                              <>
+                                <select
+                                  className="input category-select"
+                                  value={channel.categoryId || ''}
+                                  onChange={e => handleMoveChannelToCategory(channel.id, e.target.value || null)}
+                                >
+                                  <option value="">No Category</option>
+                                  {categories.map(cat => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                  ))}
+                                </select>
+                                <div className="channel-manage-actions">
+                                  {editingChannel === channel.id ? (
+                                    <button className="icon-btn" onClick={() => handleUpdateChannel(channel.id)}>
+                                      <Check size={16} />
+                                    </button>
+                                  ) : (
+                                    <button className="icon-btn" onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}>
+                                      <Edit2 size={16} />
+                                    </button>
+                                  )}
+                                  <button className="icon-btn danger" onClick={() => handleDeleteChannel(channel.id)}>
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -1314,6 +1618,80 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     >
                       {discoveryLoading ? 'Submitting...' : 'Submit for Review'}
                     </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'emojis' && (
+              <div className="settings-section">
+                <h2>Server Emojis</h2>
+                <p className="section-desc">Upload custom emojis for your server. Members can use them in messages with <code>:emoji_name:</code> syntax.</p>
+
+                {(isAdmin || hasPermission('manage_emojis')) && (
+                  <div className="emoji-upload-section" style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 24, flexWrap: 'wrap' }}>
+                    <div className="form-group" style={{ margin: 0, flex: '1 1 200px' }}>
+                      <label>Emoji Name</label>
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="e.g. pepe_happy"
+                        value={newEmojiName}
+                        onChange={e => setNewEmojiName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+                        maxLength={32}
+                      />
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>Image</label>
+                      <input
+                        ref={emojiFileInputRef}
+                        type="file"
+                        accept="image/png,image/gif,image/jpeg,image/webp"
+                        className="input"
+                        style={{ padding: '6px 8px' }}
+                      />
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      disabled={!newEmojiName.trim() || uploadingEmoji}
+                      onClick={() => {
+                        const file = emojiFileInputRef.current?.files?.[0]
+                        if (file) handleEmojiUpload(file)
+                      }}
+                      style={{ height: 38 }}
+                    >
+                      {uploadingEmoji ? 'Uploading...' : <><Upload size={16} /> Upload Emoji</>}
+                    </button>
+                  </div>
+                )}
+
+                <div className="emoji-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+                  {serverEmojis.map(emoji => (
+                    <div key={emoji.id} className="emoji-card" style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                      background: 'var(--bg-secondary, #1a1d24)', borderRadius: 8, border: '1px solid var(--border-color, #2a2d35)'
+                    }}>
+                      <img
+                        src={emoji.url}
+                        alt={emoji.name}
+                        style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>:{emoji.name}:</div>
+                      </div>
+                      {(isAdmin || hasPermission('manage_emojis')) && (
+                        <button className="icon-btn danger" onClick={() => handleDeleteEmoji(emoji.id)} title="Delete emoji">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {serverEmojis.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted, #888)', fontSize: 14 }}>
+                    <Smile size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
+                    <p>No custom emojis yet. Upload one above!</p>
                   </div>
                 )}
               </div>

@@ -44,7 +44,7 @@ const AdminPanel = ({ onClose }) => {
   const loadSelfVoltsData = async () => {
     try {
       const res = await apiService.getAllSelfVolts()
-      setSelfVolts(res.data || [])
+      setSelfVolts(Array.isArray(res.data) ? res.data : [])
     } catch (err) {
       console.error('Failed to load self-volts:', err)
     }
@@ -155,11 +155,11 @@ const AdminPanel = ({ onClose }) => {
       }
       
       if (results[0].status === 'fulfilled') setStats(results[0].value.data)
-      if (results[1].status === 'fulfilled') setUsers(results[1].value.data.users || [])
-      if (results[2].status === 'fulfilled') setServers(results[2].value.data.servers || [])
-      if (results[3].status === 'fulfilled') setBannedUsers(results[3].value.data || [])
-      if (results[4].status === 'fulfilled') setBannedServers(results[4].value.data || [])
-      if (results[5].status === 'fulfilled') setLogs(results[5].value.data || [])
+      if (results[1].status === 'fulfilled') setUsers(Array.isArray(results[1].value.data?.users) ? results[1].value.data.users : [])
+      if (results[2].status === 'fulfilled') setServers(Array.isArray(results[2].value.data?.servers) ? results[2].value.data.servers : [])
+      if (results[3].status === 'fulfilled') setBannedUsers(Array.isArray(results[3].value.data) ? results[3].value.data : [])
+      if (results[4].status === 'fulfilled') setBannedServers(Array.isArray(results[4].value.data) ? results[4].value.data : [])
+      if (results[5].status === 'fulfilled') setLogs(Array.isArray(results[5].value.data) ? results[5].value.data : [])
     } catch (err) {
       console.error('Failed to load admin data:', err)
       setError('Failed to load admin panel data.')

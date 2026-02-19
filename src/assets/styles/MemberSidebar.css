@@ -1,8 +1,11 @@
 .member-sidebar {
   width: 240px;
+  min-width: 240px;
+  max-width: 240px;
   background: var(--volt-bg-gradient, none), var(--volt-bg-secondary);
   overflow-y: auto;
-  height: 100vh;
+  height: 100%;
+  flex-shrink: 0;
 }
 
 .member-list {
@@ -40,6 +43,35 @@
   opacity: 0.5;
 }
 
+.role-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.member-name .role-dot {
+  vertical-align: middle;
+}
+
+.member-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.member-role-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid;
+  opacity: 0.85;
+}
+
 .member-avatar {
   position: relative;
   flex-shrink: 0;
@@ -65,39 +97,49 @@
   position: absolute;
   bottom: -2px;
   right: -2px;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  border: 3px solid var(--volt-bg-secondary);
+  border: 2px solid var(--volt-bg-secondary);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .status-badge.online {
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 1);
+  background: #10b981;
+  box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
 }
 
 .status-badge.idle {
   background: #f59e0b;
-  box-shadow: 0 0 6px rgba(245, 158, 11, 1);
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.6);
 }
 
 .status-badge.dnd {
   background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 1);
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.6);
 }
 
+.status-badge.invisible,
 .status-badge.offline {
   background: #6b7280;
 }
 
 @media (max-width: 768px) {
+  .member-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    animation: fadeIn 0.2s ease;
+  }
+
   .member-sidebar {
     position: fixed;
     right: 0;
     top: 0;
     bottom: 0;
-    width: 280px;
+    width: 85%;
+    max-width: 320px;
     height: 100dvh;
     z-index: 1001;
     transform: translateX(100%);

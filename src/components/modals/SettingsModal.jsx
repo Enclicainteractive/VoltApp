@@ -21,6 +21,8 @@ import '../../assets/styles/RichTextEditor.css'
 
 const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const [activeTab, setActiveTab] = useState(initialTab)
+  const [isMobile, setIsMobile] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(true)
   const { user, logout, refreshUser } = useAuth()
   const { theme, setTheme, allThemes, customThemes, addCustomTheme, removeCustomTheme } = useTheme()
   const server = getStoredServer()
@@ -72,6 +74,13 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     }
     checkAdmin()
   }, [user])
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   const [customThemeDraft, setCustomThemeDraft] = useState(() => ({
     name: 'Custom',
@@ -373,7 +382,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'about', label: 'About', icon: Info },
   ]
-  const tabs = allTabs.filter(t => !t.adminOnly || isAdminUser)
+  const isVoltageServer = server?.name?.toLowerCase() === 'voltage'
+  const canAccessAdminTabs = isAdminUser && (!isVoltageServer || server?.ownerId === user?.id)
+  const tabs = allTabs.filter(t => !t.adminOnly || canAccessAdminTabs)
 
   const loadAgeInfo = async () => {
     setAgeLoading(true)
@@ -417,38 +428,69 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     })
   }
 
+  const handleTabClick = (tabId) => {
+    if (isMobile) {
+      setShowSidebar(false)
+    }
+    setActiveTab(tabId)
+  }
+
+  const handleBack = () => {
+    setShowSidebar(true)
+  }
+
   return (
     <>
     <div className="modal-overlay settings-overlay" onClick={onClose} style={showAdminConfig ? { display: 'none' } : undefined}>
       <div className="modal-content settings-modal" onClick={e => e.stopPropagation()}>
         <div className="settings-container">
-          <div className="settings-sidebar">
-            <div className="settings-tabs">
-              {tabs.map(tab => {
-                const Icon = tab.icon
-                return (
-                  <button
-                    key={tab.id}
-                    className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
-                    onClick={() => setActiveTab(tab.id)}
-                  >
-                    <Icon size={20} />
-                    <span>{tab.label}</span>
-                  </button>
-                )
-              })}
+          {(showSidebar || !isMobile) && (
+            <div className="settings-sidebar">
+              {isMobile && (
+                <div className="settings-mobile-header">
+                  <h3>Settings</h3>
+                </div>
+              )}
+              <div className="settings-tabs">
+                {tabs.map(tab => {
+                  const Icon = tab.icon
+                  return (
+                    <button
+                      key={tab.id}
+                      className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
+                      onClick={() => handleTabClick(tab.id)}
+                    >
+                      <Icon size={20} />
+                      <span>{tab.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="settings-footer">
+                <button className="btn btn-danger" onClick={logout}>
+                  Logout
+                </button>
+              </div>
             </div>
-            <div className="settings-footer">
-              <button className="btn btn-danger" onClick={logout}>
-                Logout
-              </button>
-            </div>
-          </div>
+          )}
 
-          <div className="settings-content">
-            <button className="settings-close" onClick={onClose}>
-              <X size={24} />
-            </button>
+          {isMobile && !showSidebar && (
+            <div className="settings-mobile-nav">
+              <button className="settings-back-btn" onClick={handleBack}>
+                ← Back
+              </button>
+              <span className="settings-mobile-title">
+                {tabs.find(t => t.id === activeTab)?.label}
+              </span>
+            </div>
+          )}
+
+          <div className={`settings-content ${isMobile && !showSidebar ? 'mobile-full' : ''}`}>
+            {!isMobile && (
+              <button className="settings-close" onClick={onClose}>
+                <X size={24} />
+              </button>
+            )}
 
             {activeTab === 'account' && (
               <div className="settings-section">

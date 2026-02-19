@@ -9,7 +9,7 @@ import ContextMenu from './ContextMenu'
 import Avatar from './Avatar'
 import '../assets/styles/MemberSidebar.css'
 
-const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBan, onAddFriend, visible = true }) => {
+const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBan, onAddFriend, visible = true, isMobile = false }) => {
   const { socket, connected } = useSocket()
   const { user: currentUser } = useAuth()
 
@@ -41,7 +41,11 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
     const roles = getMemberRoles(member)
     const resolved = roles.map(resolveRole).filter(Boolean)
     if (!resolved.length) return null
-    return resolved.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]
+    const nonMemberRoles = resolved.filter(r => r.name?.toLowerCase() !== 'member')
+    if (nonMemberRoles.length) {
+      return nonMemberRoles.sort((a, b) => (b.position ?? 0) - (a.position ?? 0))[0]
+    }
+    return resolved.sort((a, b) => (b.position ?? 0) - (a.position ?? 0))[0]
   }
 
   const hasPermission = (permission) => {
@@ -63,7 +67,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
     setMemberStatuses(prev => {
       const next = { ...prev }
       for (const m of (members || [])) {
-        if (m.id && !next[m.id]) {
+        if (m.id) {
           next[m.id] = { status: m.status || 'offline', customStatus: m.customStatus || null }
         }
       }
@@ -218,6 +222,28 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
     return <Shield size={14} className="role-icon" style={{ color: primary.color }} />
   }
 
+  const getRoleColor = (member) => {
+    if (member.id === server?.ownerId) return '#eab308'
+    const primary = getPrimaryRole(member)
+    return primary?.color || null
+  }
+
+  const getRoleName = (member) => {
+    if (member.id === server?.ownerId) return 'Owner'
+    const primary = getPrimaryRole(member)
+    if (!primary || primary.name?.toLowerCase() === 'member') return null
+    return primary.name
+  }
+
+  const getAllRoles = (member) => {
+    if (member.id === server?.ownerId) return [{ name: 'Owner', color: '#eab308' }]
+    const roles = getMemberRoles(member)
+    const resolved = roles.map(resolveRole).filter(Boolean)
+    return resolved
+      .filter(r => r.name?.toLowerCase() !== 'member')
+      .sort((a, b) => (b.position ?? 0) - (a.position ?? 0))
+  }
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'online':
@@ -226,8 +252,23 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
         return 'idle'
       case 'dnd':
         return 'dnd'
+      case 'invisible':
+        return 'invisible'
       default:
         return 'offline'
+    }
+  }
+
+  const getStatusDotColor = (status) => {
+    switch (status) {
+      case 'online':
+        return '#10b981'
+      case 'idle':
+        return '#f59e0b'
+      case 'dnd':
+        return '#ef4444'
+      default:
+        return '#6b7280'
     }
   }
 
@@ -243,22 +284,25 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
   })
   const offlineMembers = allMembers.filter(m => {
     const status = getMemberStatus(m)
-    return status === 'offline' || status === 'invisible'
+    return status === 'offline'
   })
 
-  if (!visible) return null
+  if (!visible && !isMobile) return null
 
   return (
-    <div className="member-sidebar">
+    <div className={`member-sidebar${isMobile ? (visible ? ' visible' : '') : ''}`}>
       <div className="member-list">
         {onlineMembers.length > 0 && (
           <div className="member-section">
             <div className="section-header">
               ONLINE — {onlineMembers.length}
             </div>
-            {onlineMembers.map(member => {
+              {onlineMembers.map(member => {
               const customStatus = getMemberCustomStatus(member)
               const status = getMemberStatus(member)
+              const roleColor = getRoleColor(member)
+              const roleName = getRoleName(member)
+              const memberRoles = getAllRoles(member)
               return (
                 <div 
                   key={member.id} 
@@ -274,14 +318,31 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                       size={32}
                       className="avatar-img"
                     />
-                    <div className={`status-badge ${getStatusColor(status)}`}></div>
+                    <div 
+                      className="status-badge"
+                      style={{ backgroundColor: getStatusDotColor(status) }}
+                    />
                   </div>
                   <div className="member-info">
-                    <div className="member-name">
-                      {!member.isBot && getRoleIcon(member)}
+                    <div className="member-name" style={roleColor ? { color: roleColor } : {}}>
+                      {member.id === server?.ownerId && <Crown size={12} className="role-dot" style={{ color: '#eab308' }} />}
+                      {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
                       <span>{member.username}</span>
                       {member.isBot && <span className="member-bot-badge">Bot</span>}
                     </div>
+                    {memberRoles.length > 0 && (
+                      <div className="member-roles">
+                        {memberRoles.map((role, idx) => (
+                          <span 
+                            key={role.id || idx} 
+                            className="member-role-tag"
+                            style={{ color: role.color, borderColor: role.color }}
+                          >
+                            {role.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {!member.isBot && member.host && (
                       <div className="member-federated-id">
                         @{member.username}:{member.host}
@@ -307,6 +368,9 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
             {offlineMembers.map(member => {
               const customStatus = getMemberCustomStatus(member)
               const status = getMemberStatus(member)
+              const roleColor = getRoleColor(member)
+              const roleName = getRoleName(member)
+              const memberRoles = getAllRoles(member)
               return (
                 <div 
                   key={member.id} 
@@ -322,14 +386,31 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                       size={32}
                       className="avatar-img"
                     />
-                    <div className={`status-badge ${getStatusColor(status)}`}></div>
+                    <div 
+                      className="status-badge"
+                      style={{ backgroundColor: getStatusDotColor(status) }}
+                    />
                   </div>
                   <div className="member-info">
-                    <div className="member-name">
-                      {!member.isBot && getRoleIcon(member)}
+                    <div className="member-name" style={roleColor ? { color: roleColor } : {}}>
+                      {member.id === server?.ownerId && <Crown size={12} className="role-dot" style={{ color: '#eab308' }} />}
+                      {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
                       <span>{member.username}</span>
                       {member.isBot && <span className="member-bot-badge">Bot</span>}
                     </div>
+                    {memberRoles.length > 0 && (
+                      <div className="member-roles">
+                        {memberRoles.map((role, idx) => (
+                          <span 
+                            key={role.id || idx} 
+                            className="member-role-tag"
+                            style={{ color: role.color, borderColor: role.color }}
+                          >
+                            {role.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {!member.isBot && member.host && (
                       <div className="member-federated-id">
                         @{member.username}:{member.host}

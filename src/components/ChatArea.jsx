@@ -598,7 +598,8 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
           </div>
         </div>
       )}
-      <div className="chat-header">
+      <div className="chat-area-main">
+        <div className="chat-header">
         <div className="channel-info">
           <Hash size={24} />
           <span className="channel-title">{currentChannel?.name || 'channel'}</span>
@@ -629,6 +630,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
         scrollPosition={scrollPosition}
         onShowProfile={onShowProfile}
         members={members}
+        serverEmojis={serverEmojis}
       />
 
       {typingUsers.size > 0 && (
@@ -919,6 +921,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

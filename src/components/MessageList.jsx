@@ -11,7 +11,7 @@ import '../assets/styles/MessageList.css'
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥']
 
-const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, onPinMessage, onUnpinMessage, highlightMessageId, onSaveScrollPosition, scrollPosition, onShowProfile, members }) => {
+const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, onPinMessage, onUnpinMessage, highlightMessageId, onSaveScrollPosition, scrollPosition, onShowProfile, members, serverEmojis }) => {
   const { socket } = useSocket()
   const messagesEndRef = useRef(null)
   const messagesStartRef = useRef(null)
@@ -255,13 +255,21 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
                   ? <a href={embed.url} target="_blank" rel="noopener noreferrer" className="embed-title">{embed.title}</a>
                   : <div className="embed-title">{embed.title}</div>
               )}
-              {embed.description && <div className="embed-description">{embed.description}</div>}
+              {embed.description && (
+                <div className="embed-description">
+                  <MarkdownMessage content={embed.description} currentUserId={currentUserId} members={members} />
+                </div>
+              )}
               {embed.fields && embed.fields.length > 0 && (
                 <div className="embed-fields">
                   {embed.fields.map((field, fi) => (
                     <div key={fi} className={`embed-field${field.inline ? ' embed-field-inline' : ''}`}>
-                      <div className="embed-field-name">{field.name}</div>
-                      <div className="embed-field-value">{field.value}</div>
+                      <div className="embed-field-name">
+                        <MarkdownMessage content={field.name} currentUserId={currentUserId} members={members} />
+                      </div>
+                      <div className="embed-field-value">
+                        <MarkdownMessage content={field.value} currentUserId={currentUserId} members={members} />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -304,6 +312,7 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
         mentions={mentions}
         members={members}
         onMentionClick={handleMentionClick}
+        serverEmojis={serverEmojis}
       />
     )
   }

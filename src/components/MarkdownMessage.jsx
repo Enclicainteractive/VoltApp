@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import InviteEmbed from './InviteEmbed'
+import LinkEmbed, { extractEmbedUrls } from './LinkEmbed'
 import '../assets/styles/MarkdownMessage.css'
 
 // ─── Language map for syntax highlighting labels ───────────────────────────
@@ -431,7 +432,49 @@ function splitGifs(content) {
  *   members          array     — server member list (for mention click-to-profile lookup)
  *   onMentionClick   function  — (userId, username, host) called when a mention is clicked
  */
-const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionClick }) => {
+// ─── Custom emoji regex ────────────────────────────────────────────────────
+// Matches :emoji_name: patterns (alphanumeric + underscores, 1-32 chars)
+const CUSTOM_EMOJI_RE = /:([a-zA-Z0-9_]{1,32}):/g
+
+/**
+ * Replace :emoji_name: with inline <img> elements for server custom emojis.
+ * Returns an array of React nodes (strings + img elements).
+ */
+function renderCustomEmojis(text, serverEmojis) {
+  if (!serverEmojis || serverEmojis.length === 0 || !text) return [text]
+  
+  const emojiMap = {}
+  serverEmojis.forEach(e => { emojiMap[e.name] = e.url })
+  
+  const parts = []
+  let last = 0
+  let m
+  const re = new RegExp(CUSTOM_EMOJI_RE.source, 'g')
+  while ((m = re.exec(text)) !== null) {
+    const name = m[1]
+    const url = emojiMap[name]
+    if (!url) continue // Not a known server emoji, skip
+    
+    if (m.index > last) parts.push(text.slice(last, m.index))
+    parts.push(
+      <img
+        key={`emoji-${m.index}`}
+        src={url}
+        alt={`:${name}:`}
+        title={`:${name}:`}
+        className="custom-emoji-inline"
+        style={{ width: '1.375em', height: '1.375em', verticalAlign: 'bottom', margin: '0 1px', display: 'inline-block', objectFit: 'contain' }}
+        loading="lazy"
+      />
+    )
+    last = m.index + m[0].length
+  }
+  if (last === 0) return [text] // No custom emojis found
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
+const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionClick, serverEmojis }) => {
   if (!content) return null
 
   const mentionProps = { currentUserId, mentions, members, onMentionClick }
@@ -441,6 +484,18 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
   const gifParts = splitGifs(content)
   const hasGifs = gifParts.some(p => p.type === 'gif')
 
+  // Helper to render a text segment with custom emojis
+  const renderTextSegment = (text, key) => {
+    if (!serverEmojis || serverEmojis.length === 0) {
+      return <span key={key}>{parseBlocks(text, mentionProps)}</span>
+    }
+    // First parse blocks (markdown), then replace custom emojis in the result
+    const parsed = parseBlocks(text, mentionProps)
+    // We need to walk the parsed output and replace :emoji: in string nodes
+    const withEmojis = replaceInReactTree(parsed, serverEmojis)
+    return <span key={key}>{withEmojis}</span>
+  }
+
   return (
     <span className="markdown-message">
       {hasGifs ? (
@@ -449,18 +504,98 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
             part.type === 'gif'
               ? <GifEmbed key={i} url={part.url} />
               : part.value
-                ? <span key={i}>{parseBlocks(part.value, mentionProps)}</span>
+                ? renderTextSegment(part.value, i)
                 : null
           )}
         </>
       ) : (
-        parseBlocks(content, mentionProps)
+        serverEmojis && serverEmojis.length > 0
+          ? replaceInReactTree(parseBlocks(content, mentionProps), serverEmojis)
+          : parseBlocks(content, mentionProps)
       )}
       {invites.map(({ code, url }) => (
         <InviteEmbed key={code} inviteCode={code} inviteUrl={url} />
       ))}
+      {extractEmbedUrls(content).map((embed, i) => (
+        <LinkEmbed key={`link-embed-${i}-${embed.url}`} url={embed.url} type={embed.type} match={embed.match} />
+      ))}
     </span>
   )
+}
+
+/**
+ * Walk a React tree (array of nodes) and replace :emoji_name: in string children
+ * with inline <img> elements for server custom emojis.
+ */
+function replaceInReactTree(nodes, serverEmojis) {
+  if (!serverEmojis || serverEmojis.length === 0) return nodes
+  if (!Array.isArray(nodes)) nodes = [nodes]
+  
+  const emojiMap = {}
+  serverEmojis.forEach(e => { emojiMap[e.name] = e.url })
+  const emojiNames = Object.keys(emojiMap)
+  if (emojiNames.length === 0) return nodes
+  
+  // Build a regex that matches any known server emoji name
+  const escapedNames = emojiNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const re = new RegExp(`:(?:${escapedNames.join('|')}):`, 'g')
+  
+  let keyCounter = 0
+  
+  function walk(node) {
+    if (typeof node === 'string') {
+      if (!re.test(node)) return node
+      re.lastIndex = 0 // Reset after test
+      
+      const parts = []
+      let last = 0
+      let m
+      while ((m = re.exec(node)) !== null) {
+        const name = m[0].slice(1, -1) // Remove colons
+        const url = emojiMap[name]
+        if (!url) continue
+        
+        if (m.index > last) parts.push(node.slice(last, m.index))
+        parts.push(
+          <img
+            key={`ce-${keyCounter++}`}
+            src={url}
+            alt={`:${name}:`}
+            title={`:${name}:`}
+            className="custom-emoji-inline"
+            style={{ width: '1.375em', height: '1.375em', verticalAlign: 'bottom', margin: '0 1px', display: 'inline-block', objectFit: 'contain' }}
+            loading="lazy"
+          />
+        )
+        last = m.index + m[0].length
+      }
+      if (last === 0) return node
+      if (last < node.length) parts.push(node.slice(last))
+      return parts
+    }
+    
+    if (React.isValidElement(node)) {
+      const children = node.props.children
+      if (!children) return node
+      
+      const newChildren = Array.isArray(children)
+        ? children.flatMap(walk)
+        : walk(children)
+      
+      // Only clone if children actually changed
+      if (newChildren === children) return node
+      return React.cloneElement(node, {}, ...(Array.isArray(newChildren) ? newChildren : [newChildren]))
+    }
+    
+    if (Array.isArray(node)) {
+      return node.flatMap(walk)
+    }
+    
+    return node
+  }
+  
+  const result = Array.isArray(nodes) ? nodes.flatMap(walk) : walk(nodes)
+  return result
 }
 
 export default MarkdownMessage

@@ -25,6 +25,14 @@ const buildPeerConfig = (serverIceServers = []) => ({
   iceCandidatePoolSize: 10,
 })
 
+// Global flag to track if we're intentionally leaving the voice channel
+// This prevents cleanup from emitting voice:leave when switching views
+let isIntentionalLeave = false
+
+export const setVoiceIntentionalLeave = (value) => {
+  isIntentionalLeave = value
+}
+
 const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDeafened: externalDeafened, onMuteChange, onDeafenChange, onOpenSettings, onParticipantsChange, onShowConnectionInfo }) => {
   const { socket, connected } = useSocket()
   const { user } = useAuth()
@@ -67,6 +75,8 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
   const ignoreOfferRef  = useRef({})   // peerId -> bool
   const remoteDescSetRef = useRef({})  // peerId -> bool
   const pendingCandidatesRef = useRef({}) // peerId -> RTCIceCandidateInit[]
+  const lastOfferTimeRef = useRef({})  // peerId -> timestamp of last offer received
+  const negotiationLockRef = useRef({}) // peerId -> bool (prevents concurrent negotiations)
 
   // ICE server list received from the Voltage server on voice:participants
   const serverIceServersRef = useRef([])
@@ -606,6 +616,45 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     }
   }, [initiateCall, getTierConfig])
 
+  // Queue a connection with tiered cooldown management for 100+ peer support
+  const queueConnection = useCallback((targetUserId) => {
+    if (!targetUserId || targetUserId === user?.id) return
+
+    // Check capacity
+    if (!canAcceptPeer(targetUserId)) {
+      console.log(`[WebRTC] Cannot queue ${targetUserId}: at capacity`)
+      return
+    }
+
+    // Check cooldown to prevent rapid reconnection attempts
+    const tier = getTierConfig()
+    const lastAttempt = connectionCooldownsRef.current.get(targetUserId)
+    if (lastAttempt && Date.now() - lastAttempt < tier.cooldown) {
+      console.log(`[WebRTC] Connection to ${targetUserId} on cooldown, skipping`)
+      return
+    }
+
+    // Check if already in queue
+    if (connectionQueueRef.current.includes(targetUserId)) {
+      console.log(`[WebRTC] Connection to ${targetUserId} already queued`)
+      return
+    }
+
+    // Check if already connected
+    const existing = peerConnections.current[targetUserId]
+    if (existing) {
+      const state = existing.connectionState
+      if (state === 'connected' || state === 'connecting' || state === 'completed') {
+        console.log(`[WebRTC] Already connected to ${targetUserId}, skipping queue`)
+        return
+      }
+    }
+
+    connectionQueueRef.current.push(targetUserId)
+    console.log(`[WebRTC] Queued connection to ${targetUserId} (queue length: ${connectionQueueRef.current.length})`)
+    processConnectionQueue()
+  }, [user?.id, canAcceptPeer, getTierConfig])
+
   // Process large groups in batches to prevent overwhelming the system
   const processPeerBatches = useCallback((peerIds, tier) => {
     const batchSize = tier.batchSize
@@ -652,45 +701,6 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     })
   }, [canAcceptPeer, queueConnection])
 
-  // Queue a connection with tiered cooldown management for 100+ peer support
-  const queueConnection = useCallback((targetUserId) => {
-    if (!targetUserId || targetUserId === user?.id) return
-
-    // Check capacity
-    if (!canAcceptPeer(targetUserId)) {
-      console.log(`[WebRTC] Cannot queue ${targetUserId}: at capacity`)
-      return
-    }
-
-    // Check cooldown to prevent rapid reconnection attempts
-    const tier = getTierConfig()
-    const lastAttempt = connectionCooldownsRef.current.get(targetUserId)
-    if (lastAttempt && Date.now() - lastAttempt < tier.cooldown) {
-      console.log(`[WebRTC] Connection to ${targetUserId} on cooldown, skipping`)
-      return
-    }
-
-    // Check if already in queue
-    if (connectionQueueRef.current.includes(targetUserId)) {
-      console.log(`[WebRTC] Connection to ${targetUserId} already queued`)
-      return
-    }
-
-    // Check if already connected
-    const existing = peerConnections.current[targetUserId]
-    if (existing) {
-      const state = existing.connectionState
-      if (state === 'connected' || state === 'connecting' || state === 'completed') {
-        console.log(`[WebRTC] Already connected to ${targetUserId}, skipping queue`)
-        return
-      }
-    }
-
-    connectionQueueRef.current.push(targetUserId)
-    console.log(`[WebRTC] Queued connection to ${targetUserId} (queue length: ${connectionQueueRef.current.length})`)
-    processConnectionQueue()
-  }, [user?.id, processConnectionQueue, canAcceptPeer, getTierConfig])
-
   useEffect(() => {
     if (!socket || !channel) return
 
@@ -733,6 +743,8 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       ignoreOfferRef.current  = {}
       remoteDescSetRef.current = {}
       pendingCandidatesRef.current = {}
+      lastOfferTimeRef.current = {}
+      negotiationLockRef.current = {}
       serverIceServersRef.current = []
       setLocalStream(null)
       setLocalVideoStream(null)
@@ -891,7 +903,10 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       }
       
       // Use tiered staggered delays
-      const baseDelay = tier.staggerBase
+      // IMPORTANT: As the joining peer, we wait LONGER before initiating to give
+      // existing participants priority. This reduces offer collisions during reconnection.
+      // Existing peers will initiate first, and we'll respond with answers.
+      const baseDelay = tier.staggerBase + 1500  // Extra 1.5s for joining peer
       const staggerMs = tier.staggerPerPeer
       
       peerIds.forEach((peerId, index) => {
@@ -939,7 +954,24 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     socket.on('voice:offer', async (data) => {
       const { from, offer, channelId } = data
       if (channelId && channelId !== channelIdRef.current) return
+      
+      // Debounce rapid offers from the same peer (prevents loops)
+      const now = Date.now()
+      const lastOffer = lastOfferTimeRef.current[from] || 0
+      if (now - lastOffer < 500) {
+        console.log('[WebRTC] Debouncing rapid offer from', from)
+        return
+      }
+      lastOfferTimeRef.current[from] = now
+      
+      // Check if we're already in a negotiation with this peer
+      if (negotiationLockRef.current[from]) {
+        console.log('[WebRTC] Negotiation already in progress for', from, '- skipping offer')
+        return
+      }
+      
       console.log('[WebRTC] Received offer from:', from)
+      negotiationLockRef.current[from] = true
 
       const pc = createPeerConnection(from)
       const offerCollision = makingOfferRef.current[from] || pc.signalingState !== 'stable'
@@ -948,6 +980,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       ignoreOfferRef.current[from] = !polite && offerCollision
       if (ignoreOfferRef.current[from]) {
         console.log('[WebRTC] Ignoring colliding offer from', from, '(impolite)')
+        negotiationLockRef.current[from] = false
         return
       }
 
@@ -980,6 +1013,11 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         console.log('[WebRTC] Sent answer to:', from)
       } catch (err) {
         console.error('[WebRTC] Failed to handle offer from', from, ':', err.message)
+      } finally {
+        // Release the lock after a short delay to allow the answer to be processed
+        setTimeout(() => {
+          negotiationLockRef.current[from] = false
+        }, 1000)
       }
     })
 
@@ -988,7 +1026,9 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       if (channelId && channelId !== channelIdRef.current) return
       const pc = peerConnections.current[from]
       if (!pc || pc.signalingState === 'stable') return
-      if (ignoreOfferRef.current[from]) return
+      // NOTE: Do NOT check ignoreOffer here! ignoreOffer is only for ignoring
+      // colliding OFFERS when we're impolite. We must always accept ANSWERS
+      // to our own offers, otherwise we get stuck waiting forever.
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer))
@@ -1066,6 +1106,8 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       delete ignoreOfferRef.current[userId]
       delete remoteDescSetRef.current[userId]
       delete pendingCandidatesRef.current[userId]
+      delete lastOfferTimeRef.current[userId]
+      delete negotiationLockRef.current[userId]
     })
 
     // Handle force-reconnect command from server (consensus broken)
@@ -1139,7 +1181,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       document.removeEventListener('keydown', resumeAudio)
       
       // Check if this is a channel change (component will remount with new channel)
-      const isChannelChange = channelIdRef.current !== channel?.id
+      const isChannelChange = initializedChannelIdRef.current !== channel?.id
       
       console.log('[Voice] Cleanup running, hasJoinedRef:', hasJoinedRef.current, 'channelChange:', isChannelChange)
       
@@ -1157,7 +1199,13 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       
       // Only do full cleanup if we actually joined AND are leaving the channel entirely
       // (not just re-rendering due to socket/other state changes)
-      if (hasJoinedRef.current && isChannelChange) {
+      // Also skip if this is not an intentional leave (view transition)
+      const shouldCleanup = hasJoinedRef.current && isChannelChange && !isIntentionalLeave
+      
+      // Reset the intentional leave flag after checking (for next time)
+      isIntentionalLeave = false
+      
+      if (shouldCleanup) {
         // Close peer connections
         Object.values(peerConnections.current).forEach(pc => {
           try { pc.close() } catch (e) {}
@@ -1495,6 +1543,9 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
   }
 
   const handleLeave = () => {
+    // Mark as intentional leave so cleanup doesn't re-emit voice:leave
+    isIntentionalLeave = true
+    
     soundService.callLeft()
 
     // Stop all media tracks
@@ -1526,6 +1577,8 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     ignoreOfferRef.current  = {}
     remoteDescSetRef.current = {}
     pendingCandidatesRef.current = {}
+    lastOfferTimeRef.current = {}
+    negotiationLockRef.current = {}
     serverIceServersRef.current = []
     initializedChannelIdRef.current = null
     isInitializingRef.current = false
@@ -1601,6 +1654,37 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     }
   }, [participantMenu])
 
+  // Speaking detection based on audio levels
+  useEffect(() => {
+    const analyser = analyserRef.current
+    if (!analyser) return
+    
+    const audioAnalyser = analyser.analyser
+    const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount)
+    
+    const checkSpeaking = () => {
+      if (!hasJoinedRef.current) return
+      
+      audioAnalyser.getByteFrequencyData(dataArray)
+      
+      let sum = 0
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i]
+      }
+      const average = sum / dataArray.length
+      const isSpeaking = average > 20 && !currentMuted
+      
+      if (user?.id) {
+        setSpeaking(prev => ({ ...prev, [user.id]: isSpeaking }))
+      }
+    }
+    
+    const speakingInterval = setInterval(checkSpeaking, 100)
+    checkSpeaking()
+    
+    return () => clearInterval(speakingInterval)
+  }, [currentMuted, user?.id])
+
   const [pinnedParticipant, setPinnedParticipant] = useState(null)
 
   const getScreenShareStream = (participant) => {
@@ -1660,7 +1744,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       </div>
 
       <div className={`voice-main-area ${hasAnyVideo ? 'has-video' : ''}`}>
-        {mainVideoStream && mainVideoParticipant ? (
+        {hasAnyVideo && mainVideoStream && mainVideoParticipant ? (
           <div 
             className="voice-main-video"
             onClick={() => setPinnedParticipant(pinnedParticipant ? null : mainVideoParticipant)}
@@ -1689,12 +1773,55 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
             )}
           </div>
         ) : (
-          <div className="voice-empty-state">
-            <div className="ghost-container">
-              <Ghost size={80} className="ghost-icon" />
-            </div>
-            <h3>No one is sharing video</h3>
-            <p>Start sharing your camera or screen to fill this space</p>
+          <div className="voice-participants-grid" data-count={displayParticipants.length}>
+            {displayParticipants.map(participant => {
+              const isSelf = participant.id === user?.id
+              const isMuted = participant.muted || (isSelf && currentMuted)
+              const isSpeaking = !!speaking[participant.id]
+              
+              const participantCameraStream = getCameraStream(participant)
+              const participantScreenStream = getScreenShareStream(participant)
+              const participantHasVideo = !!participantCameraStream || !!participantScreenStream
+              
+              return (
+                <div
+                  key={participant.id}
+                  className={`participant-grid-tile ${isSpeaking ? 'speaking' : ''} ${isMuted ? 'muted' : ''} ${participantHasVideo ? 'has-video' : ''}`}
+                >
+                  {participantHasVideo ? (
+                    <video
+                      autoPlay
+                      playsInline
+                      muted={isSelf}
+                      className="participant-grid-video"
+                      ref={el => { 
+                        if (el) {
+                          if (participantScreenStream) el.srcObject = participantScreenStream
+                          else if (participantCameraStream) el.srcObject = participantCameraStream
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="participant-grid-avatar">
+                      <Avatar
+                        src={participant.avatar}
+                        fallback={participant.username}
+                        size={64}
+                      />
+                      {isMuted && (
+                        <div className="participant-grid-muted-icon">
+                          <MicOff size={14} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="participant-grid-name">
+                    {participant.username}
+                    {isSelf && ' (You)'}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -1839,47 +1966,66 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       {/* Participant right-click context menu */}
       {participantMenu && (() => {
         const ls = localUserSettings[participantMenu.userId] || { muted: false, volume: 100 }
-        // Keep menu on screen
         const menuW = 220, menuH = 160
         const x = Math.min(participantMenu.x, window.innerWidth  - menuW - 8)
         const y = Math.min(participantMenu.y, window.innerHeight - menuH - 8)
         return (
-          <div
-            className="voice-participant-menu"
-            style={{ position: 'fixed', left: x, top: y, zIndex: 9999 }}
-            onPointerDown={e => e.stopPropagation()}
-          >
-            <div className="vpm-header">{participantMenu.username}</div>
-            <button
-              className="vpm-item"
-              onClick={() => {
-                setLocalUserSetting(participantMenu.userId, { muted: !ls.muted })
-              }}
-            >
-              {ls.muted ? <Volume2 size={14} /> : <VolumeX size={14} />}
-              {ls.muted ? 'Unmute for me' : 'Mute for me'}
-            </button>
-            <div className="vpm-volume">
-              <span>Volume</span>
-              <input
-                type="range"
-                min={0}
-                max={200}
-                value={ls.volume}
-                onChange={e => setLocalUserSetting(participantMenu.userId, { volume: Number(e.target.value) })}
-              />
-              <span>{ls.volume}%</span>
-            </div>
-            <button
-              className="vpm-item vpm-reset"
-              onClick={() => {
-                setLocalUserSetting(participantMenu.userId, { muted: false, volume: 100 })
+          <>
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
+              onClick={(e) => {
+                e.stopPropagation()
                 setParticipantMenu(null)
               }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setParticipantMenu(null)
+              }}
+            />
+            <div
+              className="voice-participant-menu"
+              style={{ position: 'fixed', left: x, top: y, zIndex: 9999 }}
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.preventDefault()}
             >
-              Reset to default
-            </button>
-          </div>
+              <div className="vpm-header">{participantMenu.username}</div>
+              <button
+                className="vpm-item"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setLocalUserSetting(participantMenu.userId, { muted: !ls.muted })
+                }}
+              >
+                {ls.muted ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                {ls.muted ? 'Unmute for me' : 'Mute for me'}
+              </button>
+              <div className="vpm-volume" onClick={(e) => e.stopPropagation()}>
+                <span>Volume</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={200}
+                  value={ls.volume}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    setLocalUserSetting(participantMenu.userId, { volume: Number(e.target.value) })
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <span>{ls.volume}%</span>
+              </div>
+              <button
+                className="vpm-item vpm-reset"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setLocalUserSetting(participantMenu.userId, { muted: false, volume: 100 })
+                  setParticipantMenu(null)
+                }}
+              >
+                Reset to default
+              </button>
+            </div>
+          </>
         )
       })()}
     </div>

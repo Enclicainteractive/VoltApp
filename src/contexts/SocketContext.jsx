@@ -95,6 +95,73 @@ export const SocketProvider = ({ children }) => {
     })
   }, [])
 
+  const handleCategoryCreate = useCallback((category) => {
+    setServerUpdates(prev => {
+      const server = prev[category.serverId]
+      if (server) {
+        return {
+          ...prev,
+          [category.serverId]: {
+            ...server,
+            categories: [...(server.categories || []), category]
+          }
+        }
+      }
+      return prev
+    })
+  }, [])
+
+  const handleCategoryUpdate = useCallback((category) => {
+    setServerUpdates(prev => {
+      const server = prev[category.serverId]
+      if (server) {
+        return {
+          ...prev,
+          [category.serverId]: {
+            ...server,
+            categories: server.categories?.map(c => c.id === category.id ? category : c) || []
+          }
+        }
+      }
+      return prev
+    })
+  }, [])
+
+  const handleCategoryDelete = useCallback(({ categoryId, serverId }) => {
+    setServerUpdates(prev => {
+      const server = prev[serverId]
+      if (server) {
+        return {
+          ...prev,
+          [serverId]: {
+            ...server,
+            categories: server.categories?.filter(c => c.id !== categoryId) || []
+          }
+        }
+      }
+      return prev
+    })
+  }, [])
+
+  const handleCategoryOrderUpdate = useCallback((categories) => {
+    const firstCategory = categories[0]
+    if (firstCategory?.serverId) {
+      setServerUpdates(prev => {
+        const server = prev[firstCategory.serverId]
+        if (server) {
+          return {
+            ...prev,
+            [firstCategory.serverId]: {
+              ...server,
+              categories
+            }
+          }
+        }
+        return prev
+      })
+    }
+  }, [])
+
   const handleRoleCreate = useCallback((role) => {
     setServerUpdates(prev => {
       const server = prev[role.serverId]
@@ -252,6 +319,10 @@ export const SocketProvider = ({ children }) => {
     newSocket.on('channel:updated', handleChannelUpdate)
     newSocket.on('channel:deleted', handleChannelDelete)
     newSocket.on('channel:order-updated', handleChannelOrderUpdate)
+    newSocket.on('category:created', handleCategoryCreate)
+    newSocket.on('category:updated', handleCategoryUpdate)
+    newSocket.on('category:deleted', handleCategoryDelete)
+    newSocket.on('category:order-updated', handleCategoryOrderUpdate)
     newSocket.on('role:created', handleRoleCreate)
     newSocket.on('role:updated', handleRoleUpdate)
     newSocket.on('role:deleted', handleRoleDelete)
@@ -299,7 +370,7 @@ export const SocketProvider = ({ children }) => {
       console.log('[Socket] Cleaning up socket connection')
       newSocket.disconnect()
     }
-  }, [isAuthenticated, token, addNotification, handleServerUpdate, handleChannelCreate, handleChannelUpdate, handleChannelDelete, handleChannelOrderUpdate, handleRoleCreate, handleRoleUpdate, handleRoleDelete])
+  }, [isAuthenticated, token, addNotification, handleServerUpdate, handleChannelCreate, handleChannelUpdate, handleChannelDelete, handleChannelOrderUpdate, handleCategoryCreate, handleCategoryUpdate, handleCategoryDelete, handleCategoryOrderUpdate, handleRoleCreate, handleRoleUpdate, handleRoleDelete])
 
   const value = {
     socket,

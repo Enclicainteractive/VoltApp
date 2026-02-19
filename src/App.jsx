@@ -6,6 +6,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { E2eProvider } from './contexts/E2eContext'
 import { E2eTrueProvider } from './contexts/E2eTrueContext'
 import { SelfVoltProvider } from './contexts/SelfVoltContext'
+import { VoiceProvider } from './contexts/VoiceContext'
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
 import CallbackPage from './pages/CallbackPage'
@@ -23,42 +24,44 @@ function App() {
       <AuthProvider>
         <ThemeProvider>
           <SocketProvider>
-            <SelfVoltProvider>
-              <E2eProvider>
-              <E2eTrueProvider>
-                <Routes>
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/callback" element={<CallbackPage />} />
-                  <Route path="/invite/:code" element={<InvitePage />} />
-                  <Route 
-                    path="/chat" 
-                    element={
-                      <ProtectedRoute>
-                        <ChatPage />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/chat/:serverId" 
-                    element={
-                      <ProtectedRoute>
-                        <ChatPage />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/chat/:serverId/:channelId" 
-                    element={
-                      <ProtectedRoute>
-                        <ChatPage />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route path="/" element={<Navigate to="/chat" replace />} />
-                </Routes>
-              </E2eTrueProvider>
-              </E2eProvider>
-            </SelfVoltProvider>
+            <VoiceProvider>
+              <SelfVoltProvider>
+                <E2eProvider>
+                  <E2eTrueProvider>
+                    <Routes>
+                      <Route path="/login" element={<LoginPage />} />
+                      <Route path="/callback" element={<CallbackPage />} />
+                      <Route path="/invite/:code" element={<InvitePage />} />
+                      <Route 
+                        path="/chat" 
+                        element={
+                          <ProtectedRoute>
+                            <ChatPage />
+                          </ProtectedRoute>
+                        } 
+                      />
+                      <Route 
+                        path="/chat/:serverId" 
+                        element={
+                          <ProtectedRoute>
+                            <ChatPage />
+                          </ProtectedRoute>
+                        } 
+                      />
+                      <Route 
+                        path="/chat/:serverId/:channelId" 
+                        element={
+                          <ProtectedRoute>
+                            <ChatPage />
+                          </ProtectedRoute>
+                        } 
+                      />
+                      <Route path="/" element={<Navigate to="/chat" replace />} />
+                    </Routes>
+                  </E2eTrueProvider>
+                </E2eProvider>
+              </SelfVoltProvider>
+            </VoiceProvider>
           </SocketProvider>
         </ThemeProvider>
       </AuthProvider>

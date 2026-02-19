@@ -3,6 +3,48 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  position: fixed;
+  inset: 0;
+}
+
+/* Voice + text content wrapper */
+.chat-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Wrapper for ChatArea + MemberSidebar */
+.chat-area-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Ensure voice channel view takes full space */
+.chat-content-wrapper > .vc-main-view,
+.chat-content-wrapper > .voice-channel-view,
+.chat-content-wrapper > .unified-voice-view {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .chat-content-wrapper {
+    flex-direction: column;
+  }
+
+  .chat-area-wrapper {
+    flex-direction: column;
+  }
 }
 
 .loading-container {
@@ -197,7 +239,10 @@
 }
 
 .voice-container.full {
-  flex: 1;
+  position: fixed;
+  inset: 0;
+  left: 72px;
+  z-index: 100;
   border-radius: 0;
 }
 
@@ -301,7 +346,9 @@
     height: 100dvh;
     min-height: -webkit-fill-available;
     padding-bottom: var(--mobile-nav-height);
-    overflow-y: auto;
+    overflow: hidden;
+    position: fixed;
+    inset: 0;
   }
 
   .voice-container.mini {

@@ -60,6 +60,7 @@ export const apiService = {
   
   // Server Members
   getServerMembers: (serverId) => api.get(`/servers/${serverId}/members`),
+  getOnlineMembers: (serverId) => api.get(`/servers/${serverId}/online-members`),
   kickMember: (serverId, memberId) => api.delete(`/servers/${serverId}/members/${memberId}`),
   leaveServer: (serverId) => api.post(`/servers/${serverId}/leave`),
   banMember: (serverId, memberId) => api.post(`/servers/${serverId}/bans/${memberId}`),
@@ -80,6 +81,14 @@ export const apiService = {
   updateChannel: (channelId, data) => api.put(`/channels/${channelId}`, data),
   deleteChannel: (channelId) => api.delete(`/channels/${channelId}`),
   updateChannelOrder: (serverId, channelIds) => api.put(`/servers/${serverId}/channels/order`, { channelIds }),
+  moveChannel: (channelId, data) => api.put(`/channels/${channelId}/move`, data),
+  
+  // Categories
+  getCategories: (serverId) => api.get(`/servers/${serverId}/categories`),
+  createCategory: (serverId, data) => api.post(`/servers/${serverId}/categories`, data),
+  updateCategory: (categoryId, data) => api.put(`/categories/${categoryId}`, data),
+  deleteCategory: (categoryId) => api.delete(`/categories/${categoryId}`),
+  updateCategoryOrder: (serverId, categoryIds) => api.put(`/servers/${serverId}/categories/order`, { categoryIds }),
   
   // Messages
   getMessages: (channelId, params) => api.get(`/channels/${channelId}/messages`, { params }),

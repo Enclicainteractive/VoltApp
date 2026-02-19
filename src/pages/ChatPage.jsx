@@ -21,7 +21,6 @@ import AgeVerificationModal from '../components/modals/AgeVerificationModal'
 import AdminPanel from '../components/AdminPanel'
 import NotificationToast from '../components/NotificationToast'
 import VoiceInfoModal from '../components/VoiceInfoModal'
-import VoiceChannelMainView from '../components/VoiceChannelMainView'
 import MobileNav from '../components/MobileNav'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -77,6 +76,7 @@ const ChatPage = () => {
   const [activeVoiceChannel, setActiveVoiceChannel] = useState(null)
   const [voicePreviewChannel, setVoicePreviewChannel] = useState(null)
   const [voiceViewMode, setVoiceViewMode] = useState('full')
+  const [voiceFloating, setVoiceFloating] = useState(false)
   const [selectedVoiceChannelId, setSelectedVoiceChannelId] = useState(null)
   const [voiceParticipantsByChannel, setVoiceParticipantsByChannel] = useState({})
   const [leavingVoiceChannelId, setLeavingVoiceChannelId] = useState(null)
@@ -92,6 +92,7 @@ const ChatPage = () => {
   const [blockedAgeChannels, setBlockedAgeChannels] = useState(new Set())
   const [showMembers, setShowMembers] = useState(true)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [contentCollapsed, setContentCollapsed] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isModerator, setIsModerator] = useState(false)
   const [friendRequestCount, setFriendRequestCount] = useState(0)
@@ -104,6 +105,8 @@ const ChatPage = () => {
   const [isVideoOn, setIsVideoOn] = useState(false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [voiceExpanded, setVoiceExpanded] = useState(false)
+  const [categories, setCategories] = useState([])
+  const [serverEmojis, setServerEmojis] = useState([])
   
   const settings = settingsService.getSettings()
   const serverMutes = settings.serverMutes || {}
@@ -235,6 +238,21 @@ const ChatPage = () => {
       }
     }
   }, [serverId, servers.length])
+
+  useEffect(() => {
+    if (viewMode === 'dms' || viewMode === 'friends' || viewMode === 'discovery' || viewMode === 'system') {
+      if (activeVoiceChannel && !voiceFloating) {
+        setVoiceFloating(true)
+      }
+    } else if (viewMode === 'server') {
+      if (activeVoiceChannel && voiceFloating) {
+        setVoiceFloating(false)
+        // Don't change voiceViewMode here - let the render logic determine it
+        // based on selectedVoiceChannelId (mini for text channel, full for voice channel)
+        setContentCollapsed(false)
+      }
+    }
+  }, [viewMode, activeVoiceChannel])
 
   useEffect(() => {
     console.log('[ChatPage] ChannelId changed to:', channelId)
@@ -498,17 +516,31 @@ const ChatPage = () => {
     try {
       console.log('[API] Loading full server data for:', id)
       
-      const [serverRes, channelsRes] = await Promise.all([
+      const [serverRes, channelsRes, onlineRes, categoriesRes] = await Promise.all([
         apiService.getServer(id),
-        apiService.getChannels(id)
+        apiService.getChannels(id),
+        apiService.getOnlineMembers(id),
+        apiService.getCategories(id).catch(() => ({ data: [] }))
       ])
       
       console.log('[API] Server:', serverRes.data.name)
       console.log('[API] Channels:', channelsRes.data.length)
+      console.log('[API] Online members:', onlineRes.data.length)
+      console.log('[API] Categories:', (categoriesRes.data || []).length)
       
       setCurrentServer(serverRes.data)
       setChannels(channelsRes.data)
-      setMembers(serverRes.data.members || [])
+      setCategories(categoriesRes.data || [])
+      
+      // Merge online status into members
+      const membersWithStatus = (serverRes.data.members || []).map(member => {
+        const onlineInfo = onlineRes.data.find(o => o.userId === member.id)
+        if (onlineInfo) {
+          return { ...member, status: onlineInfo.status, customStatus: onlineInfo.customStatus }
+        }
+        return { ...member, status: 'offline' }
+      })
+      setMembers(membersWithStatus)
       
       const defaultChannel = serverRes.data.defaultChannelId 
         ? channelsRes.data.find(c => c.id === serverRes.data.defaultChannelId)
@@ -625,8 +657,18 @@ const ChatPage = () => {
           setVoiceJoinKey(k => k + 1)
         }
       } else {
+        // When clicking a text channel, clear the voice channel selection
+        // so the text channel renders. The voice call stays alive via
+        // activeVoiceChannel and shows as a mini bar.
+        setSelectedVoiceChannelId(null)
         navigate(`/chat/${serverId}/${id}`)
       }
+    }
+  }
+
+  const handleReturnToVoice = () => {
+    if (activeVoiceChannel) {
+      setSelectedVoiceChannelId(activeVoiceChannel.id)
     }
   }
 
@@ -671,7 +713,14 @@ const ChatPage = () => {
   }
 
   const toggleVoiceViewMode = () => {
-    setVoiceViewMode(prev => prev === 'full' ? 'mini' : 'full')
+    // When in mini mode and user clicks maximize, set selectedVoiceChannelId
+    // to show the full voice view. When in full mode and user clicks minimize,
+    // clear selectedVoiceChannelId to show the mini bar.
+    if (selectedVoiceChannelId) {
+      setSelectedVoiceChannelId(null)
+    } else if (activeVoiceChannel) {
+      setSelectedVoiceChannelId(activeVoiceChannel.id)
+    }
   }
 
   const handleLeaveVoice = () => {
@@ -680,6 +729,8 @@ const ChatPage = () => {
     setIsMuted(false)
     setIsDeafened(false)
     setSelectedVoiceChannelId(null)
+    setContentCollapsed(false)
+    setVoiceFloating(false)
     // Reset joining lock so user can rejoin immediately without page refresh
     isJoiningVoiceRef.current = false
     if (leftChannelId) {
@@ -872,26 +923,6 @@ const ChatPage = () => {
       
       {viewMode === 'friends' ? (
         <>
-          {isMobile && activeVoiceChannel && (
-            <VoiceChannelMainView
-              channel={activeVoiceChannel}
-              isActive={true}
-              participants={voiceParticipantsByChannel[activeVoiceChannel.id] || []}
-              showAsMini={true}
-              onExpand={() => {
-                setSelectedVoiceChannelId(activeVoiceChannel.id)
-                setVoiceExpanded(true)
-              }}
-              onJoin={() => {}}
-              onLeave={handleLeaveVoice}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-              onToggleVideo={() => setIsVideoOn(!isVideoOn)}
-              onToggleScreenShare={() => setIsScreenSharing(!isScreenSharing)}
-            />
-          )}
           <DMList type="friends"
             onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
             onClose={() => {}}
@@ -905,26 +936,6 @@ const ChatPage = () => {
         </>
       ) : viewMode === 'system' ? (
         <>
-          {isMobile && activeVoiceChannel && (
-            <VoiceChannelMainView
-              channel={activeVoiceChannel}
-              isActive={true}
-              participants={voiceParticipantsByChannel[activeVoiceChannel.id] || []}
-              showAsMini={true}
-              onExpand={() => {
-                setSelectedVoiceChannelId(activeVoiceChannel.id)
-                setVoiceExpanded(true)
-              }}
-              onJoin={() => {}}
-              onLeave={handleLeaveVoice}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-              onToggleVideo={() => setIsVideoOn(!isVideoOn)}
-              onToggleScreenShare={() => setIsScreenSharing(!isScreenSharing)}
-            />
-          )}
           <DMList
             type="dms"
             onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
@@ -936,26 +947,6 @@ const ChatPage = () => {
         </>
       ) : viewMode === 'dms' ? (
         <>
-          {isMobile && activeVoiceChannel && (
-            <VoiceChannelMainView
-              channel={activeVoiceChannel}
-              isActive={true}
-              participants={voiceParticipantsByChannel[activeVoiceChannel.id] || []}
-              showAsMini={true}
-              onExpand={() => {
-                setSelectedVoiceChannelId(activeVoiceChannel.id)
-                setVoiceExpanded(true)
-              }}
-              onJoin={() => {}}
-              onLeave={handleLeaveVoice}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-              onToggleVideo={() => setIsVideoOn(!isVideoOn)}
-              onToggleScreenShare={() => setIsScreenSharing(!isScreenSharing)}
-            />
-          )}
           <DMList 
             type="dms" 
             onSelectConversation={setSelectedDM}
@@ -977,26 +968,6 @@ const ChatPage = () => {
         </>
       ) : viewMode === 'discovery' ? (
         <>
-          {isMobile && activeVoiceChannel && (
-            <VoiceChannelMainView
-              channel={activeVoiceChannel}
-              isActive={true}
-              participants={voiceParticipantsByChannel[activeVoiceChannel.id] || []}
-              showAsMini={true}
-              onExpand={() => {
-                setSelectedVoiceChannelId(activeVoiceChannel.id)
-                setVoiceExpanded(true)
-              }}
-              onJoin={() => {}}
-              onLeave={handleLeaveVoice}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-              onToggleVideo={() => setIsVideoOn(!isVideoOn)}
-              onToggleScreenShare={() => setIsScreenSharing(!isScreenSharing)}
-            />
-          )}
           <Discovery 
             onJoinServer={(serverId) => {
               loadServers()
@@ -1005,26 +976,6 @@ const ChatPage = () => {
         </>
       ) : viewMode === 'home' ? (
         <>
-          {isMobile && activeVoiceChannel && (
-            <VoiceChannelMainView
-              channel={activeVoiceChannel}
-              isActive={true}
-              participants={voiceParticipantsByChannel[activeVoiceChannel.id] || []}
-              showAsMini={true}
-              onExpand={() => {
-                setSelectedVoiceChannelId(activeVoiceChannel.id)
-                setVoiceExpanded(true)
-              }}
-              onJoin={() => {}}
-              onLeave={handleLeaveVoice}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-              onToggleVideo={() => setIsVideoOn(!isVideoOn)}
-              onToggleScreenShare={() => setIsScreenSharing(!isScreenSharing)}
-            />
-          )}
           <div className="empty-state full hero simple-home">
             <div className="simple-welcome">
               <h2>Welcome to VoltChat</h2>
@@ -1077,6 +1028,7 @@ const ChatPage = () => {
                 <ChannelSidebar 
                   server={currentServer}
                   channels={channels}
+                  categories={categories}
                   currentChannelId={channelId}
                   selectedVoiceChannelId={selectedVoiceChannelId}
                   onChannelChange={(id, isVoice) => {
@@ -1093,6 +1045,8 @@ const ChatPage = () => {
                   onDeleteChannel={handleChannelDeleted}
                   onRefreshChannels={() => loadServerData(serverId)}
                   onInvite={() => { setServerSettingsTab('invites'); setShowServerSettings(true); setShowChannelDrawer(false) }}
+                  onReturnToVoice={() => { handleReturnToVoice(); setShowChannelDrawer(false) }}
+                  onLeaveVoice={() => { handleLeaveVoice(); setShowChannelDrawer(false) }}
                   isMuted={isMuted}
                   isDeafened={isDeafened}
                   onToggleMute={() => setIsMuted(!isMuted)}
@@ -1106,6 +1060,7 @@ const ChatPage = () => {
             <ChannelSidebar 
               server={currentServer}
               channels={channels}
+              categories={categories}
               currentChannelId={channelId}
               selectedVoiceChannelId={selectedVoiceChannelId}
               onChannelChange={handleChannelChange}
@@ -1119,59 +1074,16 @@ const ChatPage = () => {
               onDeleteChannel={handleChannelDeleted}
               onRefreshChannels={() => loadServerData(serverId)}
               onInvite={() => { setServerSettingsTab('invites'); setShowServerSettings(true) }}
+              onReturnToVoice={handleReturnToVoice}
+              onLeaveVoice={handleLeaveVoice}
               isMuted={isMuted}
               isDeafened={isDeafened}
               onToggleMute={() => setIsMuted(!isMuted)}
               onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
             />
           )}
-          {/* When a voice channel is selected, show it as the main view */}
-          {/* Show mini voice bar when in a call but on a different view (text channel, friends, dms, etc.) */}
-          {isMobile && activeVoiceChannel && !selectedVoiceChannelId && (
-            <VoiceChannelMainView
-              channel={activeVoiceChannel}
-              isActive={true}
-              participants={voiceParticipantsByChannel[activeVoiceChannel.id] || []}
-              showAsMini={true}
-              onExpand={() => {
-                setSelectedVoiceChannelId(activeVoiceChannel.id)
-                setVoiceExpanded(true)
-              }}
-              onJoin={() => {}}
-              onLeave={handleLeaveVoice}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-              onToggleVideo={() => setIsVideoOn(!isVideoOn)}
-              onToggleScreenShare={() => setIsScreenSharing(!isScreenSharing)}
-            />
-          )}
-
-          {/* Full voice channel view */}
-          {selectedVoiceChannelId || (isMobile && voiceExpanded && activeVoiceChannel) ? (
-            <VoiceChannelMainView
-              channel={channels.find(c => c.id === (selectedVoiceChannelId || activeVoiceChannel?.id))}
-              isActive={activeVoiceChannel?.id === (selectedVoiceChannelId || activeVoiceChannel?.id)}
-              participants={voiceParticipantsByChannel[selectedVoiceChannelId || activeVoiceChannel?.id] || []}
-              activeVoiceChannel={activeVoiceChannel}
-              showAsMini={false}
-              onJoin={() => handleChannelChange(selectedVoiceChannelId || activeVoiceChannel?.id, true)}
-              onLeave={() => {
-                handleLeaveVoice()
-                setVoiceExpanded(false)
-              }}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-              onToggleVideo={() => setIsVideoOn(!isVideoOn)}
-              onToggleScreenShare={() => setIsScreenSharing(!isScreenSharing)}
-              onShowConnectionInfo={() => setShowVoiceInfo(true)}
-              onOpenSettings={() => { setSettingsInitialTab('voice'); setShowSettings(true) }}
-              onExpand={isMobile ? () => setVoiceExpanded(true) : undefined}
-            />
-          ) : channelId && channelId !== 'null' ? (
+          {/* When voice channel is selected as main view, show placeholder or ChatArea behind the mini bar */}
+          {channelId && channelId !== 'null' ? (
             <>
               {ageGateNotice ? (
                 <div className="empty-state">
@@ -1195,6 +1107,7 @@ const ChatPage = () => {
                 </div>
               ) : (
                 <>
+                  {!contentCollapsed && (
                   <ChatArea 
                     channelId={channelId}
                     serverId={serverId}
@@ -1227,6 +1140,8 @@ const ChatPage = () => {
                     }}
                     onToggleMembers={() => setShowMembers(prev => !prev)}
                   />
+                  )}
+                  {!contentCollapsed && (
                   <MemberSidebar 
                     members={members} 
                     server={currentServer}
@@ -1237,6 +1152,7 @@ const ChatPage = () => {
                     onBan={handleMemberBan}
                     onAddFriend={handleAddFriend}
                   />
+                  )}
                 </>
               )}
             </>
@@ -1272,23 +1188,31 @@ const ChatPage = () => {
         </div>
       )}
 
-      {/* Voice panel — rendered outside server/channel blocks so it persists
-          when the user navigates to other servers or views */}
+      {/* Unified Voice panel - SINGLE persistent render that adapts to view mode
+          This prevents WebRTC reconnection when switching between views.
+          viewMode is 'full' when selectedVoiceChannelId is set, otherwise 'mini' */}
       {activeVoiceChannel && (
-        <div className={`voice-container ${voiceViewMode}`}>
+        <div className={`voice-container ${selectedVoiceChannelId ? 'full' : (voiceFloating ? 'mini' : (viewMode === 'server' ? 'mini' : voiceViewMode))}`}>
           <div className="voice-container-header">
             <span>{activeVoiceChannel.name}</span>
             <div className="voice-view-controls">
+              <button onClick={() => setContentCollapsed(!contentCollapsed)} title={contentCollapsed ? 'Show Chat' : 'Hide Chat'}>
+                {contentCollapsed ? '▶' : '◀'}
+              </button>
               <button onClick={toggleVoiceViewMode} title={voiceViewMode === 'full' ? 'Minimize' : 'Maximize'}>
                 {voiceViewMode === 'full' ? '−' : '□'}
               </button>
             </div>
           </div>
           <VoiceChannel
+            key={activeVoiceChannel.id}
             channel={activeVoiceChannel}
             joinKey={voiceJoinKey}
-            onLeave={handleLeaveVoice}
-            viewMode={voiceViewMode}
+            onLeave={() => {
+              handleLeaveVoice()
+              setVoiceExpanded(false)
+            }}
+            viewMode={selectedVoiceChannelId ? 'full' : (voiceFloating ? 'mini' : (viewMode === 'server' ? 'mini' : voiceViewMode))}
             isMuted={isMuted}
             isDeafened={isDeafened}
             onMuteChange={setIsMuted}

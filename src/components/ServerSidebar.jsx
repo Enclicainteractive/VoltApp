@@ -8,7 +8,7 @@ import { apiService } from '../services/apiService'
 import { getStoredServer } from '../services/serverConfig'
 import '../assets/styles/ServerSidebar.css'
 
-const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServer, onOpenSettings, onOpenCreate, onOpenJoin, onOpenServerSettings, onLeaveServer, onOpenAdmin, isAdmin, friendRequestCount = 0, dmNotifications = [], serverUnreadCounts = {} }) => {
+const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServer, onOpenSettings, onOpenCreate, onOpenJoin, onOpenServerSettings, onLeaveServer, onOpenAdmin, isAdmin, friendRequestCount = 0, dmNotifications = [], serverUnreadCounts = {}, onDMClick }) => {
   const { user } = useAuth()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showJoinModal, setShowJoinModal] = useState(false)
@@ -16,6 +16,8 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
 
   const server = getStoredServer()
   const imageApiUrl = server?.imageApiUrl || server?.apiUrl || ''
+  const isVoltageServer = server?.name?.toLowerCase() === 'voltage'
+  const showAdminPanel = !isVoltageServer || isAdmin || server?.ownerId === user?.id
 
   const totalNotifications = friendRequestCount + dmNotifications.length
 
@@ -64,6 +66,10 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
                       alt=""
                       className="notification-avatar"
                       style={{ zIndex: 3 - idx }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDMClick?.(dm.id, dm.recipient)
+                      }}
                     />
                   ))
                 ) : (
@@ -85,6 +91,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
             className="server-icon admin-icon"
             onClick={onOpenAdmin}
             title="Admin Panel"
+            style={showAdminPanel ? undefined : { display: 'none' }}
           >
             <Shield size={28} />
           </button>

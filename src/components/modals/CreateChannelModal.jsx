@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
-import { X, Hash, Volume2 } from 'lucide-react'
+import { X, Hash, Volume2, Folder } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import './Modal.css'
 
-const CreateChannelModal = ({ serverId, onClose, onSuccess }) => {
+const CreateChannelModal = ({ serverId, categories = [], onClose, onSuccess }) => {
   const [channelName, setChannelName] = useState('')
   const [channelType, setChannelType] = useState('text')
+  const [categoryId, setCategoryId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -23,7 +24,8 @@ const CreateChannelModal = ({ serverId, onClose, onSuccess }) => {
     try {
       await apiService.createChannel(serverId, {
         name: channelName.trim().toLowerCase().replace(/\s+/g, '-'),
-        type: channelType
+        type: channelType,
+        categoryId: categoryId || null
       })
       onSuccess()
     } catch (err) {
@@ -71,6 +73,20 @@ const CreateChannelModal = ({ serverId, onClose, onSuccess }) => {
                   </div>
                 </button>
               </div>
+            </div>
+
+            <div className="form-group">
+              <label>Category</label>
+              <select
+                className="input"
+                value={categoryId}
+                onChange={e => setCategoryId(e.target.value)}
+              >
+                <option value="">No Category</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
             </div>
 
             <div className="form-group">

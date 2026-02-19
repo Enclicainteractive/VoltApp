@@ -1,5 +1,7 @@
 .server-sidebar {
   width: 72px;
+  min-width: 72px;
+  max-width: 72px;
   background: var(--volt-bg-gradient, none), var(--volt-bg-primary);
   display: flex;
   flex-direction: column;
@@ -8,6 +10,8 @@
   overflow-y: auto;
   overflow-x: hidden;
   gap: 4px;
+  height: 100%;
+  flex-shrink: 0;
 }
 
 .server-list {
