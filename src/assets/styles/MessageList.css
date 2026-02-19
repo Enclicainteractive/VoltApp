@@ -444,6 +444,13 @@
   background: rgba(99, 102, 241, 0.15);
 }
 
+.mention-clickable {
+  cursor: pointer;
+}
+.mention-clickable:hover {
+  text-decoration: underline;
+}
+
 .loading-more-messages {
   display: flex;
   align-items: center;

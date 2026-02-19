@@ -19,6 +19,9 @@ const defaultSettings = {
   serverMutes: {}
 }
 
+// Simple event emitter so components can react to live settings changes
+const listeners = new Set()
+
 export const settingsService = {
   getSettings() {
     try {
@@ -35,6 +38,8 @@ export const settingsService = {
   saveSettings(settings) {
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+      // Notify all subscribers of the change
+      listeners.forEach(fn => { try { fn(settings) } catch {} })
     } catch (err) {
       console.error('[Settings] Error saving settings:', err)
     }
@@ -51,8 +56,16 @@ export const settingsService = {
     this.saveSettings(settings)
   },
 
+  // Subscribe to settings changes. Returns unsubscribe function.
+  subscribe(fn) {
+    listeners.add(fn)
+    return () => listeners.delete(fn)
+  },
+
   resetSettings() {
     localStorage.removeItem(SETTINGS_KEY)
-    return { ...defaultSettings }
+    const defaults = { ...defaultSettings }
+    listeners.forEach(fn => { try { fn(defaults) } catch {} })
+    return defaults
   }
 }

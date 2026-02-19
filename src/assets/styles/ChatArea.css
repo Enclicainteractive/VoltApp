@@ -431,6 +431,33 @@
 }
 
 /* Attachment Preview Bar */
+/* Upload progress bar */
+.upload-progress-bar-container {
+  padding: 6px 12px 4px;
+  margin-bottom: 4px;
+}
+
+.upload-progress-label {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+  margin-bottom: 4px;
+}
+
+.upload-progress-track {
+  height: 4px;
+  background: var(--volt-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: var(--volt-primary, #5865f2);
+  border-radius: 2px;
+  transition: width 0.15s ease;
+}
+
+/* Attachment preview bar */
 .attachment-preview-bar {
   display: flex;
   gap: 8px;
@@ -442,13 +469,61 @@
 .attachment-preview-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 6px 10px;
   background: var(--volt-bg-secondary);
   border: 1px solid var(--volt-border);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   color: var(--volt-text-secondary);
+  max-width: 220px;
+  position: relative;
+}
+
+.attachment-preview-item.uploading {
+  opacity: 0.75;
+  border-color: var(--volt-primary, #5865f2);
+}
+
+/* Thumbnail for images/videos */
+.attachment-thumb-img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: var(--volt-bg-tertiary);
+}
+
+/* Type badge for non-image files */
+.attachment-type-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.attachment-type-icon.attachment-type-image  { background: #059669; }
+.attachment-type-icon.attachment-type-video  { background: #7c3aed; font-size: 18px; }
+.attachment-type-icon.attachment-type-audio  { background: #0891b2; font-size: 18px; }
+.attachment-type-icon.attachment-type-pdf    { background: #dc2626; }
+.attachment-type-icon.attachment-type-office { background: #d97706; }
+.attachment-type-icon.attachment-type-code   { background: #0f766e; font-family: monospace; font-size: 11px; }
+.attachment-type-icon.attachment-type-text   { background: #4b5563; font-size: 11px; }
+.attachment-type-icon.attachment-type-file   { background: #6b7280; }
+
+/* File meta (name + size) */
+.attachment-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
 }
 
 .attachment-name {
@@ -456,6 +531,29 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--volt-text-primary);
+}
+
+.attachment-size {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  margin-top: 2px;
+}
+
+/* Uploading spinner */
+.attachment-uploading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--volt-border);
+  border-top-color: var(--volt-primary, #5865f2);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .attachment-remove {
@@ -468,6 +566,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .attachment-remove:hover {
@@ -477,6 +576,10 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+  .chat-area {
+    padding-bottom: calc(var(--mobile-nav-height) + 16px);
+  }
+
   .mention-suggestions-panel {
     min-width: 200px;
     max-width: 280px;
@@ -488,6 +591,23 @@
   
   .emoji-picker-popover .emoji-picker {
     width: 280px;
+  }
+
+  .message-list {
+    padding: 8px;
+  }
+
+  .message {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .message-author {
+    font-size: 13px;
+  }
+
+  .message-content {
+    font-size: 15px;
   }
 }
 

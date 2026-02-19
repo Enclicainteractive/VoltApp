@@ -203,3 +203,272 @@
   color: var(--volt-text-muted, #8a8f9e);
   margin-bottom: 8px;
 }
+
+/* ── Bot status colours ─────────────────────────────────────────────────────── */
+
+.bot-status.idle   { color: #f59e0b; }
+.bot-status.dnd    { color: #ef4444; }
+
+.bot-custom-status {
+  font-size: 11px;
+  color: var(--volt-text-muted, #8a8f9e);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+/* ── Wire SDK docs section ──────────────────────────────────────────────────── */
+
+.wire-docs {
+  margin-top: 24px;
+  border-top: 1px solid var(--volt-border, #2a2f3e);
+  padding-top: 20px;
+}
+
+.wire-docs-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--volt-primary, #1fb6ff);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.wire-docs-intro {
+  font-size: 13px;
+  color: var(--volt-text-secondary, #b0b5c4);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+/* Install command bar */
+.wire-install-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--volt-bg-primary, #0b1220);
+  border: 1px solid var(--volt-border, #2a2f3e);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.wire-install-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--volt-text-muted, #8a8f9e);
+  flex-shrink: 0;
+}
+
+.wire-install-block code {
+  flex: 1;
+  color: var(--volt-primary, #1fb6ff);
+  font-size: 13px;
+}
+
+.wire-code-copy-inline {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--volt-text-muted, #8a8f9e);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.wire-code-copy-inline:hover {
+  color: var(--volt-text-primary, #e0e0e0);
+}
+
+.wire-install-note {
+  font-size: 11px;
+  color: var(--volt-text-muted, #8a8f9e);
+  margin: 0 0 14px;
+}
+
+/* Collapsible doc section */
+.wire-doc-section {
+  border: 1px solid var(--volt-border, #2a2f3e);
+  border-radius: 7px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.wire-doc-section.open {
+  border-color: rgba(31, 182, 255, 0.35);
+}
+
+.wire-doc-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--volt-bg-tertiary, #1a1f2e);
+  border: none;
+  cursor: pointer;
+  color: var(--volt-text-primary, #e0e0e0);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.wire-doc-toggle:hover {
+  background: var(--volt-hover, rgba(255,255,255,0.05));
+}
+
+.wire-doc-toggle-icon {
+  color: var(--volt-primary, #1fb6ff);
+  display: flex;
+  align-items: center;
+}
+
+.wire-doc-toggle-title {
+  flex: 1;
+}
+
+.wire-doc-body {
+  padding: 12px 14px;
+  background: var(--volt-bg-secondary, #141824);
+}
+
+.wire-doc-desc {
+  font-size: 12px;
+  color: var(--volt-text-secondary, #b0b5c4);
+  margin: 0 0 10px;
+  line-height: 1.55;
+}
+
+/* Code block inside doc sections */
+.wire-code-block {
+  position: relative;
+  background: var(--volt-bg-primary, #0b1220);
+  border: 1px solid var(--volt-border, #2a2f3e);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.wire-code-block pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.wire-code-block code {
+  font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+  color: #c9d1d9;
+  white-space: pre;
+}
+
+.wire-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--volt-bg-tertiary, #1a1f2e);
+  border: 1px solid var(--volt-border, #2a2f3e);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--volt-text-muted, #8a8f9e);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.wire-code-copy:hover {
+  color: var(--volt-text-primary, #e0e0e0);
+  background: var(--volt-hover, rgba(255,255,255,0.08));
+}
+
+/* Status pills */
+.wire-status-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.wire-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.2px;
+}
+
+.wire-pill.online  { background: rgba(34, 197, 94, 0.15);  color: #22c55e; }
+.wire-pill.idle    { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.wire-pill.dnd     { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+.wire-pill.offline { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
+
+/* Docs footer link */
+.wire-docs-footer {
+  font-size: 11px;
+  color: var(--volt-text-muted, #8a8f9e);
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--volt-border, #2a2f3e);
+}
+
+.wire-docs-footer a {
+  color: var(--volt-primary, #1fb6ff);
+  text-decoration: none;
+}
+
+.wire-docs-footer a:hover {
+  text-decoration: underline;
+}
+
+/* Panel section spacing */
+.panel-section {
+  margin-bottom: 4px;
+}
+
+.panel-section .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panel-section .section-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--volt-text-primary, #e0e0e0);
+  margin: 0;
+}
+
+.section-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.loading-state,
+.empty-state-small {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--volt-text-muted, #8a8f9e);
+  font-size: 13px;
+  text-align: center;
+  gap: 6px;
+}

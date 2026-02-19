@@ -91,9 +91,28 @@
   background: #6b7280;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .member-sidebar {
-    display: none;
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 280px;
+    height: 100dvh;
+    z-index: 1001;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    border-left: 1px solid var(--volt-border);
+  }
+
+  .member-sidebar.visible {
+    transform: translateX(0);
+  }
+}
+
+@media (min-width: 769px) {
+  .member-sidebar {
+    display: block !important;
   }
 }
 
@@ -132,6 +151,16 @@
 
 .role-icon.moderator {
   color: var(--volt-primary);
+}
+
+.member-federated-id {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
 }
 
 .member-status-text {

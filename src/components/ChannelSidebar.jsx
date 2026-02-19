@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Hash, Volume2, Settings, ChevronDown, Plus, UserPlus, Lock, Mic, MicOff, Headphones, Edit2, Trash2, Bell, BellOff, Copy } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
@@ -10,16 +10,104 @@ import StatusSelector from './StatusSelector'
 import Avatar from './Avatar'
 import '../assets/styles/ChannelSidebar.css'
 
-const ChannelSidebar = ({ server, channels, currentChannelId, onChannelChange, onCreateChannel, onOpenServerSettings, onOpenSettings, onVoicePreview, activeVoiceChannel, onDeleteChannel, onRefreshChannels, onInvite, isMuted, isDeafened, onToggleMute, onToggleDeafen }) => {
+const ChannelSidebar = ({ server, channels, currentChannelId, selectedVoiceChannelId, onChannelChange, onCreateChannel, onOpenServerSettings, onOpenSettings, onVoicePreview, activeVoiceChannel, voiceParticipantsByChannel = {}, onDeleteChannel, onRefreshChannels, onInvite, isMuted, isDeafened, onToggleMute, onToggleDeafen, leavingVoiceChannelId }) => {
   const { user, logout } = useAuth()
-  const { socket } = useSocket()
+  const { socket, connected } = useSocket()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showChannelSettings, setShowChannelSettings] = useState(null)
   const [expandedCategories, setExpandedCategories] = useState({ text: true, voice: true })
   const [showServerMenu, setShowServerMenu] = useState(false)
   const [userStatus, setUserStatus] = useState({ status: 'online', customStatus: '' })
   const [contextMenu, setContextMenu] = useState(null)
+  // Local participant map for channels the user is NOT currently in
+  const [sidebarParticipants, setSidebarParticipants] = useState({})
   const clickTimeoutRef = useRef(null)
+
+  // Fetch participants for all voice channels on mount / channel list change,
+  // and keep them in sync via voice:user-joined / voice:user-left events.
+  useEffect(() => {
+    if (!socket || !connected) return
+
+    const voiceChannels = channels.filter(c => c.type === 'voice')
+
+    // Request initial participant lists for every voice channel
+    voiceChannels.forEach(ch => {
+      socket.emit('voice:get-participants', { channelId: ch.id })
+    })
+
+    const handleParticipants = (data) => {
+      setSidebarParticipants(prev => ({
+        ...prev,
+        [data.channelId]: data.participants || []
+      }))
+    }
+
+    const handleUserJoined = (userInfo) => {
+      // userInfo should carry channelId from the server event
+      const cid = userInfo.channelId
+      if (!cid) return
+      setSidebarParticipants(prev => {
+        const list = prev[cid] || []
+        if (list.find(p => p.id === userInfo.id)) return prev
+        return { ...prev, [cid]: [...list, userInfo] }
+      })
+    }
+
+    const handleUserLeft = (data) => {
+      const userId = data?.userId || data?.id
+      const cid = data?.channelId
+      if (!userId || !cid) return
+      setSidebarParticipants(prev => {
+        const list = prev[cid] || []
+        return { ...prev, [cid]: list.filter(p => p.id !== userId) }
+      })
+    }
+
+    const handleUserUpdated = (data) => {
+      const cid = data?.channelId
+      if (!cid) return
+      setSidebarParticipants(prev => {
+        const list = prev[cid] || []
+        return { ...prev, [cid]: list.map(p => p.id === data.userId ? { ...p, ...data } : p) }
+      })
+    }
+
+    socket.on('voice:participants',   handleParticipants)
+    socket.on('voice:user-joined',    handleUserJoined)
+    socket.on('voice:user-left',      handleUserLeft)
+    socket.on('voice:user-updated',   handleUserUpdated)
+
+    return () => {
+      socket.off('voice:participants',  handleParticipants)
+      socket.off('voice:user-joined',   handleUserJoined)
+      socket.off('voice:user-left',     handleUserLeft)
+      socket.off('voice:user-updated',  handleUserUpdated)
+    }
+  }, [socket, connected, channels])
+
+  // When the local user leaves a channel, immediately clear it from sidebarParticipants
+  // and re-fetch the live list from the server (which no longer includes us).
+  useEffect(() => {
+    if (!leavingVoiceChannelId || !socket || !connected) return
+    // Optimistically clear so the sidebar shows empty instantly
+    setSidebarParticipants(prev => ({ ...prev, [leavingVoiceChannelId]: [] }))
+    // Then re-fetch the authoritative list (server-side will have removed us by now)
+    const refetch = () => {
+      socket.emit('voice:get-participants', { channelId: leavingVoiceChannelId })
+    }
+    // Small delay to let the server process the leave before we ask
+    const timer = setTimeout(refetch, 600)
+    return () => clearTimeout(timer)
+  }, [leavingVoiceChannelId, socket, connected])
+
+  // Merge local sidebar data with the live data from the active voice channel
+  const getMergedParticipants = (channelId) => {
+    // Active channel: prefer the live data passed down from VoiceChannel
+    if (activeVoiceChannel?.id === channelId && voiceParticipantsByChannel[channelId]) {
+      return voiceParticipantsByChannel[channelId]
+    }
+    return sidebarParticipants[channelId] || []
+  }
 
   const getMemberRoles = (memberId) => {
     const member = server?.members?.find(m => m.id === memberId)
@@ -74,16 +162,8 @@ const ChannelSidebar = ({ server, channels, currentChannelId, onChannelChange, o
 
   const handleChannelClick = (channel, isVoice) => {
     if (isVoice) {
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current)
-        clickTimeoutRef.current = null
-        onChannelChange(channel.id, true)
-      } else {
-        clickTimeoutRef.current = setTimeout(() => {
-          clickTimeoutRef.current = null
-          onVoicePreview?.(channel)
-        }, 250)
-      }
+      // Single click = join / select the voice channel
+      onChannelChange(channel.id, true)
     } else {
       onChannelChange(channel.id, false)
     }
@@ -238,31 +318,59 @@ const ChannelSidebar = ({ server, channels, currentChannelId, onChannelChange, o
             
             {expandedCategories.voice && (
               <div className="channel-items">
-                {voiceChannels.map(channel => (
-                  <button
-                    key={channel.id}
-                    className={`channel-item voice ${activeVoiceChannel?.id === channel.id ? 'connected' : ''}`}
-                    onClick={() => handleChannelClick(channel, true)}
-                    onContextMenu={(e) => handleChannelContextMenu(e, channel)}
-                  >
-                    <Volume2 size={20} />
-                    <span className="channel-name">{channel.name}</span>
-                    {activeVoiceChannel?.id === channel.id && (
-                      <span className="voice-connected-badge">Connected</span>
-                    )}
-                    {isAdmin && (
-                      <span 
-                        className="channel-settings-btn"
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowChannelSettings(channel) } }}
+                {voiceChannels.map(channel => {
+                  const participants = getMergedParticipants(channel.id)
+                  const isConnected = activeVoiceChannel?.id === channel.id
+                  return (
+                    <div key={channel.id} className="voice-channel-group">
+                      <button
+                        className={`channel-item voice ${isConnected ? 'connected' : ''} ${selectedVoiceChannelId === channel.id ? 'selected' : ''}`}
+                        onClick={() => handleChannelClick(channel, true)}
+                        onContextMenu={(e) => handleChannelContextMenu(e, channel)}
                       >
-                        <Settings size={14} />
-                      </span>
-                    )}
-                  </button>
-                ))}
+                        <Volume2 size={20} />
+                        <span className="channel-name">{channel.name}</span>
+                        {isConnected && (
+                          <span className="voice-connected-badge">Connected</span>
+                        )}
+                        {!isConnected && participants.length > 0 && (
+                          <span className="voice-count-badge">{participants.length}</span>
+                        )}
+                        {isAdmin && (
+                          <span 
+                            className="channel-settings-btn"
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowChannelSettings(channel) } }}
+                          >
+                            <Settings size={14} />
+                          </span>
+                        )}
+                      </button>
+                      {participants.length > 0 && (
+                        <div className={`voice-participant-list${selectedVoiceChannelId === channel.id ? ' expanded' : ''}`}>
+                          {participants.map(p => (
+                            <div key={p.id} className="voice-participant-row">
+                              <div className="voice-participant-avatar-wrap">
+                                <Avatar src={p.avatar} fallback={p.username} size={20} />
+                                {(p.muted) && (
+                                  <span className="voice-participant-muted-dot" title="Muted">
+                                    <MicOff size={8} />
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`voice-participant-name ${p.muted ? 'muted' : ''}`}>
+                                {p.username}
+                                {p.id === user?.id ? ' (You)' : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
                 {voiceChannels.length === 0 && (
                   <div className="no-channels">No voice channels</div>
                 )}

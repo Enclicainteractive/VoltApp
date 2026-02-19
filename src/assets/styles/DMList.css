@@ -242,3 +242,24 @@
   text-align: center;
   font-style: italic;
 }
+
+@media (max-width: 768px) {
+  .dm-list {
+    width: 100%;
+    height: auto;
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 1px solid var(--volt-border);
+  }
+
+  .dm-items {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dm-conversation {
+    padding: 12px;
+    min-height: var(--touch-target-size, 44px);
+  }
+}

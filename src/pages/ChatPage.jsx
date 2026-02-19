@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { MessageSquare, Lock } from 'lucide-react'
+import { MessageSquare, Lock, Menu, ChevronLeft, Users } from 'lucide-react'
 import ServerSidebar from '../components/ServerSidebar'
 import ChannelSidebar from '../components/ChannelSidebar'
 import ChatArea from '../components/ChatArea'
@@ -8,6 +8,7 @@ import MemberSidebar from '../components/MemberSidebar'
 import FriendsPage from '../components/FriendsPage'
 import Discovery from '../components/Discovery'
 import DMList from '../components/DMList'
+import SystemMessagePanel from '../components/SystemMessagePanel'
 import DMChat from '../components/DMChat'
 import VoiceChannel from '../components/VoiceChannel'
 import VoiceChannelPreview from '../components/VoiceChannelPreview'
@@ -19,6 +20,9 @@ import JoinServerModal from '../components/modals/JoinServerModal'
 import AgeVerificationModal from '../components/modals/AgeVerificationModal'
 import AdminPanel from '../components/AdminPanel'
 import NotificationToast from '../components/NotificationToast'
+import VoiceInfoModal from '../components/VoiceInfoModal'
+import VoiceChannelMainView from '../components/VoiceChannelMainView'
+import MobileNav from '../components/MobileNav'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useE2e } from '../contexts/E2eContext'
@@ -27,6 +31,20 @@ import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
 import { settingsService } from '../services/settingsService'
 import '../assets/styles/ChatPage.css'
+
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  
+  return isMobile
+}
 
 const ChatPage = () => {
   const navigate = useNavigate()
@@ -39,6 +57,7 @@ const ChatPage = () => {
     hasDecryptedKey 
   } = useE2e()
   const e2eTrue = useE2eTrue()
+  const isMobile = useIsMobile()
   
   const [servers, setServers] = useState([])
   const [currentServer, setCurrentServer] = useState(null)
@@ -58,9 +77,14 @@ const ChatPage = () => {
   const [activeVoiceChannel, setActiveVoiceChannel] = useState(null)
   const [voicePreviewChannel, setVoicePreviewChannel] = useState(null)
   const [voiceViewMode, setVoiceViewMode] = useState('full')
+  const [selectedVoiceChannelId, setSelectedVoiceChannelId] = useState(null)
+  const [voiceParticipantsByChannel, setVoiceParticipantsByChannel] = useState({})
+  const [leavingVoiceChannelId, setLeavingVoiceChannelId] = useState(null)
   const isJoiningVoiceRef = useRef(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isDeafened, setIsDeafened] = useState(false)
+  const [showVoiceInfo, setShowVoiceInfo] = useState(false)
+  const [voiceJoinKey, setVoiceJoinKey] = useState(0)
   const [selectedDM, setSelectedDM] = useState(null)
   const [themeStyles, setThemeStyles] = useState({})
   const [pendingAgeChannel, setPendingAgeChannel] = useState(null)
@@ -73,6 +97,11 @@ const ChatPage = () => {
   const [friendRequestCount, setFriendRequestCount] = useState(0)
   const [dmNotifications, setDmNotifications] = useState([])
   const [serverUnreadCounts, setServerUnreadCounts] = useState({})
+  
+  const [mobileTab, setMobileTab] = useState('home')
+  const [showChannelDrawer, setShowChannelDrawer] = useState(false)
+  const [mobileBack, setMobileBack] = useState(null)
+  
   const settings = settingsService.getSettings()
   const serverMutes = settings.serverMutes || {}
 
@@ -349,6 +378,41 @@ const ChatPage = () => {
     }
   }, [socket, connected, serverId])
 
+  // Keep the members list in sync with realtime presence events so that
+  // the MemberSidebar's ONLINE / OFFLINE sections update without a page
+  // reload.  We patch status + customStatus directly on the member objects
+  // so the sidebar's initial-seed logic also gets fresh data.
+  useEffect(() => {
+    if (!socket || !connected) return
+
+    const handleUserStatus = ({ userId, status, customStatus }) => {
+      setMembers(prev => prev.map(m =>
+        m.id === userId
+          ? {
+              ...m,
+              status,
+              ...(customStatus !== undefined ? { customStatus } : {})
+            }
+          : m
+      ))
+    }
+
+    const handleMemberOffline = ({ userId }) => {
+      if (!userId) return
+      setMembers(prev => prev.map(m =>
+        m.id === userId ? { ...m, status: 'offline' } : m
+      ))
+    }
+
+    socket.on('user:status',   handleUserStatus)
+    socket.on('member:offline', handleMemberOffline)
+
+    return () => {
+      socket.off('user:status',   handleUserStatus)
+      socket.off('member:offline', handleMemberOffline)
+    }
+  }, [socket, connected])
+
   useEffect(() => {
     if (!socket || !connected) return
 
@@ -548,9 +612,15 @@ const ChatPage = () => {
       setPendingAgeChannel(null)
       if (isVoice) {
         const voiceChannel = channels.find(c => c.id === id)
-        setActiveVoiceChannel(voiceChannel)
-        setVoicePreviewChannel(null)
-        setVoiceViewMode('full')
+        // Always select voice channel in main view
+        setSelectedVoiceChannelId(id)
+        // Join if not already in a call in this channel
+        if (!activeVoiceChannel || activeVoiceChannel.id !== id) {
+          setActiveVoiceChannel(voiceChannel)
+          setVoicePreviewChannel(null)
+          setVoiceViewMode('full')
+          setVoiceJoinKey(k => k + 1)
+        }
       } else {
         navigate(`/chat/${serverId}/${id}`)
       }
@@ -589,6 +659,7 @@ const ChatPage = () => {
     setActiveVoiceChannel(voicePreviewChannel)
     setVoicePreviewChannel(null)
     setVoiceViewMode('full')
+    setVoiceJoinKey(k => k + 1)
     
     // Reset after a short delay to allow next join
     setTimeout(() => {
@@ -601,7 +672,30 @@ const ChatPage = () => {
   }
 
   const handleLeaveVoice = () => {
+    const leftChannelId = activeVoiceChannel?.id
     setActiveVoiceChannel(null)
+    setIsMuted(false)
+    setIsDeafened(false)
+    setSelectedVoiceChannelId(null)
+    // Reset joining lock so user can rejoin immediately without page refresh
+    isJoiningVoiceRef.current = false
+    if (leftChannelId) {
+      // Clear from the live map immediately
+      setVoiceParticipantsByChannel(prev => {
+        const next = { ...prev }
+        delete next[leftChannelId]
+        return next
+      })
+      // Tell ChannelSidebar to clear + re-fetch that channel's participants
+      setLeavingVoiceChannelId(leftChannelId)
+      // Reset after sidebar has had time to refetch
+      setTimeout(() => setLeavingVoiceChannelId(null), 2000)
+    }
+  }
+
+  const handleVoiceParticipantsChange = (channelId, participants) => {
+    if (!channelId) return
+    setVoiceParticipantsByChannel(prev => ({ ...prev, [channelId]: participants }))
   }
 
   const handleChannelDeleted = async (channel) => {
@@ -716,36 +810,86 @@ const ChatPage = () => {
     )
   }
 
+  const handleMobileTabChange = (tab) => {
+    setMobileTab(tab)
+    if (tab === 'home') {
+      handleServerChange('home')
+    } else if (tab === 'servers') {
+      handleServerChange(servers[0]?.id || 'home')
+    } else if (tab === 'dms') {
+      handleServerChange('dms')
+    } else if (tab === 'friends') {
+      handleServerChange('friends')
+    } else if (tab === 'discovery') {
+      handleServerChange('discovery')
+    }
+  }
+
+  const getCurrentMobileTab = () => {
+    if (serverId === 'friends' || viewMode === 'friends') return 'friends'
+    if (serverId === 'dms' || viewMode === 'dms' || viewMode === 'system') return 'dms'
+    if (serverId === 'discovery' || viewMode === 'discovery') return 'discovery'
+    if (serverId && serverId !== 'home' && serverId !== 'null') return 'servers'
+    return 'home'
+  }
+
   return (
     <div className="chat-page" style={themeStyles}>
-      <ServerSidebar 
-        servers={servers} 
-        currentServerId={serverId}
-        onServerChange={handleServerChange}
-        onCreateServer={loadServers}
-        onOpenSettings={() => setShowSettings(true)}
-        onOpenCreate={() => setShowCreateServer(true)}
-        onOpenJoin={() => setShowJoinServer(true)}
-        onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true) }}
-        onLeaveServer={handleLeaveServer}
-        onOpenAdmin={() => setShowAdminPanel(true)}
-        isAdmin={isAdmin}
-        friendRequestCount={friendRequestCount}
-        dmNotifications={dmNotifications}
-        serverUnreadCounts={serverUnreadCounts}
-      />
+      {!isMobile && (
+        <ServerSidebar 
+          servers={servers} 
+          currentServerId={serverId}
+          onServerChange={handleServerChange}
+          onCreateServer={loadServers}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenCreate={() => setShowCreateServer(true)}
+          onOpenJoin={() => setShowJoinServer(true)}
+          onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true) }}
+          onLeaveServer={handleLeaveServer}
+          onOpenAdmin={() => setShowAdminPanel(true)}
+          isAdmin={isAdmin}
+          friendRequestCount={friendRequestCount}
+          dmNotifications={dmNotifications}
+          serverUnreadCounts={serverUnreadCounts}
+        />
+      )}
+
+      {isMobile && (
+        <MobileNav
+          currentTab={getCurrentMobileTab()}
+          onTabChange={handleMobileTabChange}
+          onCreateServer={() => setShowCreateServer(true)}
+          onOpenSettings={() => setShowSettings(true)}
+          friendRequestCount={friendRequestCount}
+          dmNotifications={dmNotifications.length}
+          serverUnreadCounts={serverUnreadCounts}
+          servers={servers}
+        />
+      )}
       
       {viewMode === 'friends' ? (
         <>
-          <DMList type="friends" onSelectConversation={(conv) => {
-            setSelectedDM(conv)
-            setViewMode('dms')
-          }} onClose={() => {}} />
+          <DMList type="friends"
+            onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
+            onClose={() => {}}
+            onOpenSystemInbox={() => setViewMode('system')}
+          />
           <FriendsPage onStartDM={(conv) => {
             setSelectedDM(conv)
             setViewMode('dms')
             navigate('/chat/dms')
           }} />
+        </>
+      ) : viewMode === 'system' ? (
+        <>
+          <DMList
+            type="dms"
+            onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
+            selectedConversation={null}
+            onClose={(convId) => {}}
+            onOpenSystemInbox={() => setViewMode('system')}
+          />
+          <SystemMessagePanel onClose={() => setViewMode('dms')} />
         </>
       ) : viewMode === 'dms' ? (
         <>
@@ -754,10 +898,9 @@ const ChatPage = () => {
             onSelectConversation={setSelectedDM}
             selectedConversation={selectedDM}
             onClose={(convId) => {
-              if (selectedDM?.id === convId) {
-                setSelectedDM(null)
-              }
+              if (selectedDM?.id === convId) setSelectedDM(null)
             }}
+            onOpenSystemInbox={() => setViewMode('system')}
           />
           {selectedDM ? (
             <DMChat conversation={selectedDM} onShowProfile={(userId) => setShowUserProfile(userId)} />
@@ -792,25 +935,107 @@ const ChatPage = () => {
         </div>
       ) : serverId && serverId !== 'null' && currentServer ? (
         <>
-          <ChannelSidebar 
-            server={currentServer}
-            channels={channels}
-            currentChannelId={channelId}
-            onChannelChange={handleChannelChange}
-            onCreateChannel={() => loadServerData(serverId)}
-            onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true) }}
-            onOpenSettings={() => setShowSettings(true)}
-            onVoicePreview={handleVoicePreview}
-            activeVoiceChannel={activeVoiceChannel}
-            onDeleteChannel={handleChannelDeleted}
-            onRefreshChannels={() => loadServerData(serverId)}
-            onInvite={() => { setServerSettingsTab('invites'); setShowServerSettings(true) }}
-            isMuted={isMuted}
-            isDeafened={isDeafened}
-            onToggleMute={() => setIsMuted(!isMuted)}
-            onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-          />
-          {channelId && channelId !== 'null' ? (
+          {isMobile && (
+            <div className="mobile-header">
+              <button className="mobile-header-btn" onClick={() => setShowChannelDrawer(true)}>
+                <Menu size={20} />
+              </button>
+              <div className="mobile-header-title">
+                <span className="mobile-server-name">{currentServer.name}</span>
+                {channelId && (
+                  <span className="mobile-channel-name">
+                    {channels.find(c => c.id === channelId)?.name}
+                  </span>
+                )}
+              </div>
+              <button className="mobile-header-btn" onClick={() => setShowMembers(prev => !prev)}>
+                <Users size={20} />
+              </button>
+            </div>
+          )}
+          
+          {isMobile && showChannelDrawer && (
+            <>
+              <div 
+                className="channel-sidebar-overlay visible" 
+                onClick={() => setShowChannelDrawer(false)}
+              />
+              <div className="channel-sidebar open">
+                <div className="mobile-drawer-header">
+                  <button onClick={() => setShowChannelDrawer(false)}>
+                    <ChevronLeft size={20} />
+                  </button>
+                  <span>{currentServer.name}</span>
+                </div>
+                <ChannelSidebar 
+                  server={currentServer}
+                  channels={channels}
+                  currentChannelId={channelId}
+                  selectedVoiceChannelId={selectedVoiceChannelId}
+                  onChannelChange={(id, isVoice) => {
+                    handleChannelChange(id, isVoice)
+                    setShowChannelDrawer(false)
+                  }}
+                  onCreateChannel={() => loadServerData(serverId)}
+                  onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true); setShowChannelDrawer(false) }}
+                  onOpenSettings={() => { setShowSettings(true); setShowChannelDrawer(false) }}
+                  onVoicePreview={handleVoicePreview}
+                  activeVoiceChannel={activeVoiceChannel}
+                  voiceParticipantsByChannel={voiceParticipantsByChannel}
+                  leavingVoiceChannelId={leavingVoiceChannelId}
+                  onDeleteChannel={handleChannelDeleted}
+                  onRefreshChannels={() => loadServerData(serverId)}
+                  onInvite={() => { setServerSettingsTab('invites'); setShowServerSettings(true); setShowChannelDrawer(false) }}
+                  isMuted={isMuted}
+                  isDeafened={isDeafened}
+                  onToggleMute={() => setIsMuted(!isMuted)}
+                  onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
+                />
+              </div>
+            </>
+          )}
+
+          {!isMobile && (
+            <ChannelSidebar 
+              server={currentServer}
+              channels={channels}
+              currentChannelId={channelId}
+              selectedVoiceChannelId={selectedVoiceChannelId}
+              onChannelChange={handleChannelChange}
+              onCreateChannel={() => loadServerData(serverId)}
+              onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true) }}
+              onOpenSettings={() => setShowSettings(true)}
+              onVoicePreview={handleVoicePreview}
+              activeVoiceChannel={activeVoiceChannel}
+              voiceParticipantsByChannel={voiceParticipantsByChannel}
+              leavingVoiceChannelId={leavingVoiceChannelId}
+              onDeleteChannel={handleChannelDeleted}
+              onRefreshChannels={() => loadServerData(serverId)}
+              onInvite={() => { setServerSettingsTab('invites'); setShowServerSettings(true) }}
+              isMuted={isMuted}
+              isDeafened={isDeafened}
+              onToggleMute={() => setIsMuted(!isMuted)}
+              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
+            />
+          )}
+          {/* When a voice channel is selected, show it as the main view */}
+          {selectedVoiceChannelId ? (
+            <VoiceChannelMainView
+              channel={channels.find(c => c.id === selectedVoiceChannelId)}
+              isActive={activeVoiceChannel?.id === selectedVoiceChannelId}
+              participants={voiceParticipantsByChannel[selectedVoiceChannelId] || []}
+              activeVoiceChannel={activeVoiceChannel}
+              voiceComponent={
+                activeVoiceChannel?.id === selectedVoiceChannelId ? (
+                  <div className="voice-main-inner">
+                    {/* VoiceChannel is rendered globally, just show a placeholder here */}
+                  </div>
+                ) : null
+              }
+              onJoin={() => handleChannelChange(selectedVoiceChannelId, true)}
+              onLeave={handleLeaveVoice}
+            />
+          ) : channelId && channelId !== 'null' ? (
             <>
               {ageGateNotice ? (
                 <div className="empty-state">
@@ -884,29 +1109,6 @@ const ChatPage = () => {
               <p>no channels are visible for you :(</p>
             </div>
           )}
-          {activeVoiceChannel && (
-            <div className={`voice-container ${voiceViewMode}`}>
-              <div className="voice-container-header">
-                <span>{activeVoiceChannel.name}</span>
-                <div className="voice-view-controls">
-                  <button onClick={toggleVoiceViewMode} title={voiceViewMode === 'full' ? 'Minimize' : 'Maximize'}>
-                    {voiceViewMode === 'full' ? '−' : '□'}
-                  </button>
-                </div>
-              </div>
-              <VoiceChannel 
-                channel={activeVoiceChannel}
-                onLeave={handleLeaveVoice}
-                viewMode={voiceViewMode}
-                isMuted={isMuted}
-                isDeafened={isDeafened}
-                onMuteChange={setIsMuted}
-                onDeafenChange={setIsDeafened}
-                onOpenSettings={() => { setSettingsInitialTab('voice'); setShowSettings(true) }}
-              />
-            </div>
-          )}
-
           {voicePreviewChannel && !activeVoiceChannel && (
             <div className="voice-preview-overlay" onClick={() => setVoicePreviewChannel(null)}>
               <VoiceChannelPreview
@@ -931,6 +1133,34 @@ const ChatPage = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Voice panel — rendered outside server/channel blocks so it persists
+          when the user navigates to other servers or views */}
+      {activeVoiceChannel && (
+        <div className={`voice-container ${voiceViewMode}`}>
+          <div className="voice-container-header">
+            <span>{activeVoiceChannel.name}</span>
+            <div className="voice-view-controls">
+              <button onClick={toggleVoiceViewMode} title={voiceViewMode === 'full' ? 'Minimize' : 'Maximize'}>
+                {voiceViewMode === 'full' ? '−' : '□'}
+              </button>
+            </div>
+          </div>
+          <VoiceChannel
+            channel={activeVoiceChannel}
+            joinKey={voiceJoinKey}
+            onLeave={handleLeaveVoice}
+            viewMode={voiceViewMode}
+            isMuted={isMuted}
+            isDeafened={isDeafened}
+            onMuteChange={setIsMuted}
+            onDeafenChange={setIsDeafened}
+            onOpenSettings={() => { setSettingsInitialTab('voice'); setShowSettings(true) }}
+            onParticipantsChange={handleVoiceParticipantsChange}
+            onShowConnectionInfo={() => setShowVoiceInfo(true)}
+          />
         </div>
       )}
 
@@ -1004,6 +1234,14 @@ const ChatPage = () => {
 
       {/* Notification Toast Container */}
       <NotificationToast />
+
+      {/* Voice connection info modal */}
+      {showVoiceInfo && activeVoiceChannel && (
+        <VoiceInfoModal
+          channel={activeVoiceChannel}
+          onClose={() => setShowVoiceInfo(false)}
+        />
+      )}
     </div>
   )
 }

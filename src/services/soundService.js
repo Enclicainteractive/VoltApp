@@ -1,1188 +1,798 @@
+/**
+ * SoundService — Web Audio API UI sound synthesizer
+ *
+ * Browser autoplay policy means an AudioContext created before the first user
+ * gesture starts in the "suspended" state and cannot produce sound.  Every
+ * sound method therefore goes through `_play(fn)` which:
+ *
+ *   1. If the context is already "running"  → calls fn(ctx) immediately.
+ *   2. If the context is "suspended"         → queues fn; the context is
+ *      resumed inside the very next native pointer/keyboard event (registered
+ *      with `capture:true` so it fires before React's synthetic events), then
+ *      the queue is flushed.
+ *
+ * The AudioContext and master gain chain are created lazily on the first call
+ * to `_ensureContext()`, which is called both from the gesture handler and
+ * from `_play`.
+ *
+ * Key invariants:
+ *   • `this._out`  is the node every sound should connect to (= masterGain).
+ *     It is set synchronously in `_ensureContext` so it is always valid when
+ *     a queued `fn(ctx)` finally runs.
+ *   • Queued functions receive a freshly-validated running `ctx` so
+ *     `ctx.currentTime` is correct at the moment they execute.
+ */
 class SoundService {
   constructor() {
-    this.audioContext = null
-    this.masterGain = null
-    this.compressor = null
+    this._ctx   = null   // AudioContext
+    this._out   = null   // master GainNode  (the output node)
+    this._comp  = null   // DynamicsCompressor
+
     this.enabled = true
-    this.volume = 0.5
-    this.reverbPool = []
-    this.initialized = false
+    this.volume  = 0.25
+
+    this._queue          = []     // fns waiting for first gesture
+    this._gestureReady   = false  // true once context is running
+    this._listenerAdded  = false  // native gesture listeners registered
   }
+
+  // ─── Public bootstrap (call once at app start) ────────────────────────────
 
   init() {
-    if (this.initialized) return
+    this._addGestureListeners()
+  }
+
+  // ─── Private: native-event gesture listeners ─────────────────────────────
+  // capture:true fires BEFORE React's synthetic event system, guaranteeing we
+  // resume the AudioContext inside the same user-gesture tick that the browser
+  // requires.
+
+  _addGestureListeners() {
+    if (this._listenerAdded) return
+    this._listenerAdded = true
+
+    const unlock = () => {
+      this._ensureContext()
+      if (!this._ctx) return
+
+      if (this._ctx.state === 'running') {
+        this._gestureReady = true
+        this._flush()
+        this._removeGestureListeners()
+        return
+      }
+
+      // suspended → resume
+      this._ctx.resume().then(() => {
+        if (this._ctx.state === 'running') {
+          this._gestureReady = true
+          this._flush()
+        }
+        this._removeGestureListeners()
+      }).catch(() => {
+        this._removeGestureListeners()
+      })
+    }
+
+    // Use multiple event types; capture:true = runs in capture phase = before
+    // React's bubble-phase synthetic events = still counts as "user gesture"
+    const opts = { capture: true, passive: true }
+    document.addEventListener('pointerdown', unlock, opts)
+    document.addEventListener('keydown',     unlock, opts)
+    document.addEventListener('touchstart',  unlock, opts)
+
+    this._unlockHandler = unlock
+  }
+
+  _removeGestureListeners() {
+    if (!this._unlockHandler) return
+    const opts = { capture: true }
+    document.removeEventListener('pointerdown', this._unlockHandler, opts)
+    document.removeEventListener('keydown',     this._unlockHandler, opts)
+    document.removeEventListener('touchstart',  this._unlockHandler, opts)
+    this._unlockHandler = null
+  }
+
+  // ─── Private: AudioContext lifecycle ─────────────────────────────────────
+
+  _ensureContext() {
+    if (this._ctx && this._ctx.state !== 'closed') return this._ctx
+
+    const Cls = window.AudioContext || window.webkitAudioContext
+    if (!Cls) return null
+
     try {
-      this.getContext()
-      this.initialized = true
+      this._ctx  = new Cls()
+      this._comp = this._ctx.createDynamicsCompressor()
+      this._comp.threshold.value = -12
+      this._comp.knee.value      = 10
+      this._comp.ratio.value     = 4
+      this._comp.attack.value    = 0.003
+      this._comp.release.value   = 0.15
+      this._out = this._ctx.createGain()
+      this._out.gain.value = this.volume
+      this._out.connect(this._comp)
+      this._comp.connect(this._ctx.destination)
     } catch (e) {
-      console.warn('[Sound] Init failed:', e)
+      console.error('[Sound] AudioContext creation failed:', e)
+      return null
     }
+
+    return this._ctx
   }
 
-  getContext() {
-    if (!this.audioContext || this.audioContext.state === 'closed') {
-      try {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext || window.mozAudioContext
-        if (!AudioContextClass) {
-          console.warn('[Sound] No AudioContext available')
-          return null
-        }
-        this.audioContext = new AudioContextClass()
-        
-        if (this.audioContext.state === 'suspended') {
-          const resume = () => {
-            this.audioContext.resume()
-            document.removeEventListener('click', resume)
-            document.removeEventListener('keydown', resume)
-            document.removeEventListener('touchstart', resume)
-          }
-          document.addEventListener('click', resume)
-          document.addEventListener('keydown', resume)
-          document.addEventListener('touchstart', resume)
-        }
-        
-        this.compressor = this.audioContext.createDynamicsCompressor()
-        this.compressor.threshold.value = -18
-        this.compressor.knee.value = 8
-        this.compressor.ratio.value = 6
-        this.compressor.attack.value = 0.002
-        this.compressor.release.value = 0.1
-        this.masterGain = this.audioContext.createGain()
-        this.masterGain.gain.value = this.volume
-        this.masterGain.connect(this.compressor)
-        this.compressor.connect(this.audioContext.destination)
-      } catch (e) {
-        console.error('[Sound] Failed to create AudioContext:', e)
-        return null
+  // ─── Private: queue flush ─────────────────────────────────────────────────
+
+  _flush() {
+    const q = this._queue.splice(0)
+    q.forEach(fn => {
+      try { fn(this._ctx) } catch (e) { console.error('[Sound] flush error:', e) }
+    })
+  }
+
+  // ─── Core dispatcher ──────────────────────────────────────────────────────
+  // fn receives the running AudioContext and should use `this._out` as the
+  // terminal output node.
+
+  _play(fn) {
+    if (!this.enabled) return
+
+    // Lazily ensure context + gesture listeners exist
+    if (!this._listenerAdded) this._addGestureListeners()
+    this._ensureContext()
+
+    if (!this._ctx) return  // no WebAudio support
+
+    if (this._ctx.state === 'running') {
+      // Hot path — play immediately
+      try { fn(this._ctx) } catch (e) { console.error('[Sound]', e) }
+      return
+    }
+
+    // Context suspended (pre-gesture) — queue the function.
+    // Also try a programmatic resume; it will be a no-op until the browser
+    // allows it, but on some browsers a previous gesture is enough.
+    this._queue.push(fn)
+    this._ctx.resume().then(() => {
+      if (this._ctx.state === 'running' && this._queue.length) {
+        this._gestureReady = true
+        this._flush()
+        this._removeGestureListeners()
       }
-    }
-    if (this.audioContext && this.audioContext.state === 'suspended') {
-      this.audioContext.resume()
-    }
-    return this.audioContext
+    }).catch(() => {})
   }
 
-  get output() {
-    this.getContext()
-    return this.masterGain
+  // ─── Settings ─────────────────────────────────────────────────────────────
+
+  setEnabled(v) { this.enabled = v }
+
+  setVolume(v) {
+    this.volume = Math.max(0, Math.min(1, v))
+    if (this._out) this._out.gain.value = this.volume
   }
 
-  setEnabled(enabled) {
-    this.enabled = enabled
+  // ─── DSP helpers ──────────────────────────────────────────────────────────
+  // All helpers accept `out` as the destination node so they stay independent
+  // of `this._out` lookups inside the synthesis callbacks.
+
+  _filter(ctx, type, freq, Q = 1) {
+    const f = ctx.createBiquadFilter()
+    f.type = type; f.frequency.value = freq; f.Q.value = Q
+    return f
   }
 
-  setVolume(vol) {
-    this.volume = Math.max(0, Math.min(1, vol))
-    if (this.masterGain) this.masterGain.gain.value = this.volume
+  _gain(ctx, v) {
+    const g = ctx.createGain(); g.gain.value = v; return g
   }
 
-  createBitCrusher(ctx, bits = 8, normFreq = 0.1) {
-    const bufferSize = 4096
-    const crusher = ctx.createWaveShaper()
-    const curve = new Float32Array(bufferSize)
-    const step = Math.pow(0.5, bits)
-    for (let i = 0; i < bufferSize; i++) {
-      const x = (i * 2) / bufferSize - 1
-      curve[i] = Math.round(x / step) * step
-    }
-    curve[0] = -1
-    curve[bufferSize - 1] = 1
-    crusher.curve = curve
-    crusher.oversample = '4x'
-    return crusher
-  }
-
-  createSaturation(ctx, amount = 1) {
-    const saturation = ctx.createWaveShaper()
-    const curve = new Float32Array(256)
-    const k = amount
-    for (let i = 0; i < 256; i++) {
-      const x = (i - 128) / 128
-      curve[i] = (Math.PI * k * x) / (Math.PI * k * x + Math.abs(x))
-    }
-    saturation.curve = curve
-    saturation.oversample = '4x'
-    return saturation
-  }
-
-  createReverb(ctx, decay = 1.5, duration = 0.5) {
-    const sampleRate = ctx.sampleRate
-    const length = sampleRate * duration
-    const impulse = ctx.createBuffer(2, length, sampleRate)
+  _reverb(ctx, decay = 1.5, dur = 0.5) {
+    const sr = ctx.sampleRate, len = sr * dur
+    const buf = ctx.createBuffer(2, len, sr)
     for (let ch = 0; ch < 2; ch++) {
-      const data = impulse.getChannelData(ch)
-      for (let i = 0; i < length; i++) {
-        const t = i / sampleRate
-        const envelope = Math.pow(1 - t / duration, decay * 2)
-        data[i] = ((Math.random() * 2 - 1) * envelope * 0.8 +
-                  Math.sin(t * 50 + Math.random()) * envelope * 0.1 +
-                  Math.sin(t * 120 + Math.random()) * envelope * 0.05)
+      const d = buf.getChannelData(ch)
+      for (let i = 0; i < len; i++) {
+        const t = i / sr, e = Math.pow(1 - t / dur, decay * 2)
+        d[i] = (Math.random() * 2 - 1) * e * 0.9
       }
     }
-    const convolver = ctx.createConvolver()
-    convolver.buffer = impulse
-    return convolver
+    const c = ctx.createConvolver(); c.buffer = buf; return c
   }
 
-  createFilter(ctx, type, frequency, Q = 1) {
-    const filter = ctx.createBiquadFilter()
-    filter.type = type
-    filter.frequency.value = frequency
-    filter.Q.value = Q
-    return filter
+  _delay(ctx, time = 0.15, fb = 0.25) {
+    const d = ctx.createDelay(1); d.delayTime.value = time
+    const f = this._gain(ctx, fb)
+    const w = this._gain(ctx, 0.3)
+    d.connect(w); f.connect(d)
+    return { node: d, feedback: f, wet: w }
   }
 
-  createDelay(ctx, time = 0.2, feedback = 0.3) {
-    const delay = ctx.createDelay(1)
-    delay.delayTime.value = time
-    const feedbackGain = ctx.createGain()
-    feedbackGain.gain.value = feedback
-    const dryGain = ctx.createGain()
-    dryGain.gain.value = 0.7
-    const wetGain = ctx.createGain()
-    wetGain.gain.value = 0.3
-    delay.connect(wetGain)
-    feedbackGain.connect(delay)
-    delay.connect(dryGain)
-    return { delay, feedback: feedbackGain, dry: dryGain, wet: wetGain }
-  }
-
-  createTremolo(ctx, rate = 5, depth = 0.3) {
-    const tremolo = ctx.createGain()
-    const lfo = ctx.createOscillator()
-    const lfoGain = ctx.createGain()
-    lfo.type = 'sine'
-    lfo.frequency.value = rate
-    lfoGain.gain.value = depth
-    lfo.connect(lfoGain)
-    lfoGain.connect(tremolo.gain)
-    lfo.start()
-    return { tremolo, lfo }
-  }
-
-  createChorus(ctx, rate = 1.5, depth = 0.002) {
-    const chorus = ctx.createGain()
-    const lfo = ctx.createOscillator()
-    const lfoGain = ctx.createGain()
-    lfo.type = 'sine'
-    lfo.frequency.value = rate
-    lfoGain.gain.value = depth
-    lfo.connect(lfoGain)
-    lfo.start()
-    return { chorus, lfo }
-  }
-
-  createEnvelope(ctx, param, startTime, attack, decay, sustain, release, peak = 1, endValue = 0) {
-    param.setValueAtTime(endValue, startTime)
-    param.linearRampToValueAtTime(peak, startTime + attack)
-    param.linearRampToValueAtTime(peak * sustain, startTime + attack + decay)
-    param.linearRampToValueAtTime(endValue, startTime + attack + decay + release)
-  }
-
-  playOsc(ctx, { type = 'sine', freq, freqEnd, start, stop, vol = 0.2, attack = 0.005, decay, destination }) {
+  _osc(ctx, { type = 'sine', freq, freqEnd, start, dur, vol = 0.2, attack = 0.005, out }) {
     const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
+    const g   = ctx.createGain()
+    const end = start + dur
     osc.type = type
     osc.frequency.setValueAtTime(freq, start)
-    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, stop)
-    gain.gain.setValueAtTime(0, start)
-    gain.gain.linearRampToValueAtTime(vol, start + attack)
-    const decayStart = decay !== undefined ? start + decay : stop - 0.01
-    gain.gain.setValueAtTime(vol, Math.min(decayStart, stop - 0.01))
-    gain.gain.exponentialRampToValueAtTime(0.0001, stop)
-    osc.connect(gain)
-    gain.connect(destination || this.output)
-    osc.start(start)
-    osc.stop(stop + 0.05)
-    return { osc, gain }
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(Math.max(freqEnd, 1), end)
+    g.gain.setValueAtTime(0.0001, start)
+    g.gain.linearRampToValueAtTime(vol, start + attack)
+    g.gain.setValueAtTime(vol, Math.max(start + attack, end - 0.015))
+    g.gain.exponentialRampToValueAtTime(0.0001, end)
+    osc.connect(g); g.connect(out)
+    osc.start(start); osc.stop(end + 0.05)
   }
 
-  playDetunedOsc(ctx, { type = 'sine', freq, freqEnd, start, stop, vol = 0.2, detune = 3, attack = 0.005, decay, destination }) {
-    const oscs = []
-    const gains = []
-    const detuneValues = [-detune, 0, detune]
-    const detuneVols = [0.4, 1, 0.4]
-    detuneValues.forEach((d, i) => {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = type
-      osc.frequency.setValueAtTime(freq, start)
-      osc.detune.value = d
-      if (freqEnd) {
-        const ratio = freqEnd / freq
-        osc.frequency.setValueAtTime(freq * ratio, stop)
-      }
-      gain.gain.setValueAtTime(0, start)
-      gain.gain.linearRampToValueAtTime(vol * detuneVols[i], start + attack)
-      const decayStart = decay !== undefined ? start + decay : stop - 0.01
-      gain.gain.setValueAtTime(vol * detuneVols[i], Math.min(decayStart, stop - 0.01))
-      gain.gain.exponentialRampToValueAtTime(0.0001, stop)
-      osc.connect(gain)
-      gain.connect(destination || this.output)
-      osc.start(start)
-      osc.stop(stop + 0.05)
-      oscs.push(osc)
-      gains.push(gain)
+  _detunedOsc(ctx, { type = 'sine', freq, freqEnd, start, dur, vol = 0.2, detune = 4, attack = 0.005, out }) {
+    ;[-detune, 0, detune].forEach((d, i) => {
+      const vols = [0.4, 1.0, 0.4]
+      this._osc(ctx, { type, freq, freqEnd, start, dur, vol: vol * vols[i], attack, out })
     })
-    return { oscs, gains }
   }
 
-  playFMSynth(ctx, { carrierFreq, modFreq, modIndex, start, stop, vol = 0.15, attack = 0.005, destination }) {
+  _fm(ctx, { carr, mod, idx, start, dur, vol = 0.12, out }) {
     const carrier = ctx.createOscillator()
-    const modulator = ctx.createOscillator()
+    const modOsc  = ctx.createOscillator()
     const modGain = ctx.createGain()
-    const carrierGain = ctx.createGain()
-    const outGain = ctx.createGain()
-    
-    carrier.type = 'sine'
-    carrier.frequency.value = carrierFreq
-    modulator.type = 'sine'
-    modulator.frequency.value = modFreq
-    modGain.gain.value = carrierFreq * modIndex
-    
-    modulator.connect(modGain)
-    modGain.connect(carrier.frequency)
-    carrier.connect(carrierGain)
-    carrierGain.connect(outGain)
-    outGain.connect(destination || this.output)
-    
-    carrierGain.gain.setValueAtTime(0, start)
-    carrierGain.gain.linearRampToValueAtTime(vol, start + attack)
-    carrierGain.gain.exponentialRampToValueAtTime(0.0001, stop)
-    
-    carrier.start(start)
-    modulator.start(start)
-    carrier.stop(stop + 0.05)
-    modulator.stop(stop + 0.05)
-    
-    return { carrier, modulator, carrierGain, modGain, outGain }
+    const g       = ctx.createGain()
+    carrier.frequency.value = carr
+    modOsc.frequency.value  = mod
+    modGain.gain.value      = carr * idx
+    modOsc.connect(modGain); modGain.connect(carrier.frequency)
+    carrier.connect(g); g.connect(out)
+    const end = start + dur
+    g.gain.setValueAtTime(0.0001, start)
+    g.gain.linearRampToValueAtTime(vol, start + 0.005)
+    g.gain.exponentialRampToValueAtTime(0.0001, end)
+    carrier.start(start); modOsc.start(start)
+    carrier.stop(end + 0.05); modOsc.stop(end + 0.05)
   }
 
-  createNoiseBuffer(ctx, duration, type = 'white') {
-    const bufferSize = ctx.sampleRate * duration
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
-    const data = buffer.getChannelData(0)
-    if (type === 'white') {
-      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1
-    } else if (type === 'pink') {
-      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0
-      for (let i = 0; i < bufferSize; i++) {
-        const white = Math.random() * 2 - 1
-        b0 = 0.99886 * b0 + white * 0.0555179
-        b1 = 0.99332 * b1 + white * 0.0750759
-        b2 = 0.96900 * b2 + white * 0.1538520
-        b3 = 0.86650 * b3 + white * 0.3104856
-        b4 = 0.55000 * b4 + white * 0.5329522
-        b5 = -0.7616 * b5 - white * 0.0168980
-        data[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362
-        data[i] *= 0.11
-        b6 = white * 0.115926
-      }
+  _noise(ctx, { start, dur, vol = 0.05, type = 'white', out }) {
+    const n   = Math.ceil(ctx.sampleRate * dur)
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate)
+    const d   = buf.getChannelData(0)
+    if (type === 'pink') {
+      let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0
+      for (let i=0;i<n;i++){const w=Math.random()*2-1;b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*.11;b6=w*.115926}
     } else if (type === 'brown') {
-      let lastOut = 0
-      for (let i = 0; i < bufferSize; i++) {
-        const white = Math.random() * 2 - 1
-        data[i] = (lastOut + (0.02 * white)) / 1.02
-        lastOut = data[i]
-        data[i] *= 3.5
-      }
+      let last=0; for(let i=0;i<n;i++){const w=Math.random()*2-1;d[i]=(last+.02*w)/1.02;last=d[i];d[i]*=3.5}
+    } else {
+      for (let i=0;i<n;i++) d[i]=Math.random()*2-1
     }
-    return buffer
+    const src = ctx.createBufferSource(); src.buffer = buf
+    const g   = ctx.createGain()
+    const hp  = this._filter(ctx, 'highpass', 2000, 0.5)
+    src.connect(hp); hp.connect(g); g.connect(out)
+    g.gain.setValueAtTime(vol, start)
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur)
+    src.start(start); src.stop(start + dur + 0.01)
   }
 
-  createNoiseBurst(ctx, start, duration, vol = 0.05, type = 'white', destination) {
-    const buffer = this.createNoiseBuffer(ctx, duration, type)
-    const source = ctx.createBufferSource()
-    source.buffer = buffer
-    const gain = ctx.createGain()
-    const hp = this.createFilter(ctx, 'highpass', 3000, 0.5)
-    const lp = this.createFilter(ctx, 'lowpass', 12000, 0.5)
-    source.connect(hp)
-    hp.connect(lp)
-    lp.connect(gain)
-    gain.gain.setValueAtTime(vol, start)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
-    gain.connect(destination || this.output)
-    source.start(start)
-    source.stop(start + duration + 0.01)
+  _sat(ctx, k = 1) {
+    const s = ctx.createWaveShaper()
+    const c = new Float32Array(256)
+    for (let i=0;i<256;i++){const x=(i-128)/128;c[i]=(Math.PI*k*x)/(Math.PI*k*Math.abs(x)+1)}
+    s.curve = c; s.oversample = '4x'; return s
   }
 
-  playTone(frequency, duration, type = 'sine', volume = 0.3) {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      this.playOsc(ctx, { type, freq: frequency, start: now, stop: now + duration, vol: volume })
-    } catch (err) { console.error('Sound error:', err) }
-  }
+  // ─── Sound methods ────────────────────────────────────────────────────────
 
-  // ── Message sent: rich liquid pop with harmonic overtones and delay ──
+  // Message sent — liquid pop
   messageSent() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 7000, 1.5)
-      const saturation = this.createSaturation(ctx, 0.5)
-      const reverb = this.createReverb(ctx, 1.2, 0.25)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      const delay = this.createDelay(ctx, 0.08, 0.25)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(reverb)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      saturation.connect(delay.dry)
-      delay.wet.connect(this.output)
-      delay.feedback.connect(saturation)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 1046.5, freqEnd: 1568, start: now, stop: now + 0.08, vol: 0.16, detune: 5, attack: 0.002, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 1568, freqEnd: 2093, start: now + 0.02, stop: now + 0.1, vol: 0.09, detune: 4, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 2093, freqEnd: 2637, start: now + 0.04, stop: now + 0.12, vol: 0.04, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 523.25, freqEnd: 784, start: now, stop: now + 0.1, vol: 0.05, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 261.6, start: now, stop: now + 0.08, vol: 0.025, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 523.25, modFreq: 1046.5, modIndex: 1.5, start: now, stop: now + 0.06, vol: 0.06, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.02, 0.012, 'pink', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 6000, 1.5)
+      const rev = this._reverb(ctx, 1.2, 0.2)
+      const rg  = this._gain(ctx, 0.12)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:1046, freqEnd:1568, start:t,      dur:0.08, vol:0.14, detune:5, out:lp })
+      this._detunedOsc(ctx, { freq:1568, freqEnd:2093, start:t+.02,  dur:0.09, vol:0.08, detune:4, out:lp })
+      this._osc(ctx,         { freq:523,  freqEnd:784,  start:t,      dur:0.09, vol:0.04, type:'triangle', out:lp })
+      this._fm(ctx,          { carr:523,  mod:1046, idx:1.5,          start:t,  dur:0.06, vol:0.05, out:lp })
+      this._noise(ctx,       { start:t, dur:0.018, vol:0.01, type:'pink', out:lp })
+    })
   }
 
-  // ── Message received: warm hollow pop with resonance and delay ──
+  // Message received — hollow pop
   messageReceived() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 3500, 2)
-      const reverb = this.createReverb(ctx, 1.8, 0.35)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.22
-      const delay = this.createDelay(ctx, 0.12, 0.3)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      lp.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-      delay.feedback.connect(lp)
-
-      this.playFMSynth(ctx, { carrierFreq: 440, modFreq: 880, modIndex: 2.5, start: now, stop: now + 0.15, vol: 0.1, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 880, freqEnd: 587, start: now + 0.01, stop: now + 0.12, vol: 0.09, detune: 3, attack: 0.001, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 220, start: now, stop: now + 0.1, vol: 0.035, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 440, start: now + 0.02, stop: now + 0.08, vol: 0.03, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.012, 0.02, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 3200, 2)
+      const rev = this._reverb(ctx, 1.5, 0.3)
+      const rg  = this._gain(ctx, 0.18)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._fm(ctx,         { carr:440, mod:880, idx:2.5, start:t,      dur:0.14, vol:0.09, out:lp })
+      this._detunedOsc(ctx, { freq:880, freqEnd:587,      start:t+.01,  dur:0.11, vol:0.08, detune:3, out:lp })
+      this._osc(ctx,        { freq:220,                   start:t,      dur:0.10, vol:0.03, type:'triangle', out:lp })
+      this._noise(ctx,      { start:t, dur:0.012, vol:0.015, type:'brown', out:lp })
+    })
   }
 
-  // ── DM received: soft gentle two-note chime ──
+  // DM received — two-note chime
   dmReceived() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 1.5, 0.4)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const notes = [
-        { freq: 659.3, time: 0, dur: 0.5 },
-        { freq: 783.99, time: 0.18, dur: 0.6 },
-      ]
-      notes.forEach(n => {
-        const lp = this.createFilter(ctx, 'lowpass', 3000, 1)
-        lp.connect(this.output)
-        lp.connect(reverb)
-        
-        this.playOsc(ctx, { type: 'sine', freq: n.freq, start: now + n.time, stop: now + n.time + n.dur, vol: 0.08, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: n.freq * 2, start: now + n.time, stop: now + n.time + n.dur * 0.4, vol: 0.025, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: n.freq * 4, start: now + n.time + 0.01, stop: now + n.time + n.dur * 0.15, vol: 0.006, destination: lp })
-        this.playFMSynth(ctx, { carrierFreq: n.freq * 0.5, modFreq: n.freq, modIndex: 1, start: now + n.time, stop: now + n.time + n.dur * 0.3, vol: 0.03, destination: lp })
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 1.5, 0.4)
+      const rg  = this._gain(ctx, 0.14)
+      rev.connect(rg); rg.connect(out)
+      ;[{f:659, dt:0},{f:784, dt:.18}].forEach(({f,dt}) => {
+        const lp = this._filter(ctx, 'lowpass', 3000, 1)
+        lp.connect(out); lp.connect(rev)
+        this._osc(ctx, { freq:f,   start:t+dt, dur:0.5, vol:0.08, out:lp })
+        this._osc(ctx, { freq:f*2, start:t+dt, dur:0.2, vol:0.02, out:lp })
+        this._fm(ctx,  { carr:f*.5, mod:f, idx:1, start:t+dt, dur:0.25, vol:0.025, out:lp })
       })
-    } catch (err) { console.error('Sound error:', err) }
+    })
   }
 
-  // ── Mention: sharp attention ping with metallic ring and delay ──
+  // @mention — sharp ping
   mention() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const bp = this.createFilter(ctx, 'bandpass', 2500, 3)
-      const reverb = this.createReverb(ctx, 1.4, 0.28)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.14
-      const delay = this.createDelay(ctx, 0.1, 0.25)
-      bp.connect(this.output)
-      bp.connect(reverb)
-      bp.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-      delay.feedback.connect(bp)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 1760, start: now, stop: now + 0.1, vol: 0.18, detune: 4, attack: 0.001, destination: bp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 2217, start: now + 0.03, stop: now + 0.15, vol: 0.13, detune: 3, attack: 0.001, destination: bp })
-      this.playOsc(ctx, { type: 'sine', freq: 2794, start: now + 0.06, stop: now + 0.2, vol: 0.07, attack: 0.001, destination: bp })
-      this.playFMSynth(ctx, { carrierFreq: 880, modFreq: 1320, modIndex: 3.5, start: now, stop: now + 0.12, vol: 0.05, destination: bp })
-      this.playOsc(ctx, { type: 'triangle', freq: 1760, start: now + 0.02, stop: now + 0.08, vol: 0.03, destination: bp })
-      this.createNoiseBurst(ctx, now, 0.01, 0.018, 'pink', bp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const bp  = this._filter(ctx, 'bandpass', 2500, 3)
+      const rev = this._reverb(ctx, 1.2, 0.25)
+      const rg  = this._gain(ctx, 0.12)
+      bp.connect(out); bp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:1760, start:t,      dur:0.10, vol:0.16, detune:4, attack:0.001, out:bp })
+      this._detunedOsc(ctx, { freq:2217, start:t+.03,  dur:0.13, vol:0.12, detune:3, attack:0.001, out:bp })
+      this._osc(ctx,        { freq:2794, start:t+.06,  dur:0.16, vol:0.06, attack:0.001, out:bp })
+      this._fm(ctx,         { carr:880, mod:1320, idx:3, start:t, dur:0.12, vol:0.04, out:bp })
+      this._noise(ctx,      { start:t, dur:0.01, vol:0.015, type:'pink', out:bp })
+    })
   }
 
-  // ── Call join: ascending arpeggio C-E-G-C with warm reverb ──
+  // DM @mention — stronger ping
+  dmMention() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 7000, 2)
+      const rev = this._reverb(ctx, 1.8, 0.38)
+      const rg  = this._gain(ctx, 0.20)
+      const del = this._delay(ctx, 0.12, 0.28)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      lp.connect(del.node); del.wet.connect(out)
+      this._detunedOsc(ctx, { freq:2093, start:t,      dur:0.18, vol:0.16, detune:4, attack:0.001, out:lp })
+      this._detunedOsc(ctx, { freq:2637, start:t+.04,  dur:0.22, vol:0.14, detune:3, attack:0.001, out:lp })
+      this._osc(ctx,        { freq:3136, start:t+.08,  dur:0.28, vol:0.09, attack:0.001, out:lp })
+      this._fm(ctx,         { carr:1046, mod:2093, idx:3, start:t, dur:0.20, vol:0.06, out:lp })
+      this._noise(ctx,      { start:t, dur:0.012, vol:0.018, type:'pink', out:lp })
+    })
+  }
+
+  // Self joins voice — ascending arpeggio (C E G C E)
   callJoin() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 2.2, 0.7)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.3
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5]
-      notes.forEach((freq, i) => {
-        const t = now + i * 0.06
-        const lp = this.createFilter(ctx, 'lowpass', 4500, 1.2)
-        lp.connect(this.output)
-        lp.connect(reverb)
-        
-        this.playDetunedOsc(ctx, { type: 'sine', freq, start: t, stop: t + 0.4 - i * 0.03, vol: 0.12 - i * 0.01, detune: 4, attack: 0.005, destination: lp })
-        this.playOsc(ctx, { type: 'triangle', freq: freq * 0.5, start: t, stop: t + 0.25, vol: 0.03, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: freq * 2, start: t + 0.01, stop: t + 0.15, vol: 0.02, destination: lp })
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 2.5, 0.7)
+      const rg  = this._gain(ctx, 0.30)
+      const del = this._delay(ctx, 0.10, 0.22)
+      rev.connect(rg); rg.connect(out)
+      ;[523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((freq, i) => {
+        const st = t + i * 0.07
+        const lp = this._filter(ctx, 'lowpass', 4500, 1.2)
+        lp.connect(out); lp.connect(rev); lp.connect(del.node); del.wet.connect(out)
+        this._detunedOsc(ctx, { freq, start:st, dur:0.42 - i*.03, vol:0.10 - i*.008, detune:5, attack:0.006, out:lp })
+        this._osc(ctx,        { freq:freq*.5, start:st, dur:0.26, vol:0.022, type:'triangle', out:lp })
+        this._fm(ctx,         { carr:freq, mod:freq*2, idx:1.2, start:st, dur:0.20, vol:0.022, out:lp })
       })
-    } catch (err) { console.error('Sound error:', err) }
+      this._noise(ctx, { start:t, dur:0.015, vol:0.012, type:'pink', out })
+    })
   }
 
-  // ── Call connected: success chord with shimmer ──
+  // Microphone acquired / voice connected
   callConnected() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 2, 0.5)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.25
-      const delay = this.createDelay(ctx, 0.1, 0.2)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const chords = [
-        { freqs: [659.25, 830.61, 987.77], time: 0, dur: 0.2 },
-        { freqs: [880, 1108.73, 1318.5, 1568], time: 0.12, dur: 0.35 },
-      ]
-      chords.forEach(chord => {
-        chord.freqs.forEach((freq, fi) => {
-          const lp = this.createFilter(ctx, 'lowpass', 5500, 1)
-          lp.connect(this.output)
-          lp.connect(reverb)
-          lp.connect(delay.dry)
-          
-          this.playDetunedOsc(ctx, { type: 'sine', freq, start: now + chord.time, stop: now + chord.time + chord.dur, vol: 0.1 - fi * 0.01, detune: 3, attack: 0.003, destination: lp })
-          this.playOsc(ctx, { type: 'sine', freq: freq * 2, start: now + chord.time + 0.01, stop: now + chord.time + chord.dur * 0.4, vol: 0.02, destination: lp })
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 1.8, 0.45)
+      const rg  = this._gain(ctx, 0.22)
+      rev.connect(rg); rg.connect(out)
+      ;[[659.25,830.61,987.77],[880,1108,1318,1568]].forEach((freqs, ci) => {
+        const dt = ci * 0.13
+        freqs.forEach((freq, fi) => {
+          const lp = this._filter(ctx, 'lowpass', 5000, 1)
+          lp.connect(out); lp.connect(rev)
+          this._detunedOsc(ctx, { freq, start:t+dt, dur:0.22+ci*.1, vol:0.09-fi*.01, detune:3, attack:0.004, out:lp })
         })
       })
-      this.createNoiseBurst(ctx, now + 0.12, 0.025, 0.015, 'pink', this.output)
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
+      this._noise(ctx, { start:t+.13, dur:0.022, vol:0.012, type:'pink', out })
+    })
   }
 
-  // ── Incoming call: ringing phone with vintage character ──
-  callRingtone() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 1.5, 0.3)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      const lp = this.createFilter(ctx, 'lowpass', 4500, 1)
-      const hp = this.createFilter(ctx, 'highpass', 300, 0.5)
-      
-      lp.connect(hp)
-      hp.connect(this.output)
-      hp.connect(reverb)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const ringTimes = [0, 0.4, 0.8, 1.2, 1.6]
-      ringTimes.forEach((t, i) => {
-        const ringNow = now + t
-        this.playOsc(ctx, { type: 'sine', freq: 1000, start: ringNow, stop: ringNow + 0.15, vol: 0.14, attack: 0.002, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: 1500, start: ringNow + 0.02, stop: ringNow + 0.12, vol: 0.08, attack: 0.002, destination: lp })
-        this.playOsc(ctx, { type: 'triangle', freq: 500, start: ringNow, stop: ringNow + 0.1, vol: 0.04, destination: lp })
-        this.playFMSynth(ctx, { carrierFreq: 800, modFreq: 1600, modIndex: 2, start: ringNow + 0.01, stop: ringNow + 0.1, vol: 0.04, destination: lp })
-      })
-    } catch (err) { console.error('Sound error:', err) }
-  }
-
-  // ── Call declined: descending rejection tone ──
-  callDeclined() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 2500, 2)
-      const reverb = this.createReverb(ctx, 1.2, 0.25)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.12
-      lp.connect(this.output)
-      lp.connect(reverb)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      this.playOsc(ctx, { type: 'sine', freq: 523.25, freqEnd: 261.6, start: now, stop: now + 0.2, vol: 0.14, attack: 0.002, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 392, freqEnd: 196, start: now + 0.1, stop: now + 0.35, vol: 0.12, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 329.63, freqEnd: 164.8, start: now + 0.05, stop: now + 0.25, vol: 0.04, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.04, 0.025, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
-  }
-
-  // ── Call ended: hangup tone ──
-  callEnded() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 3000, 1.5)
-      const reverb = this.createReverb(ctx, 1.8, 0.35)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.18
-      lp.connect(this.output)
-      lp.connect(reverb)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      this.playOsc(ctx, { type: 'sine', freq: 350, start: now, stop: now + 0.15, vol: 0.12, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 350, start: now + 0.18, stop: now + 0.32, vol: 0.12, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 175, start: now, stop: now + 0.25, vol: 0.03, destination: lp })
-    } catch (err) { console.error('Sound error:', err) }
-  }
-
-  // ── Call left: melancholic descending minor with soft tail ──
+  // Self leaves voice — descending minor arpeggio
   callLeft() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 2.8, 0.65)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.28
-      const delay = this.createDelay(ctx, 0.15, 0.3)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const notes = [
-        { freq: 698.46, freqEnd: 523.25, time: 0, dur: 0.28 },
-        { freq: 587.33, freqEnd: 392, time: 0.14, dur: 0.4 },
-        { freq: 440, freqEnd: 329.63, time: 0.28, dur: 0.45 },
-      ]
-      notes.forEach(n => {
-        const lp = this.createFilter(ctx, 'lowpass', 3000, 1.5)
-        lp.connect(this.output)
-        lp.connect(reverb)
-        lp.connect(delay.dry)
-        
-        this.playDetunedOsc(ctx, { type: 'sine', freq: n.freq, freqEnd: n.freqEnd, start: now + n.time, stop: now + n.time + n.dur, vol: 0.1, detune: 5, attack: 0.005, destination: lp })
-        this.playOsc(ctx, { type: 'triangle', freq: n.freq * 0.5, freqEnd: n.freqEnd * 0.5, start: now + n.time, stop: now + n.time + n.dur * 0.6, vol: 0.025, destination: lp })
-        this.playFMSynth(ctx, { carrierFreq: n.freq * 0.5, modFreq: n.freq, modIndex: 1.5, start: now + n.time, stop: now + n.time + n.dur * 0.3, vol: 0.03, destination: lp })
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 2.8, 0.65)
+      const rg  = this._gain(ctx, 0.26)
+      rev.connect(rg); rg.connect(out)
+      ;[
+        {freq:698, freqEnd:523, dt:0,   dur:.28},
+        {freq:587, freqEnd:392, dt:.14, dur:.38},
+        {freq:440, freqEnd:330, dt:.28, dur:.44},
+      ].forEach(({freq,freqEnd,dt,dur}) => {
+        const lp = this._filter(ctx, 'lowpass', 3000, 1.5)
+        lp.connect(out); lp.connect(rev)
+        this._detunedOsc(ctx, { freq, freqEnd, start:t+dt, dur, vol:0.10, detune:5, attack:0.005, out:lp })
+        this._osc(ctx,        { freq:freq*.5, freqEnd:freqEnd*.5, start:t+dt, dur:dur*.6, vol:0.022, type:'triangle', out:lp })
+        this._fm(ctx,         { carr:freq*.5, mod:freq, idx:1.5, start:t+dt, dur:dur*.3, vol:0.025, out:lp })
       })
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
+    })
   }
 
-  // ── Call join: ascending arpeggio C-E-G-C with warm reverb ──
-  callJoin() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 2.5, 0.75)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.32
-      const delay = this.createDelay(ctx, 0.1, 0.25)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5]
-      notes.forEach((freq, i) => {
-        const t = now + i * 0.06
-        const lp = this.createFilter(ctx, 'lowpass', 4500, 1.2)
-        lp.connect(this.output)
-        lp.connect(reverb)
-        lp.connect(delay.dry)
-        
-        this.playDetunedOsc(ctx, { type: 'sine', freq, start: t, stop: t + 0.45 - i * 0.03, vol: 0.1 - i * 0.008, detune: 5, attack: 0.005, destination: lp })
-        this.playOsc(ctx, { type: 'triangle', freq: freq * 0.5, start: t, stop: t + 0.28, vol: 0.025, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: freq * 2, start: t + 0.01, stop: t + 0.18, vol: 0.016, destination: lp })
-        this.playFMSynth(ctx, { carrierFreq: freq, modFreq: freq * 2, modIndex: 1.2, start: t, stop: t + 0.2, vol: 0.025, destination: lp })
-      })
-      this.createNoiseBurst(ctx, now, 0.015, 0.015, 'pink', this.output)
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
+  // Call ended (hang-up tone)
+  callEnded() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 3000, 1.5)
+      lp.connect(out)
+      this._osc(ctx, { freq:350, start:t,      dur:.15, vol:0.12, out:lp })
+      this._osc(ctx, { freq:350, start:t+.18,  dur:.14, vol:0.12, out:lp })
+      this._osc(ctx, { freq:175, start:t,      dur:.25, vol:0.03, type:'triangle', out:lp })
+    })
   }
 
-  // ── User joined voice: bright ascending blip with presence and delay ──
+  // Call declined
+  callDeclined() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 2500, 2)
+      lp.connect(out)
+      this._osc(ctx, { freq:523, freqEnd:261, start:t,      dur:.20, vol:0.13, out:lp })
+      this._osc(ctx, { freq:392, freqEnd:196, start:t+.10,  dur:.26, vol:0.11, out:lp })
+      this._noise(ctx, { start:t, dur:.035, vol:0.022, type:'brown', out:lp })
+    })
+  }
+
+  // Incoming call ringtone
+  callRingtone() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 4500, 1)
+      const hp  = this._filter(ctx, 'highpass', 300, 0.5)
+      lp.connect(hp); hp.connect(out)
+      ;[0, 0.42, 0.84, 1.26, 1.68].forEach(dt => {
+        this._osc(ctx, { freq:1000, start:t+dt,       dur:.15, vol:0.13, attack:0.002, out:lp })
+        this._osc(ctx, { freq:1500, start:t+dt+.02,   dur:.11, vol:0.07, attack:0.002, out:lp })
+        this._osc(ctx, { freq:500,  start:t+dt,       dur:.09, vol:0.04, type:'triangle', out:lp })
+        this._fm(ctx,  { carr:800, mod:1600, idx:2,   start:t+dt+.01, dur:.09, vol:0.04, out:lp })
+      })
+    })
+  }
+
+  // Another user joins the voice channel you're in
   userJoined() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 5000, 1.5)
-      const saturation = this.createSaturation(ctx, 0.3)
-      const reverb = this.createReverb(ctx, 1.2, 0.25)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.12
-      const delay = this.createDelay(ctx, 0.08, 0.2)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(reverb)
-      saturation.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 587.33, start: now, stop: now + 0.08, vol: 0.16, detune: 4, attack: 0.001, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 783.99, start: now + 0.05, stop: now + 0.14, vol: 0.18, detune: 3, attack: 0.002, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 1174.66, start: now + 0.1, stop: now + 0.2, vol: 0.1, attack: 0.003, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 293.66, start: now, stop: now + 0.1, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 440, modFreq: 880, modIndex: 2, start: now, stop: now + 0.1, vol: 0.04, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.01, 0.018, 'pink', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 5000, 1.5)
+      const sat = this._sat(ctx, 0.3)
+      const rev = this._reverb(ctx, 1.0, 0.22)
+      const rg  = this._gain(ctx, 0.10)
+      lp.connect(sat); sat.connect(out); sat.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:587, start:t,      dur:.09, vol:0.15, detune:4, attack:0.002, out:lp })
+      this._detunedOsc(ctx, { freq:784, start:t+.06,  dur:.14, vol:0.17, detune:3, attack:0.002, out:lp })
+      this._osc(ctx,        { freq:1174,start:t+.11,  dur:.18, vol:0.09, attack:0.003, out:lp })
+      this._fm(ctx,         { carr:440, mod:880, idx:2, start:t, dur:.10, vol:0.04, out:lp })
+      this._noise(ctx,      { start:t, dur:.01, vol:0.015, type:'pink', out:lp })
+    })
   }
 
-  // ── User left voice: soft descending two-note with delay ──
+  // Another user leaves the voice channel you're in
   userLeft() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 4000, 1.5)
-      const reverb = this.createReverb(ctx, 1.5, 0.3)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      const delay = this.createDelay(ctx, 0.1, 0.25)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      lp.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-      delay.feedback.connect(lp)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 698.46, start: now, stop: now + 0.1, vol: 0.14, detune: 3, attack: 0.002, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 493.88, start: now + 0.06, stop: now + 0.16, vol: 0.16, detune: 4, attack: 0.002, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 349.23, start: now, stop: now + 0.12, vol: 0.035, destination: lp })
-      this.createNoiseBurst(ctx, now + 0.08, 0.012, 0.012, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 4000, 1.5)
+      const rev = this._reverb(ctx, 1.3, 0.28)
+      const rg  = this._gain(ctx, 0.13)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:698, start:t,      dur:.10, vol:0.13, detune:3, attack:0.002, out:lp })
+      this._detunedOsc(ctx, { freq:494, start:t+.07,  dur:.15, vol:0.15, detune:4, attack:0.002, out:lp })
+      this._osc(ctx,        { freq:349, start:t,      dur:.12, vol:0.03, type:'triangle', out:lp })
+      this._noise(ctx,      { start:t+.08, dur:.012, vol:0.010, type:'brown', out:lp })
+    })
   }
 
-  // ── Mute: solid low thud with weight ──
+  // Mute mic
   mute() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 600, 4)
-      const saturation = this.createSaturation(ctx, 0.8)
-      const delay = this.createDelay(ctx, 0.08, 0.15)
-      lp.frequency.setValueAtTime(600, now)
-      lp.frequency.exponentialRampToValueAtTime(150, now + 0.15)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(delay.dry)
-      delay.wet.connect(this.output)
-
-      this.playOsc(ctx, { type: 'sine', freq: 220, freqEnd: 110, start: now, stop: now + 0.15, vol: 0.22, attack: 0.002, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 110, freqEnd: 55, start: now + 0.05, stop: now + 0.2, vol: 0.13, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 80, start: now, stop: now + 0.08, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 100, modFreq: 50, modIndex: 3, start: now, stop: now + 0.12, vol: 0.06, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.025, 0.04, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 600, 4)
+      const sat = this._sat(ctx, 0.8)
+      lp.frequency.setValueAtTime(600, t)
+      lp.frequency.exponentialRampToValueAtTime(150, t+.15)
+      lp.connect(sat); sat.connect(out)
+      this._osc(ctx, { freq:220, freqEnd:110, start:t,      dur:.15, vol:0.20, attack:0.002, out:lp })
+      this._osc(ctx, { freq:110, freqEnd:55,  start:t+.05,  dur:.17, vol:0.12, out:lp })
+      this._osc(ctx, { freq:80,              start:t,       dur:.08, vol:0.03, type:'square', out:lp })
+      this._noise(ctx, { start:t, dur:.022, vol:0.035, type:'brown', out:lp })
+    })
   }
 
-  // ── Unmute: bright pop with filter sweep ──
+  // Unmute mic
   unmute() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 500, 2)
-      const reverb = this.createReverb(ctx, 1.2, 0.2)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.1
-      lp.frequency.setValueAtTime(500, now)
-      lp.frequency.exponentialRampToValueAtTime(6000, now + 0.12)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 440, freqEnd: 1046.5, start: now, stop: now + 0.1, vol: 0.18, detune: 4, attack: 0.001, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 880, freqEnd: 1568, start: now + 0.03, stop: now + 0.14, vol: 0.1, detune: 3, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 220, freqEnd: 440, start: now, stop: now + 0.08, vol: 0.04, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 120, start: now, stop: now + 0.05, vol: 0.018, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 660, modFreq: 1320, modIndex: 2, start: now, stop: now + 0.1, vol: 0.04, destination: lp })
-      this.createNoiseBurst(ctx, now + 0.01, 0.018, 0.02, 'pink', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 500, 2)
+      const rev = this._reverb(ctx, 1.0, 0.18)
+      const rg  = this._gain(ctx, 0.09)
+      lp.frequency.setValueAtTime(500, t)
+      lp.frequency.exponentialRampToValueAtTime(6000, t+.12)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:440, freqEnd:1046, start:t,     dur:.10, vol:0.16, detune:4, attack:0.001, out:lp })
+      this._detunedOsc(ctx, { freq:880, freqEnd:1568, start:t+.03, dur:.12, vol:0.09, detune:3, out:lp })
+      this._fm(ctx,         { carr:660, mod:1320, idx:2, start:t, dur:.10, vol:0.04, out:lp })
+      this._noise(ctx,      { start:t+.01, dur:.016, vol:0.018, type:'pink', out:lp })
+    })
   }
 
-  // ── Deafen: heavy double-thud with depth ──
+  // Deafen headphones
   deafen() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 400, 5)
-      const saturation = this.createSaturation(ctx, 1)
-      const delay = this.createDelay(ctx, 0.1, 0.2)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(delay.dry)
-      delay.wet.connect(this.output)
-
-      this.playOsc(ctx, { type: 'sine', freq: 180, freqEnd: 80, start: now, stop: now + 0.15, vol: 0.22, attack: 0.001, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 120, freqEnd: 60, start: now + 0.08, stop: now + 0.25, vol: 0.18, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 50, start: now, stop: now + 0.1, vol: 0.04, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 80, modFreq: 40, modIndex: 3, start: now, stop: now + 0.15, vol: 0.06, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.035, 0.05, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 400, 5)
+      const sat = this._sat(ctx, 1)
+      lp.connect(sat); sat.connect(out)
+      this._osc(ctx, { freq:180, freqEnd:80, start:t,      dur:.15, vol:0.20, attack:0.001, out:lp })
+      this._osc(ctx, { freq:120, freqEnd:60, start:t+.08,  dur:.20, vol:0.16, out:lp })
+      this._osc(ctx, { freq:50,             start:t,       dur:.10, vol:0.04, type:'square', out:lp })
+      this._noise(ctx, { start:t, dur:.032, vol:0.045, type:'brown', out:lp })
+    })
   }
 
-  // ── Undeafen: expansive opening sweep with chime ──
+  // Undeafen
   undeafen() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 300, 1.5)
-      const reverb = this.createReverb(ctx, 1.8, 0.45)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.18
-      const delay = this.createDelay(ctx, 0.12, 0.25)
-      lp.frequency.setValueAtTime(300, now)
-      lp.frequency.exponentialRampToValueAtTime(7000, now + 0.25)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      lp.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(reverb)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 350, freqEnd: 1046.5, start: now, stop: now + 0.18, vol: 0.16, detune: 4, attack: 0.002, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 698.46, freqEnd: 1568, start: now + 0.06, stop: now + 0.28, vol: 0.12, detune: 3, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 1396.91, start: now + 0.12, stop: now + 0.35, vol: 0.09, attack: 0.01, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 175, freqEnd: 440, start: now, stop: now + 0.15, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 880, modFreq: 1760, modIndex: 2, start: now + 0.08, stop: now + 0.2, vol: 0.04, destination: lp })
-      this.createNoiseBurst(ctx, now + 0.15, 0.025, 0.018, 'pink', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 300, 1.5)
+      const rev = this._reverb(ctx, 1.8, 0.42)
+      const rg  = this._gain(ctx, 0.16)
+      lp.frequency.setValueAtTime(300, t)
+      lp.frequency.exponentialRampToValueAtTime(7000, t+.25)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:350,  freqEnd:1046, start:t,      dur:.18, vol:0.14, detune:4, attack:0.002, out:lp })
+      this._detunedOsc(ctx, { freq:698,  freqEnd:1568, start:t+.06,  dur:.26, vol:0.11, detune:3, out:lp })
+      this._osc(ctx,        { freq:1397,               start:t+.12,  dur:.32, vol:0.08, attack:0.01, out:lp })
+      this._noise(ctx,      { start:t+.14, dur:.022, vol:0.016, type:'pink', out:lp })
+    })
   }
 
-  // ── Channel switch: crisp click with presence ──
+  // Text channel switch
   channelSwitch() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const bp = this.createFilter(ctx, 'bandpass', 3500, 6)
-      const saturation = this.createSaturation(ctx, 0.4)
-      const reverb = this.createReverb(ctx, 1.2, 0.2)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.1
-      const delay = this.createDelay(ctx, 0.05, 0.15)
-      bp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(reverb)
-      saturation.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-
-      this.createNoiseBurst(ctx, now, 0.018, 0.1, 'pink', bp)
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 2500, freqEnd: 1500, start: now, stop: now + 0.035, vol: 0.07, detune: 4, attack: 0.001, destination: bp })
-      this.playOsc(ctx, { type: 'square', freq: 1200, start: now, stop: now + 0.02, vol: 0.025, destination: bp })
-      this.playFMSynth(ctx, { carrierFreq: 1800, modFreq: 3600, modIndex: 2, start: now, stop: now + 0.03, vol: 0.03, destination: bp })
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const bp  = this._filter(ctx, 'bandpass', 3500, 6)
+      const sat = this._sat(ctx, 0.4)
+      bp.connect(sat); sat.connect(out)
+      this._noise(ctx,      { start:t, dur:.016, vol:0.08, type:'pink', out:bp })
+      this._detunedOsc(ctx, { freq:2500, freqEnd:1500, start:t, dur:.032, vol:0.06, detune:4, attack:0.001, out:bp })
+      this._osc(ctx,        { freq:1200, start:t, dur:.018, vol:0.022, type:'square', out:bp })
+      this._fm(ctx,         { carr:1800, mod:3600, idx:2, start:t, dur:.028, vol:0.028, out:bp })
+    })
   }
 
-  // ── Notification: three-bell chime with shimmer and delay ──
+  // Notification / friend request
   notification() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 2, 0.5)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.25
-      const delay = this.createDelay(ctx, 0.12, 0.3)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const bells = [
-        { freq: 1046.5, time: 0, dur: 0.28 },
-        { freq: 1318.5, time: 0.12, dur: 0.35 },
-        { freq: 1568, time: 0.24, dur: 0.4 },
-      ]
-      bells.forEach(b => {
-        const lp = this.createFilter(ctx, 'lowpass', 6000, 1.2)
-        lp.connect(this.output)
-        lp.connect(reverb)
-        lp.connect(delay.dry)
-        
-        this.playDetunedOsc(ctx, { type: 'sine', freq: b.freq, start: now + b.time, stop: now + b.time + b.dur, vol: 0.12, detune: 4, attack: 0.002, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: b.freq * 2.01, start: now + b.time, stop: now + b.time + b.dur * 0.5, vol: 0.035, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: b.freq * 3.02, start: now + b.time + 0.01, stop: now + b.time + b.dur * 0.25, vol: 0.012, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: b.freq * 4.03, start: now + b.time + 0.02, stop: now + b.time + b.dur * 0.15, vol: 0.006, destination: lp })
-        this.playFMSynth(ctx, { carrierFreq: b.freq * 0.5, modFreq: b.freq, modIndex: 1.2, start: now + b.time, stop: now + b.time + b.dur * 0.4, vol: 0.025, destination: lp })
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 2.0, 0.48)
+      const rg  = this._gain(ctx, 0.22)
+      rev.connect(rg); rg.connect(out)
+      ;[{f:1046,dt:0},{f:1318,dt:.12},{f:1568,dt:.24}].forEach(({f,dt}) => {
+        const lp = this._filter(ctx, 'lowpass', 6000, 1.2)
+        lp.connect(out); lp.connect(rev)
+        this._detunedOsc(ctx, { freq:f,     start:t+dt,      dur:.30, vol:0.11, detune:4, attack:0.002, out:lp })
+        this._osc(ctx,        { freq:f*2,   start:t+dt,      dur:.14, vol:0.03, out:lp })
+        this._osc(ctx,        { freq:f*3.02,start:t+dt+.01,  dur:.07, vol:0.01, out:lp })
+        this._fm(ctx,         { carr:f*.5, mod:f, idx:1.2, start:t+dt, dur:.36*.4, vol:0.022, out:lp })
       })
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
+    })
   }
 
-  // ── Error: dissonant buzzer with gritty texture ──
+  // Error
   error() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 1000, 5)
-      const saturation = this.createSaturation(ctx, 1.5)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-
-      this.playOsc(ctx, { type: 'sawtooth', freq: 150, freqEnd: 100, start: now, stop: now + 0.2, vol: 0.1, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 160, freqEnd: 110, start: now, stop: now + 0.18, vol: 0.06, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 145, freqEnd: 95, start: now + 0.05, stop: now + 0.22, vol: 0.05, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 100, freqEnd: 60, start: now + 0.08, stop: now + 0.25, vol: 0.12, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.05, 0.06, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 1000, 5)
+      const sat = this._sat(ctx, 1.5)
+      lp.connect(sat); sat.connect(out)
+      this._osc(ctx, { freq:150, freqEnd:100, start:t,      dur:.20, vol:0.09, type:'sawtooth', out:lp })
+      this._osc(ctx, { freq:160, freqEnd:110, start:t,      dur:.18, vol:0.05, type:'square', out:lp })
+      this._osc(ctx, { freq:145, freqEnd:95,  start:t+.05,  dur:.19, vol:0.04, type:'square', out:lp })
+      this._osc(ctx, { freq:100, freqEnd:60,  start:t+.08,  dur:.20, vol:0.09, out:lp })
+      this._fm(ctx,  { carr:120, mod:240, idx:3, start:t, dur:.15, vol:0.04, out:lp })
+      this._noise(ctx, { start:t, dur:.038, vol:0.045, type:'brown', out:lp })
+    })
   }
 
-  // ── Screen share start: digital sweep with sparkle ──
-  screenShareStart() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 1.8, 0.45)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.2
-      const delay = this.createDelay(ctx, 0.08, 0.2)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const lp = this.createFilter(ctx, 'lowpass', 2500, 1.2)
-      lp.frequency.setValueAtTime(2500, now)
-      lp.frequency.exponentialRampToValueAtTime(9000, now + 0.3)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      lp.connect(delay.dry)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 440, freqEnd: 1396.91, start: now, stop: now + 0.22, vol: 0.14, detune: 4, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'triangle', freq: 880, freqEnd: 2637, start: now + 0.03, stop: now + 0.2, vol: 0.07, detune: 3, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 1396.91, freqEnd: 2093, start: now + 0.15, stop: now + 0.35, vol: 0.1, attack: 0.008, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 1174.66, modFreq: 2349.32, modIndex: 2.5, start: now + 0.08, stop: now + 0.25, vol: 0.045, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 2349.32, start: now + 0.1, stop: now + 0.22, vol: 0.03, destination: lp })
-      this.createNoiseBurst(ctx, now + 0.12, 0.025, 0.025, 'pink', lp)
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
-  }
-
-  // ── Screen share stop: descending digital sweep ──
-  screenShareStop() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 1.5, 0.35)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      const lp = this.createFilter(ctx, 'lowpass', 7000, 1.5)
-      lp.frequency.setValueAtTime(7000, now)
-      lp.frequency.exponentialRampToValueAtTime(600, now + 0.25)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 1568, freqEnd: 440, start: now, stop: now + 0.22, vol: 0.14, detune: 4, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'triangle', freq: 783.99, freqEnd: 220, start: now + 0.02, stop: now + 0.2, vol: 0.07, detune: 3, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 1046.5, freqEnd: 349.23, start: now + 0.05, stop: now + 0.18, vol: 0.05, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 600, modFreq: 300, modIndex: 2, start: now, stop: now + 0.15, vol: 0.04, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.02, 0.035, 'pink', lp)
-    } catch (err) { console.error('Sound error:', err) }
-  }
-
-  // ── Camera on: bright chirp with presence ──
-  cameraOn() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 5500, 1.5)
-      const saturation = this.createSaturation(ctx, 0.4)
-      const reverb = this.createReverb(ctx, 1.2, 0.25)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.12
-      const delay = this.createDelay(ctx, 0.06, 0.15)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(reverb)
-      saturation.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 784, freqEnd: 1318.5, start: now, stop: now + 0.08, vol: 0.16, detune: 4, attack: 0.001, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 1318.5, freqEnd: 1760, start: now + 0.05, stop: now + 0.14, vol: 0.13, detune: 3, attack: 0.002, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 1760, start: now + 0.1, stop: now + 0.2, vol: 0.09, attack: 0.003, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 392, freqEnd: 587, start: now, stop: now + 0.1, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 880, modFreq: 1760, modIndex: 2, start: now, stop: now + 0.12, vol: 0.04, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.01, 0.02, 'pink', lp)
-    } catch (err) { console.error('Sound error:', err) }
-  }
-
-  // ── Camera off: dull thunk with weight ──
-  cameraOff() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 1000, 3)
-      const saturation = this.createSaturation(ctx, 0.6)
-      const reverb = this.createReverb(ctx, 1.5, 0.3)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      lp.frequency.setValueAtTime(1000, now)
-      lp.frequency.exponentialRampToValueAtTime(200, now + 0.12)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(reverb)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 440, freqEnd: 220, start: now, stop: now + 0.1, vol: 0.18, detune: 4, attack: 0.001, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 220, freqEnd: 110, start: now + 0.03, stop: now + 0.12, vol: 0.1, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 180, freqEnd: 90, start: now, stop: now + 0.06, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 120, modFreq: 60, modIndex: 2.5, start: now, stop: now + 0.1, vol: 0.05, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.02, 0.035, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
-  }
-
-  // ── Success: bright major chord resolve with delay ──
+  // Success
   success() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 2.2, 0.55)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.28
-      const delay = this.createDelay(ctx, 0.1, 0.25)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const freqs = [523.25, 659.25, 783.99, 1046.5]
-      freqs.forEach((freq, i) => {
-        const lp = this.createFilter(ctx, 'lowpass', 5000, 1)
-        lp.connect(this.output)
-        lp.connect(reverb)
-        lp.connect(delay.dry)
-        
-        this.playDetunedOsc(ctx, { type: 'sine', freq, start: now + i * 0.05, stop: now + 0.5, vol: 0.09 - i * 0.012, detune: 4, attack: 0.003, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: freq * 2, start: now + i * 0.05 + 0.01, stop: now + 0.28, vol: 0.018, destination: lp })
-        this.playFMSynth(ctx, { carrierFreq: freq * 0.5, modFreq: freq, modIndex: 1.5, start: now + i * 0.05, stop: now + 0.25, vol: 0.02, destination: lp })
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 2.0, 0.50)
+      const rg  = this._gain(ctx, 0.24)
+      rev.connect(rg); rg.connect(out)
+      ;[523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+        const lp = this._filter(ctx, 'lowpass', 5000, 1)
+        lp.connect(out); lp.connect(rev)
+        this._detunedOsc(ctx, { freq, start:t+i*.05, dur:.45, vol:0.08-i*.011, detune:4, attack:0.003, out:lp })
+        this._osc(ctx,        { freq:freq*2, start:t+i*.05+.01, dur:.24, vol:0.016, out:lp })
+        this._fm(ctx,         { carr:freq*.5, mod:freq, idx:1.5, start:t+i*.05, dur:.22, vol:0.018, out:lp })
       })
-      this.createNoiseBurst(ctx, now + 0.1, 0.018, 0.012, 'pink', this.output)
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
+      this._noise(ctx, { start:t+.10, dur:.016, vol:0.010, type:'pink', out })
+    })
   }
 
-  // ── Error: dissonant buzzer with gritty texture ──
-  error() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 1000, 5)
-      const saturation = this.createSaturation(ctx, 1.5)
-      const delay = this.createDelay(ctx, 0.06, 0.2)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(delay.dry)
-      delay.wet.connect(this.output)
-      delay.feedback.connect(lp)
-
-      this.playOsc(ctx, { type: 'sawtooth', freq: 150, freqEnd: 100, start: now, stop: now + 0.2, vol: 0.09, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 160, freqEnd: 110, start: now, stop: now + 0.18, vol: 0.05, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 145, freqEnd: 95, start: now + 0.05, stop: now + 0.22, vol: 0.04, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 100, freqEnd: 60, start: now + 0.08, stop: now + 0.25, vol: 0.1, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 120, modFreq: 240, modIndex: 3, start: now, stop: now + 0.15, vol: 0.04, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.04, 0.05, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
+  // Screen share start
+  screenShareStart() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 2500, 1.2)
+      const rev = this._reverb(ctx, 1.6, 0.40)
+      const rg  = this._gain(ctx, 0.18)
+      lp.frequency.setValueAtTime(2500, t)
+      lp.frequency.exponentialRampToValueAtTime(9000, t+.28)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:440,  freqEnd:1397, start:t,      dur:.22, vol:0.13, detune:4, out:lp })
+      this._detunedOsc(ctx, { freq:880,  freqEnd:2637, start:t+.03,  dur:.19, vol:0.06, detune:3, type:'triangle', out:lp })
+      this._osc(ctx,        { freq:1397, freqEnd:2093, start:t+.14,  dur:.32, vol:0.09, attack:0.008, out:lp })
+      this._noise(ctx,      { start:t+.11, dur:.022, vol:0.022, type:'pink', out:lp })
+    })
   }
 
-  // ── User mentioned in DM: enhanced ping with longer sustain and delay ──
-  dmMention() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 1.8, 0.4)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.22
-      const delay = this.createDelay(ctx, 0.12, 0.3)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const lp = this.createFilter(ctx, 'lowpass', 7000, 2)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      lp.connect(delay.dry)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 2093, start: now, stop: now + 0.18, vol: 0.18, detune: 4, attack: 0.001, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 2637, start: now + 0.04, stop: now + 0.25, vol: 0.16, detune: 3, attack: 0.001, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 3136, start: now + 0.08, stop: now + 0.32, vol: 0.1, attack: 0.001, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 1046.5, modFreq: 2093, modIndex: 3.5, start: now, stop: now + 0.2, vol: 0.07, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 1046.5, start: now + 0.02, stop: now + 0.12, vol: 0.03, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.012, 0.02, 'pink', lp)
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
+  // Screen share stop
+  screenShareStop() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 7000, 1.5)
+      const rev = this._reverb(ctx, 1.3, 0.32)
+      const rg  = this._gain(ctx, 0.13)
+      lp.frequency.setValueAtTime(7000, t)
+      lp.frequency.exponentialRampToValueAtTime(600, t+.24)
+      lp.connect(out); lp.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:1568, freqEnd:440, start:t,      dur:.22, vol:0.13, detune:4, out:lp })
+      this._detunedOsc(ctx, { freq:784,  freqEnd:220, start:t+.02,  dur:.19, vol:0.06, detune:3, type:'triangle', out:lp })
+      this._osc(ctx,        { freq:1046, freqEnd:349, start:t+.05,  dur:.17, vol:0.05, out:lp })
+      this._noise(ctx,      { start:t, dur:.018, vol:0.030, type:'pink', out:lp })
+    })
   }
 
-  // ── Typing indicator: subtle clicks ──
-  typing() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const bp = this.createFilter(ctx, 'bandpass', 4000, 8)
-      bp.connect(this.output)
-
-      this.createNoiseBurst(ctx, now, 0.012, 0.05, 'pink', bp)
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 3000, start: now, stop: now + 0.02, vol: 0.035, detune: 5, attack: 0.001, destination: bp })
-    } catch (err) { console.error('Sound error:', err) }
+  // Camera on
+  cameraOn() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 5500, 1.5)
+      const sat = this._sat(ctx, 0.35)
+      const rev = this._reverb(ctx, 1.0, 0.22)
+      const rg  = this._gain(ctx, 0.10)
+      lp.connect(sat); sat.connect(out); sat.connect(rev); rev.connect(rg); rg.connect(out)
+      this._detunedOsc(ctx, { freq:784,  freqEnd:1318, start:t,      dur:.09, vol:0.15, detune:4, attack:0.001, out:lp })
+      this._detunedOsc(ctx, { freq:1318, freqEnd:1760, start:t+.06,  dur:.13, vol:0.12, detune:3, attack:0.002, out:lp })
+      this._osc(ctx,        { freq:1760,               start:t+.10,  dur:.18, vol:0.08, attack:0.003, out:lp })
+      this._fm(ctx,         { carr:880, mod:1760, idx:2, start:t, dur:.12, vol:0.04, out:lp })
+      this._noise(ctx,      { start:t, dur:.010, vol:0.018, type:'pink', out:lp })
+    })
   }
 
-  // ── Kick from voice: descending thump ──
+  // Camera off
+  cameraOff() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 1000, 3)
+      const sat = this._sat(ctx, 0.6)
+      lp.frequency.setValueAtTime(1000, t)
+      lp.frequency.exponentialRampToValueAtTime(200, t+.12)
+      lp.connect(sat); sat.connect(out)
+      this._detunedOsc(ctx, { freq:440, freqEnd:220, start:t,      dur:.10, vol:0.16, detune:4, attack:0.001, out:lp })
+      this._osc(ctx,        { freq:220, freqEnd:110, start:t+.03,  dur:.11, vol:0.09, out:lp })
+      this._osc(ctx,        { freq:180, freqEnd:90,  start:t,      dur:.06, vol:0.03, type:'square', out:lp })
+      this._noise(ctx,      { start:t, dur:.018, vol:0.030, type:'brown', out:lp })
+    })
+  }
+
+  // Voice kick
   voiceKick() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 500, 4)
-      const saturation = this.createSaturation(ctx, 0.8)
-      const reverb = this.createReverb(ctx, 1.8, 0.35)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.18
-      const delay = this.createDelay(ctx, 0.1, 0.2)
-      lp.connect(saturation)
-      saturation.connect(this.output)
-      saturation.connect(reverb)
-      saturation.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 300, freqEnd: 80, start: now, stop: now + 0.2, vol: 0.2, detune: 4, attack: 0.001, destination: lp })
-      this.playOsc(ctx, { type: 'sine', freq: 150, freqEnd: 50, start: now + 0.08, stop: now + 0.3, vol: 0.13, destination: lp })
-      this.playOsc(ctx, { type: 'square', freq: 60, start: now, stop: now + 0.12, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 100, modFreq: 50, modIndex: 3, start: now, stop: now + 0.15, vol: 0.05, destination: lp })
-      this.createNoiseBurst(ctx, now, 0.04, 0.05, 'brown', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 500, 4)
+      const sat = this._sat(ctx, 0.8)
+      lp.connect(sat); sat.connect(out)
+      this._detunedOsc(ctx, { freq:300, freqEnd:80, start:t,      dur:.20, vol:0.18, detune:4, attack:0.001, out:lp })
+      this._osc(ctx,        { freq:150, freqEnd:50, start:t+.08,  dur:.26, vol:0.12, out:lp })
+      this._osc(ctx,        { freq:60,             start:t,       dur:.12, vol:0.03, type:'square', out:lp })
+      this._noise(ctx,      { start:t, dur:.036, vol:0.045, type:'brown', out:lp })
+    })
   }
 
-  // ── Server joined: fanfare with flourish ──
+  // Server joined
   serverJoined() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const reverb = this.createReverb(ctx, 2.8, 0.75)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.32
-      const delay = this.createDelay(ctx, 0.12, 0.3)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-
-      const fanfare = [
-        { freq: 523.25, time: 0, dur: 0.22 },
-        { freq: 659.25, time: 0.1, dur: 0.22 },
-        { freq: 783.99, time: 0.2, dur: 0.22 },
-        { freq: 1046.5, time: 0.3, dur: 0.45 },
-        { freq: 1318.5, time: 0.4, dur: 0.55 },
-      ]
-      fanfare.forEach(n => {
-        const lp = this.createFilter(ctx, 'lowpass', 5000, 1)
-        lp.connect(this.output)
-        lp.connect(reverb)
-        lp.connect(delay.dry)
-        
-        this.playDetunedOsc(ctx, { type: 'sine', freq: n.freq, start: now + n.time, stop: now + n.time + n.dur, vol: 0.1, detune: 5, attack: 0.005, destination: lp })
-        this.playOsc(ctx, { type: 'sine', freq: n.freq * 2, start: now + n.time + 0.01, stop: now + n.time + n.dur * 0.4, vol: 0.025, destination: lp })
-        this.playFMSynth(ctx, { carrierFreq: n.freq * 0.5, modFreq: n.freq, modIndex: 1.5, start: now + n.time, stop: now + n.time + n.dur * 0.3, vol: 0.025, destination: lp })
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 2.5, 0.70)
+      const rg  = this._gain(ctx, 0.28)
+      rev.connect(rg); rg.connect(out)
+      ;[
+        {f:523,dt:0,  dur:.22},
+        {f:659,dt:.10,dur:.22},
+        {f:784,dt:.20,dur:.22},
+        {f:1046,dt:.30,dur:.42},
+        {f:1318,dt:.40,dur:.52},
+      ].forEach(({f,dt,dur}) => {
+        const lp = this._filter(ctx, 'lowpass', 5000, 1)
+        lp.connect(out); lp.connect(rev)
+        this._detunedOsc(ctx, { freq:f,     start:t+dt,      dur, vol:0.09, detune:5, attack:0.005, out:lp })
+        this._osc(ctx,        { freq:f*2,   start:t+dt+.01,  dur:dur*.4, vol:0.022, out:lp })
+        this._fm(ctx,         { carr:f*.5, mod:f, idx:1.5, start:t+dt, dur:dur*.3, vol:0.022, out:lp })
       })
-      this.createNoiseBurst(ctx, now + 0.35, 0.035, 0.018, 'pink', this.output)
-      delay.wet.connect(reverb)
-    } catch (err) { console.error('Sound error:', err) }
+      this._noise(ctx, { start:t+.32, dur:.032, vol:0.016, type:'pink', out })
+    })
   }
 
-  // ── Role added: upward sweep ──
+  // Role added
   roleAdded() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 4500, 1.5)
-      const reverb = this.createReverb(ctx, 1.5, 0.3)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      const delay = this.createDelay(ctx, 0.08, 0.2)
-      lp.frequency.setValueAtTime(2000, now)
-      lp.frequency.exponentialRampToValueAtTime(5000, now + 0.15)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      lp.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
-
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 440, freqEnd: 880, start: now, stop: now + 0.12, vol: 0.14, detune: 4, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 660, freqEnd: 1320, start: now + 0.04, stop: now + 0.16, vol: 0.12, detune: 3, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 220, freqEnd: 440, start: now, stop: now + 0.1, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 550, modFreq: 1100, modIndex: 2, start: now, stop: now + 0.12, vol: 0.035, destination: lp })
-      this.createNoiseBurst(ctx, now + 0.1, 0.018, 0.018, 'pink', lp)
-    } catch (err) { console.error('Sound error:', err) }
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 4500, 1.5)
+      lp.frequency.setValueAtTime(2000, t)
+      lp.frequency.exponentialRampToValueAtTime(5000, t+.15)
+      lp.connect(out)
+      this._detunedOsc(ctx, { freq:440, freqEnd:880,  start:t,      dur:.12, vol:0.13, detune:4, out:lp })
+      this._detunedOsc(ctx, { freq:660, freqEnd:1320, start:t+.04,  dur:.14, vol:0.11, detune:3, out:lp })
+      this._fm(ctx,         { carr:550, mod:1100, idx:2, start:t, dur:.12, vol:0.032, out:lp })
+      this._noise(ctx,      { start:t+.09, dur:.016, vol:0.016, type:'pink', out:lp })
+    })
   }
 
-  // ── Role removed: downward sweep ──
+  // Role removed
   roleRemoved() {
-    if (!this.enabled) return
-    try {
-      const ctx = this.getContext()
-      const now = ctx.currentTime
-      const lp = this.createFilter(ctx, 'lowpass', 4000, 1.5)
-      const reverb = this.createReverb(ctx, 1.5, 0.3)
-      const reverbGain = ctx.createGain()
-      reverbGain.gain.value = 0.15
-      const delay = this.createDelay(ctx, 0.08, 0.2)
-      lp.frequency.setValueAtTime(4000, now)
-      lp.frequency.exponentialRampToValueAtTime(1500, now + 0.15)
-      lp.connect(this.output)
-      lp.connect(reverb)
-      lp.connect(delay.dry)
-      reverb.connect(reverbGain)
-      reverbGain.connect(this.output)
-      delay.wet.connect(this.output)
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const lp  = this._filter(ctx, 'lowpass', 4000, 1.5)
+      lp.frequency.setValueAtTime(4000, t)
+      lp.frequency.exponentialRampToValueAtTime(1500, t+.15)
+      lp.connect(out)
+      this._detunedOsc(ctx, { freq:880, freqEnd:440, start:t,      dur:.12, vol:0.11, detune:4, out:lp })
+      this._detunedOsc(ctx, { freq:660, freqEnd:330, start:t+.04,  dur:.13, vol:0.09, detune:3, out:lp })
+      this._fm(ctx,         { carr:550, mod:275, idx:2, start:t+.02, dur:.11, vol:0.028, out:lp })
+    })
+  }
 
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 880, freqEnd: 440, start: now, stop: now + 0.12, vol: 0.12, detune: 4, destination: lp })
-      this.playDetunedOsc(ctx, { type: 'sine', freq: 660, freqEnd: 330, start: now + 0.04, stop: now + 0.14, vol: 0.1, detune: 3, destination: lp })
-      this.playOsc(ctx, { type: 'triangle', freq: 440, freqEnd: 220, start: now, stop: now + 0.1, vol: 0.035, destination: lp })
-      this.playFMSynth(ctx, { carrierFreq: 550, modFreq: 275, modIndex: 2, start: now + 0.02, stop: now + 0.12, vol: 0.03, destination: lp })
-    } catch (err) { console.error('Sound error:', err) }
+  // Typing indicator
+  typing() {
+    this._play((ctx) => {
+      const t   = ctx.currentTime
+      const out = this._out
+      const bp  = this._filter(ctx, 'bandpass', 4000, 8)
+      bp.connect(out)
+      this._noise(ctx,      { start:t, dur:.011, vol:0.045, type:'pink', out:bp })
+      this._detunedOsc(ctx, { freq:3000, start:t, dur:.018, vol:0.030, detune:5, attack:0.001, out:bp })
+    })
   }
 }
 

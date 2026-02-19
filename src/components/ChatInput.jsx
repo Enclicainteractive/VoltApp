@@ -59,21 +59,49 @@ const ChatInput = forwardRef(({
       range.collapse(false)
       sel.removeAllRanges()
       sel.addRange(range)
+    },
+    // Atomically set the full text content and caret in one operation, bypassing focus guards
+    setValueAndCaret: (text, caretOffset) => {
+      const el = editorRef.current
+      if (!el) return
+      el.innerText = text
+      el.focus()
+      autoResize()
+      // Position caret
+      const sel = window.getSelection()
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      let remaining = caretOffset ?? text.length
+      let node = walker.nextNode()
+      while (node) {
+        if (remaining <= node.textContent.length) {
+          const range = document.createRange()
+          range.setStart(node, remaining)
+          range.collapse(true)
+          sel.removeAllRanges()
+          sel.addRange(range)
+          return
+        }
+        remaining -= node.textContent.length
+        node = walker.nextNode()
+      }
+      // fallback to end
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      range.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(range)
     }
   }), [])
 
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerText !== value) {
-      if (document.activeElement !== editorRef.current) {
+    if (editorRef.current) {
+      const current = editorRef.current.innerText
+      // Always sync when value differs — normalize trailing newline browsers sometimes add
+      const normalizedCurrent = current.endsWith('\n') ? current.slice(0, -1) : current
+      if (normalizedCurrent !== (value || '')) {
         editorRef.current.innerText = value || ''
+        autoResize()
       }
-    }
-  }, [value])
-
-  useEffect(() => {
-    if (value === '' && editorRef.current && editorRef.current.innerText) {
-      editorRef.current.innerText = ''
-      editorRef.current.style.height = 'auto'
     }
   }, [value])
 

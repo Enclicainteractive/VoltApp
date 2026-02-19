@@ -11,7 +11,7 @@ import '../assets/styles/MessageList.css'
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥']
 
-const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, onPinMessage, onUnpinMessage, highlightMessageId, onSaveScrollPosition, scrollPosition, onShowProfile }) => {
+const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, onPinMessage, onUnpinMessage, highlightMessageId, onSaveScrollPosition, scrollPosition, onShowProfile, members }) => {
   const { socket } = useSocket()
   const messagesEndRef = useRef(null)
   const messagesStartRef = useRef(null)
@@ -283,45 +283,29 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
     )
   }
 
-  const renderMessageContent = (content, mentions, messageAuthorUsername) => {
-    if (!content) return null
-    
-    // Split on @mention tokens
-    const parts = content.split(/(@[a-zA-Z0-9_\-\.]+)/gi)
-    
-    return parts.map((part, i) => {
-      if (part.startsWith('@')) {
-        const mentionName = part.slice(1).toLowerCase()
-        const isEveryone = mentionName === 'everyone'
-        const isHere = mentionName === 'here'
-        // User is directly mentioned if the server included their id in mentions.users,
-        // OR if the @handle matches the currentUserId directly (legacy), 
-        // OR if mentions.usernames list includes this handle
-        const isDirectMention =
-          (mentions?.users && mentions.users.includes(currentUserId)) ||
-          (mentions?.usernames && mentions.usernames.some(u => u.toLowerCase() === mentionName))
-
-        if (isEveryone || isHere || isDirectMention) {
-          return (
-            <span
-              key={i}
-              className={`mention-highlight ${isEveryone ? 'mention-everyone' : isHere ? 'mention-here' : 'mention-user'}`}
-              title={isEveryone ? 'Mentions everyone' : isHere ? 'Mentions online members' : 'You were mentioned'}
-            >
-              {part}
-            </span>
-          )
-        }
-        // Other @mentions — styled as clickable but not highlighted as a personal ping
-        return (
-          <span key={i} className="mention-other">
-            {part}
-          </span>
-        )
+  const handleMentionClick = useCallback((userId, username, host) => {
+    if (userId) {
+      onShowProfile?.(userId)
+    } else if (username) {
+      // Try to find by username in members list as fallback
+      const member = members?.find(m => m.username?.toLowerCase() === username.toLowerCase())
+      if (member?.id) {
+        onShowProfile?.(member.id)
       }
-      // For non-mention parts, use MarkdownMessage
-      return <MarkdownMessage key={i} content={part} />
-    })
+    }
+  }, [onShowProfile, members])
+
+  const renderMessageContent = (content, mentions) => {
+    if (!content) return null
+    return (
+      <MarkdownMessage
+        content={content}
+        currentUserId={currentUserId}
+        mentions={mentions}
+        members={members}
+        onMentionClick={handleMentionClick}
+      />
+    )
   }
 
   const handleContextMenu = (e, message) => {
@@ -486,7 +470,7 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
                   </div>
                 ) : (
                   <div className="message-content">
-                    {renderMessageContent(message.content, message.mentions, message.username)}
+                    {renderMessageContent(message.content, message.mentions)}
                     {message.edited && <span className="edited-tag">(edited)</span>}
                   </div>
                 )}

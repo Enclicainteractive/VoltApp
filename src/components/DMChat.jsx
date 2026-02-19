@@ -347,26 +347,15 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
 
   // ─── Render message content (markdown + mentions) ─────────────────────────
 
-  const renderMessageContent = (content) => {
+  const renderMessageContent = (content, mentions) => {
     if (!content) return null
-    // Split on @mention tokens
-    const parts = content.split(/(@[a-zA-Z0-9_\-\.]+)/gi)
-    return parts.map((part, i) => {
-      if (part.startsWith('@')) {
-        const name = part.slice(1).toLowerCase()
-        const isMe = name === (user?.username?.toLowerCase())
-        return (
-          <span
-            key={i}
-            className={`mention-other${isMe ? ' mention-user' : ''}`}
-            title={isMe ? 'You were mentioned' : undefined}
-          >
-            {part}
-          </span>
-        )
-      }
-      return <MarkdownMessage key={i} content={part} />
-    })
+    return (
+      <MarkdownMessage
+        content={content}
+        currentUserId={user?.id}
+        mentions={mentions}
+      />
+    )
   }
 
   // ─── JSX ──────────────────────────────────────────────────────────────────
@@ -496,7 +485,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
                   ) : (
                     <div className="dm-message-body">
                       <div className="dm-message-content">
-                        {renderMessageContent(message.content)}
+                        {renderMessageContent(message.content, message.mentions)}
                         {message.edited && <span className="edited-indicator">(edited)</span>}
                       </div>
 

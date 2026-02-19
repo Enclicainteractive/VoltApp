@@ -260,3 +260,45 @@
   padding: 40px 20px;
   color: var(--volt-text-muted);
 }
+
+@media (max-width: 768px) {
+  .friends-page {
+    padding-bottom: var(--mobile-nav-height);
+  }
+
+  .friends-header {
+    padding: 16px;
+  }
+
+  .friends-tabs {
+    padding: 0 16px;
+    gap: 8px;
+  }
+
+  .friends-tabs .tab {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .friends-content {
+    padding: 16px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .friend-item {
+    padding: 14px 12px;
+    min-height: var(--touch-target-size, 44px);
+  }
+
+  .friend-actions {
+    opacity: 1;
+  }
+
+  .add-friend-input-wrapper {
+    flex-direction: column;
+  }
+
+  .add-friend-input-wrapper .btn {
+    width: 100%;
+  }
+}

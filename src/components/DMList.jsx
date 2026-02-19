@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Users, Plus, X, Search, Copy, Trash2 } from 'lucide-react'
+import { Users, Plus, X, Search, Copy, Trash2, Bell } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { apiService } from '../services/apiService'
 import { useSocket } from '../contexts/SocketContext'
@@ -7,11 +7,12 @@ import { soundService } from '../services/soundService'
 import Avatar from './Avatar'
 import ContextMenu from './ContextMenu'
 import '../assets/styles/DMList.css'
+import '../assets/styles/SystemMessagePanel.css'
 
-const DMList = ({ type, onSelectConversation, selectedConversation, onClose }) => {
+const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onOpenSystemInbox }) => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { socket, connected } = useSocket()
+  const { socket, connected, systemUnreadCount } = useSocket()
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -154,6 +155,20 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose }) =
         >
           <Users size={24} />
           <span>Friends</span>
+        </button>
+
+        <button
+          className={`dm-item nav-item sysmsg-sidebar-entry`}
+          onClick={onOpenSystemInbox}
+          title="System Inbox"
+        >
+          <div className="sysmsg-sidebar-icon">
+            <Bell size={18} />
+          </div>
+          <span>System Inbox</span>
+          {systemUnreadCount > 0 && (
+            <span className="sysmsg-sidebar-badge">{systemUnreadCount > 99 ? '99+' : systemUnreadCount}</span>
+          )}
         </button>
 
         <div className="dm-section-header">

@@ -4,6 +4,7 @@ import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { apiService } from '../services/apiService'
 import { getStoredServer } from '../services/serverConfig'
+import { preloadHostMetadata, getImageBaseForHostSync } from '../services/hostMetadataService'
 import ContextMenu from './ContextMenu'
 import Avatar from './Avatar'
 import '../assets/styles/MemberSidebar.css'
@@ -11,7 +12,16 @@ import '../assets/styles/MemberSidebar.css'
 const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBan, onAddFriend, visible = true }) => {
   const { socket, connected } = useSocket()
   const { user: currentUser } = useAuth()
-  const [memberStatuses, setMemberStatuses] = useState({})
+
+  // Seed the overlay map from the initial members prop so statuses are correct
+  // on first render before any socket events arrive.
+  const [memberStatuses, setMemberStatuses] = useState(() => {
+    const seed = {}
+    for (const m of (members || [])) {
+      if (m.id) seed[m.id] = { status: m.status || 'offline', customStatus: m.customStatus || null }
+    }
+    return seed
+  })
   const [extraBotMembers, setExtraBotMembers] = useState([])
   const [contextMenu, setContextMenu] = useState(null)
   
@@ -47,13 +57,45 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
   const isAdmin = hasPermission('ban_members')
   const isModerator = hasPermission('kick_members')
 
+  // Re-seed the status overlay whenever the members list itself changes
+  // (e.g. when the user navigates to a different server).
+  useEffect(() => {
+    setMemberStatuses(prev => {
+      const next = { ...prev }
+      for (const m of (members || [])) {
+        if (m.id && !next[m.id]) {
+          next[m.id] = { status: m.status || 'offline', customStatus: m.customStatus || null }
+        }
+      }
+      return next
+    })
+    // Warm the host metadata cache for any federated members
+    const hosts = (members || []).filter(m => !m.isBot && m.host).map(m => m.host)
+    if (hosts.length > 0) preloadHostMetadata(hosts)
+  }, [members])
+
   useEffect(() => {
     if (!socket || !connected) return
 
+    // Realtime status changes (online/idle/dnd/offline + customStatus)
     const handleStatusUpdate = ({ userId, status, customStatus }) => {
       setMemberStatuses(prev => ({
         ...prev,
-        [userId]: { status, customStatus }
+        [userId]: {
+          // Preserve existing customStatus if the event doesn't include it
+          ...(prev[userId] || {}),
+          status,
+          ...(customStatus !== undefined ? { customStatus } : {})
+        }
+      }))
+    }
+
+    // Server emits member:offline when a user's socket disconnects
+    const handleMemberOffline = ({ userId }) => {
+      if (!userId) return
+      setMemberStatuses(prev => ({
+        ...prev,
+        [userId]: { ...(prev[userId] || {}), status: 'offline' }
       }))
     }
 
@@ -79,22 +121,26 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
     }
 
     socket.on('user:status', handleStatusUpdate)
+    socket.on('member:offline', handleMemberOffline)
     socket.on('bot:added', handleBotAdded)
     socket.on('bot:removed', handleBotRemoved)
 
     return () => {
       socket.off('user:status', handleStatusUpdate)
+      socket.off('member:offline', handleMemberOffline)
       socket.off('bot:added', handleBotAdded)
       socket.off('bot:removed', handleBotRemoved)
     }
   }, [socket, connected, server?.id])
 
   const getMemberStatus = (member) => {
-    return memberStatuses[member.id]?.status || member.status || 'online'
+    return memberStatuses[member.id]?.status || member.status || 'offline'
   }
 
   const getMemberCustomStatus = (member) => {
-    return memberStatuses[member.id]?.customStatus || member.customStatus
+    const live = memberStatuses[member.id]
+    if (live && live.customStatus !== undefined) return live.customStatus || null
+    return member.customStatus || null
   }
 
   const handleMemberContextMenu = (e, member) => {
@@ -210,32 +256,46 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
             <div className="section-header">
               ONLINE — {onlineMembers.length}
             </div>
-            {onlineMembers.map(member => (
-              <div 
-                key={member.id} 
-                className="member-item"
-                onClick={() => onMemberClick?.(member.id)}
-                onContextMenu={(e) => handleMemberContextMenu(e, member)}
-              >
-              <div className="member-avatar">
-                  <Avatar 
-                    src={member.avatar || `${imageApiUrl}/api/images/users/${member.id}/profile`}
-                    alt={member.username}
-                    fallback={member.username}
-                    size={32}
-                    className="avatar-img"
-                  />
-                  <div className={`status-badge ${getStatusColor(getMemberStatus(member))}`}></div>
-                </div>
-                <div className="member-info">
-                  <div className="member-name">
-                    {!member.isBot && getRoleIcon(member)}
-                    <span>{member.username}</span>
-                    {member.isBot && <span className="member-bot-badge">Bot</span>}
+            {onlineMembers.map(member => {
+              const customStatus = getMemberCustomStatus(member)
+              const status = getMemberStatus(member)
+              return (
+                <div 
+                  key={member.id} 
+                  className="member-item"
+                  onClick={() => onMemberClick?.(member.id)}
+                  onContextMenu={(e) => handleMemberContextMenu(e, member)}
+                >
+                  <div className="member-avatar">
+                    <Avatar 
+                      src={member.avatar || `${getImageBaseForHostSync(member.host) || imageApiUrl}/api/images/users/${member.id}/profile`}
+                      alt={member.username}
+                      fallback={member.username}
+                      size={32}
+                      className="avatar-img"
+                    />
+                    <div className={`status-badge ${getStatusColor(status)}`}></div>
+                  </div>
+                  <div className="member-info">
+                    <div className="member-name">
+                      {!member.isBot && getRoleIcon(member)}
+                      <span>{member.username}</span>
+                      {member.isBot && <span className="member-bot-badge">Bot</span>}
+                    </div>
+                    {!member.isBot && member.host && (
+                      <div className="member-federated-id">
+                        @{member.username}:{member.host}
+                      </div>
+                    )}
+                    {customStatus && (
+                      <div className={`member-status-text ${getStatusColor(status)}`}>
+                        {customStatus}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -244,32 +304,46 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
             <div className="section-header">
               OFFLINE — {offlineMembers.length}
             </div>
-            {offlineMembers.map(member => (
-              <div 
-                key={member.id} 
-                className="member-item offline"
-                onClick={() => onMemberClick?.(member.id)}
-                onContextMenu={(e) => handleMemberContextMenu(e, member)}
-              >
-                <div className="member-avatar">
-                  <Avatar 
-                    src={member.avatar}
-                    alt={member.username}
-                    fallback={member.username}
-                    size={32}
-                    className="avatar-img"
-                  />
-                  <div className={`status-badge ${getStatusColor(getMemberStatus(member))}`}></div>
-                </div>
-                <div className="member-info">
-                  <div className="member-name">
-                    {!member.isBot && getRoleIcon(member)}
-                    <span>{member.username}</span>
-                    {member.isBot && <span className="member-bot-badge">Bot</span>}
+            {offlineMembers.map(member => {
+              const customStatus = getMemberCustomStatus(member)
+              const status = getMemberStatus(member)
+              return (
+                <div 
+                  key={member.id} 
+                  className="member-item offline"
+                  onClick={() => onMemberClick?.(member.id)}
+                  onContextMenu={(e) => handleMemberContextMenu(e, member)}
+                >
+                  <div className="member-avatar">
+                    <Avatar 
+                      src={member.avatar || `${getImageBaseForHostSync(member.host) || imageApiUrl}/api/images/users/${member.id}/profile`}
+                      alt={member.username}
+                      fallback={member.username}
+                      size={32}
+                      className="avatar-img"
+                    />
+                    <div className={`status-badge ${getStatusColor(status)}`}></div>
+                  </div>
+                  <div className="member-info">
+                    <div className="member-name">
+                      {!member.isBot && getRoleIcon(member)}
+                      <span>{member.username}</span>
+                      {member.isBot && <span className="member-bot-badge">Bot</span>}
+                    </div>
+                    {!member.isBot && member.host && (
+                      <div className="member-federated-id">
+                        @{member.username}:{member.host}
+                      </div>
+                    )}
+                    {customStatus && (
+                      <div className={`member-status-text ${getStatusColor(status)}`}>
+                        {customStatus}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

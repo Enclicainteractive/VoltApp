@@ -1,0 +1,113 @@
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--mobile-nav-height);
+  background: var(--volt-bg-secondary);
+  border-top: 1px solid var(--volt-border);
+  z-index: 1000;
+  padding: 0 8px;
+  padding-bottom: env(safe-area-inset-bottom, 8px);
+}
+
+.mobile-nav-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 100%;
+  flex: 1;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.mobile-nav-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 48px;
+  border-radius: 12px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-nav-tab:active {
+  transform: scale(0.95);
+}
+
+.mobile-nav-tab.active {
+  color: var(--volt-primary);
+}
+
+.mobile-nav-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-nav-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  background: var(--volt-danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-nav-label {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.mobile-nav-actions {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+}
+
+.mobile-nav-action {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--volt-bg-tertiary);
+  border: none;
+  border-radius: 10px;
+  color: var(--volt-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-nav-action:active {
+  transform: scale(0.95);
+  background: var(--volt-bg-quaternary);
+}
+
+@media (max-width: 768px) {
+  .mobile-nav {
+    display: flex;
+    align-items: center;
+  }
+}

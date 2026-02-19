@@ -4,6 +4,7 @@ import { apiService } from '../../services/apiService'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSocket } from '../../contexts/SocketContext'
 import { getStoredServer } from '../../services/serverConfig'
+import { getImageBaseForHost } from '../../services/hostMetadataService'
 import Avatar from '../Avatar'
 import MarkdownMessage from '../MarkdownMessage'
 import ContextMenu from '../ContextMenu'
@@ -32,6 +33,8 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
   const [editingBanner, setEditingBanner] = useState(false)
   const [bannerPreview, setBannerPreview] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
+  // Resolved image base URL for the viewed user's home server (may differ for federated users)
+  const [profileImageBase, setProfileImageBase] = useState(null)
   const fileInputRef = useRef(null)
 
   const isBot = userId?.startsWith('bot_')
@@ -39,12 +42,26 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
   const currentServer = getStoredServer()
   const apiUrl = currentServer?.apiUrl || ''
   const imageApiUrl = currentServer?.imageApiUrl || apiUrl
-  const bannerUrl = profile?.banner || (!isBot ? `${imageApiUrl}/api/images/users/${userId}/banner` : null)
+
+  // Effective image base: resolved from the user's host, falling back to local server
+  const effectiveImageBase = profileImageBase || profile?.avatarHost || imageApiUrl
+
+  const bannerUrl = profile?.banner || (!isBot ? `${effectiveImageBase}/api/images/users/${userId}/banner` : null)
   const { bannerSrc, loading: bannerLoading } = useBanner(editingBanner ? bannerPreview : bannerUrl)
 
   useEffect(() => {
     loadProfile()
   }, [userId])
+
+  // When profile loads, resolve the correct image base for the user's host
+  useEffect(() => {
+    if (!profile || isBot) return
+    const host = profile.host
+    if (!host) return
+    getImageBaseForHost(host).then(base => {
+      if (base) setProfileImageBase(base)
+    })
+  }, [profile?.host, isBot])
 
   useEffect(() => {
     if (!socket) return
@@ -330,7 +347,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
         <div className="profile-header">
           <div className="profile-avatar-container">
             <Avatar
-              src={profile?.avatar || (!isBot ? `${imageApiUrl}/api/images/users/${userId}/profile` : null)}
+              src={profile?.avatar || (!isBot ? `${profileImageBase}/api/images/users/${userId}/profile` : null)}
               fallback={profile?.username || profile?.displayName}
               size={100}
               className="profile-avatar"
@@ -346,9 +363,14 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
               {profile?.displayName || profile?.customUsername || profile?.username}
               {isBot && <span className="profile-bot-badge"><Bot size={13} /> Bot</span>}
             </h2>
-            <p className="profile-username">@{profile?.customUsername || profile?.username}</p>
+            <p className="profile-username">
+              @{profile?.customUsername || profile?.username}
+              {!isBot && profile?.host && (
+                <span className="profile-username-host">:{profile.host}</span>
+              )}
+            </p>
             {!isBot && profile?.customUsername && (
-              <p className="profile-original-username">Account: @{profile?.username}</p>
+              <p className="profile-original-username">Account: @{profile?.username}{profile?.host ? `:${profile.host}` : ''}</p>
             )}
             {!isBot && profile?.customStatus && (
               <p className="profile-custom-status">{profile.customStatus}</p>
@@ -508,7 +530,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
                 {mutualFriends.map(friend => (
                   <div key={friend.id} className="mutual-friend-item" title={friend.displayName || friend.username}>
                     <Avatar
-                      src={friend.avatar ? `${imageApiUrl}/api/images/users/${friend.id}/profile` : null}
+                      src={friend.avatar || `${imageApiUrl}/api/images/users/${friend.id}/profile`}
                       fallback={friend.displayName || friend.username}
                       size={36}
                     />

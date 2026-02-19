@@ -220,15 +220,74 @@
   object-fit: contain;
 }
 
+/* ── GIF scroll area (no max-height — let content area handle scroll) ── */
+.gif-scroll-area {
+  overflow-y: auto;
+  max-height: 280px;
+}
+
 .gif-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 4px;
   padding: 8px;
-  max-height: 280px;
-  overflow-y: auto;
 }
 
+/* New GIF tile with fav button */
+.gif-tile {
+  position: relative;
+  aspect-ratio: 4/3;
+  background: var(--volt-bg-tertiary);
+  border-radius: 8px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.15s;
+}
+
+.gif-tile:hover {
+  transform: scale(1.03);
+}
+
+.gif-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gif-fav-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.gif-tile:hover .gif-fav-btn,
+.gif-fav-btn.active {
+  opacity: 1;
+}
+
+.gif-fav-btn.active {
+  color: #f87171;
+  background: rgba(0,0,0,0.7);
+}
+
+.gif-fav-btn:hover {
+  background: rgba(0,0,0,0.85);
+}
+
+/* Legacy .gif-btn — keep for any old references */
 .gif-btn {
   aspect-ratio: 1;
   background: var(--volt-bg-tertiary);
@@ -240,23 +299,49 @@
   transition: transform 0.2s;
 }
 
-.gif-btn:hover {
-  transform: scale(1.05);
-}
+.gif-btn:hover { transform: scale(1.05); }
+.gif-btn img { width: 100%; height: 100%; object-fit: cover; }
 
-.gif-btn img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.gif-loading, .no-results, .gif-placeholder {
-  grid-column: 1 / -1;
+.gif-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 40px;
   color: var(--volt-text-muted);
+}
+
+.gif-loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  color: var(--volt-text-muted);
+}
+
+.gif-end {
+  text-align: center;
+  padding: 8px;
+  font-size: 11px;
+  color: var(--volt-text-muted);
+}
+
+.no-results, .gif-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--volt-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.emoji-picker-content {
+  max-height: 310px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .spin {

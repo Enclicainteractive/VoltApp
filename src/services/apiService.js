@@ -332,5 +332,14 @@ export const apiService = {
   getSenderKeys: (groupId, epoch, deviceId) => api.get(`/e2e-true/groups/${groupId}/sender-keys/${epoch}`, { params: { deviceId } }),
   getQueuedKeyUpdates: (deviceId) => api.get('/e2e-true/queue/key-updates', { params: { deviceId } }),
   getQueuedMessages: (deviceId, limit) => api.get('/e2e-true/queue/messages', { params: { deviceId, limit } }),
-  computeSafetyNumber: (myKey, theirKey) => api.post('/e2e-true/safety-number', { myIdentityKey: myKey, theirIdentityKey: theirKey })
+  computeSafetyNumber: (myKey, theirKey) => api.post('/e2e-true/safety-number', { myIdentityKey: myKey, theirIdentityKey: theirKey }),
+
+  // System messages (in-app inbox)
+  getSystemMessages: () => api.get('/system/messages'),
+  getSystemUnreadCount: () => api.get('/system/messages/unread-count'),
+  markSystemMessageRead: (id) => api.post(`/system/messages/${id}/read`),
+  markAllSystemMessagesRead: () => api.post('/system/messages/read-all'),
+  deleteSystemMessage: (id) => api.delete(`/system/messages/${id}`),
+  clearSystemMessages: () => api.delete('/system/messages'),
+  sendSystemMessage: (data) => api.post('/system/send', data)
 }

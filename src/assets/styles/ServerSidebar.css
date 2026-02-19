@@ -205,24 +205,15 @@
   flex: 1;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .server-sidebar {
-    width: 100%;
-    height: 72px;
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--volt-border);
-  }
-
-  .server-list {
-    flex-direction: row;
-    gap: 10px;
-  }
-
-  .server-divider, .server-spacer {
     display: none;
+  }
+}
+
+@media (min-width: 769px) {
+  .server-sidebar {
+    display: flex !important;
   }
 }
 

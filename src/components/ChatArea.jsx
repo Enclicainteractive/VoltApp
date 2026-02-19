@@ -6,6 +6,8 @@ import { useE2e } from '../contexts/E2eContext'
 import { useE2eTrue } from '../contexts/E2eTrueContext'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
+import { getStoredServer } from '../services/serverConfig'
+import { preloadHostMetadata } from '../services/hostMetadataService'
 import MessageList from './MessageList'
 import EmojiPicker from './EmojiPicker'
 import ChatInput from './ChatInput'
@@ -30,6 +32,8 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [serverEmojis, setServerEmojis] = useState([])
   const [attachments, setAttachments] = useState([])
+  const [uploadProgress, setUploadProgress] = useState(null) // null = idle, 0-100 = uploading
+  const [pendingPreviews, setPendingPreviews] = useState([]) // local file objects before upload completes
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionSuggestions, setMentionSuggestions] = useState([])
@@ -59,7 +63,11 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     if (serverId) {
       apiService.getServerMembers(serverId)
         .then(res => {
-          setMembers(res.data || [])
+          const loaded = res.data || []
+          setMembers(loaded)
+          // Warm host metadata cache for any federated members
+          const hosts = loaded.filter(m => !m.isBot && m.host).map(m => m.host)
+          if (hosts.length > 0) preloadHostMetadata(hosts)
         })
         .catch(err => {
           console.error('[ChatArea] Failed to load members:', err)
@@ -232,6 +240,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     soundService.messageSent()
     setInputValue('')
     setAttachments([])
+    setPendingPreviews([])
     setIsTyping(false)
     setShowMentionSuggestions(false)
     setShowEmojiPicker(false)
@@ -288,22 +297,33 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
   }
 
   const handleMentionSelect = (mention) => {
-    // Get cursor position via the exposed ref helper
-    const caretPos = inputRef.current?.getCaretPosition?.() ?? inputValue.length
-    const textBeforeCursor = inputValue.slice(0, caretPos)
+    // Read current text directly from the DOM to avoid stale state when focused
+    const editorEl = inputRef.current?.getEditor?.()
+    const currentText = editorEl?.innerText ?? inputValue
+    const caretPos = inputRef.current?.getCaretPosition?.() ?? currentText.length
+    const textBeforeCursor = currentText.slice(0, caretPos)
     const mentionMatch = textBeforeCursor.match(/@([a-zA-Z0-9_]*)$/)
-    
+
     if (mentionMatch) {
-      const insertText = `@${mention.username} `
+      // For special mentions (@everyone, @here) keep plain @username
+      // For real users, store @username:host in the message content
+      let storedMention
+      if (mention.type === 'special') {
+        storedMention = `@${mention.username}`
+      } else {
+        const currentServer = getStoredServer()
+        const userHost = mention.host || currentServer?.host || 'local'
+        storedMention = `@${mention.username}:${userHost}`
+      }
+      const insertText = `${storedMention} `
       const newBefore = textBeforeCursor.replace(/@([a-zA-Z0-9_]*)$/, insertText)
-      const newValue = newBefore + inputValue.slice(caretPos)
+      const newValue = newBefore + currentText.slice(caretPos)
+
+      // Use setValueAndCaret to atomically update the DOM + caret without focus fighting
+      inputRef.current?.setValueAndCaret?.(newValue, newBefore.length)
+      // Sync React state to match DOM
       setInputValue(newValue)
       setShowMentionSuggestions(false)
-
-      // Restore focus and move caret to after the inserted mention
-      requestAnimationFrame(() => {
-        inputRef.current?.setCaretPosition?.(newBefore.length)
-      })
     } else {
       setShowMentionSuggestions(false)
     }
@@ -352,6 +372,19 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     requestAnimationFrame(() => inputRef.current?.focus?.())
   }
 
+  const getFileCategory = (file) => {
+    const mime = file.type || ''
+    const name = file.name || ''
+    if (mime.startsWith('image/') || name.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i)) return 'image'
+    if (mime.startsWith('video/') || name.match(/\.(mp4|webm|mov|avi|mkv)$/i)) return 'video'
+    if (mime.startsWith('audio/') || name.match(/\.(mp3|wav|ogg|flac|aac|m4a)$/i)) return 'audio'
+    if (mime === 'application/pdf' || name.match(/\.pdf$/i)) return 'pdf'
+    if (name.match(/\.(doc|docx|xls|xlsx|ppt|pptx)$/i)) return 'office'
+    if (name.match(/\.(txt|md|json|xml|yaml|yml|csv|log)$/i)) return 'text'
+    if (name.match(/\.(js|ts|jsx|tsx|py|rb|go|rs|java|c|cpp|cs|php|html|css|sh)$/i)) return 'code'
+    return 'file'
+  }
+
   const processFiles = async (files) => {
     if (files.length === 0) return
     
@@ -366,12 +399,37 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     
     if (validFiles.length === 0) return
 
+    // Generate local previews immediately (before upload)
+    const previews = validFiles.map(file => ({
+      file,
+      name: file.name,
+      size: file.size,
+      category: getFileCategory(file),
+      localUrl: getFileCategory(file) === 'image' || getFileCategory(file) === 'video'
+        ? URL.createObjectURL(file)
+        : null
+    }))
+    setPendingPreviews(prev => [...prev, ...previews])
+    setUploadProgress(0)
+
     try {
-      const res = await apiService.uploadFiles(validFiles, serverId)
-      setAttachments(prev => [...prev, ...res.data.attachments])
+      const result = await apiService.uploadFiles(validFiles, serverId, (pct) => {
+        setUploadProgress(Math.round(pct))
+      })
+      // uploadFiles with onProgress returns raw JSON; without returns axios response
+      const uploaded = result?.attachments ?? result?.data?.attachments ?? []
+      setAttachments(prev => [...prev, ...uploaded])
+      // Revoke object URLs to free memory
+      previews.forEach(p => { if (p.localUrl) URL.revokeObjectURL(p.localUrl) })
+      setPendingPreviews(prev => prev.filter(p => !previews.includes(p)))
+      setUploadProgress(null)
       soundService.success()
     } catch (err) {
       console.error('Upload failed:', err)
+      // Revoke and remove previews on failure
+      previews.forEach(p => { if (p.localUrl) URL.revokeObjectURL(p.localUrl) })
+      setPendingPreviews(prev => prev.filter(p => !previews.includes(p)))
+      setUploadProgress(null)
       setSendError('Failed to upload file(s)')
     }
   }
@@ -570,6 +628,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
         onSaveScrollPosition={onSaveScrollPosition}
         scrollPosition={scrollPosition}
         onShowProfile={onShowProfile}
+        members={members}
       />
 
       {typingUsers.size > 0 && (
@@ -592,22 +651,90 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
       )}
 
       <div className="message-input-container">
-        {/* Attachment Preview */}
-        {attachments.length > 0 && (
+        {/* Upload progress bar */}
+        {uploadProgress !== null && (
+          <div className="upload-progress-bar-container">
+            <div className="upload-progress-label">
+              Uploading... {uploadProgress}%
+            </div>
+            <div className="upload-progress-track">
+              <div
+                className="upload-progress-fill"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Pending previews (while uploading) */}
+        {pendingPreviews.length > 0 && (
           <div className="attachment-preview-bar">
-            {attachments.map((file, index) => (
-              <div key={index} className="attachment-preview-item">
-                <FileText size={16} />
-                <span className="attachment-name">{file.name}</span>
-                <button 
-                  type="button" 
-                  className="attachment-remove"
-                  onClick={() => removeAttachment(index)}
-                >
-                  <X size={14} />
-                </button>
+            {pendingPreviews.map((preview, index) => (
+              <div key={`pending-${index}`} className="attachment-preview-item uploading">
+                {preview.category === 'image' && preview.localUrl ? (
+                  <img src={preview.localUrl} alt={preview.name} className="attachment-thumb-img" />
+                ) : preview.category === 'video' && preview.localUrl ? (
+                  <video src={preview.localUrl} className="attachment-thumb-img" muted />
+                ) : (
+                  <div className={`attachment-type-icon attachment-type-${preview.category}`}>
+                    {preview.category === 'audio' ? '♪' :
+                     preview.category === 'pdf' ? 'PDF' :
+                     preview.category === 'office' ? 'DOC' :
+                     preview.category === 'code' ? '</>' :
+                     preview.category === 'text' ? 'TXT' : '📎'}
+                  </div>
+                )}
+                <div className="attachment-meta">
+                  <span className="attachment-name">{preview.name}</span>
+                  <span className="attachment-size">{(preview.size / 1024).toFixed(1)} KB</span>
+                </div>
+                <div className="attachment-uploading-spinner" />
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Uploaded attachments preview */}
+        {attachments.length > 0 && (
+          <div className="attachment-preview-bar">
+            {attachments.map((file, index) => {
+              const cat = file.type?.split('/')?.[0] || 'file'
+              const isImage = cat === 'image' || file.name?.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i)
+              const isVideo = cat === 'video' || file.name?.match(/\.(mp4|webm|mov)$/i)
+              const isAudio = cat === 'audio' || file.name?.match(/\.(mp3|wav|ogg|flac|aac)$/i)
+              const isPDF = file.name?.match(/\.pdf$/i)
+              const isCode = file.name?.match(/\.(js|ts|jsx|tsx|py|rb|go|rs|java|c|cpp|cs|php|html|css|sh)$/i)
+              return (
+                <div key={index} className="attachment-preview-item">
+                  {isImage && file.url ? (
+                    <img src={file.url} alt={file.name} className="attachment-thumb-img" />
+                  ) : isVideo ? (
+                    <div className="attachment-type-icon attachment-type-video">▶</div>
+                  ) : isAudio ? (
+                    <div className="attachment-type-icon attachment-type-audio">♪</div>
+                  ) : isPDF ? (
+                    <div className="attachment-type-icon attachment-type-pdf">PDF</div>
+                  ) : isCode ? (
+                    <div className="attachment-type-icon attachment-type-code">&lt;/&gt;</div>
+                  ) : (
+                    <div className="attachment-type-icon attachment-type-file">
+                      <FileText size={18} />
+                    </div>
+                  )}
+                  <div className="attachment-meta">
+                    <span className="attachment-name">{file.name}</span>
+                    {file.size && <span className="attachment-size">{(file.size / 1024).toFixed(1)} KB</span>}
+                  </div>
+                  <button 
+                    type="button" 
+                    className="attachment-remove"
+                    onClick={() => removeAttachment(index)}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )
+            })}
           </div>
         )}
 
@@ -661,7 +788,10 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
                       <span className="mention-name">
                         {mention.type === 'special' ? `@${mention.username}` : (mention.displayName || mention.username)}
                       </span>
-                      {mention.type !== 'special' && (
+                      {mention.type !== 'special' && mention.host && (
+                        <span className="mention-username">@{mention.username}:{mention.host}</span>
+                      )}
+                      {mention.type !== 'special' && !mention.host && (
                         <span className="mention-username">@{mention.username}</span>
                       )}
                       {mention.type === 'special' && (

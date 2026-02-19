@@ -14,17 +14,9 @@ import ProtectedRoute from './components/ProtectedRoute'
 import { soundService } from './services/soundService'
 
 function App() {
-  useEffect(() => {
-    const initSound = () => {
-      soundService.init()
-    }
-    document.addEventListener('click', initSound, { once: true })
-    document.addEventListener('keydown', initSound, { once: true })
-    return () => {
-      document.removeEventListener('click', initSound)
-      document.removeEventListener('keydown', initSound)
-    }
-  }, [])
+  // soundService.init() is called once in main.jsx before React mounts,
+  // registering native capture-phase gesture listeners that survive the
+  // browser autoplay policy.  No need to call it again here.
 
   return (
     <Router>

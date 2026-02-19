@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import { useAuth } from './AuthContext'
 import { soundService } from '../services/soundService'
 import { getStoredServer } from '../services/serverConfig'
+import { apiService } from '../services/apiService'
 
 const SocketContext = createContext(null)
 
@@ -11,8 +12,17 @@ export const SocketProvider = ({ children }) => {
   const [connected, setConnected] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [serverUpdates, setServerUpdates] = useState({})
+  const [systemUnreadCount, setSystemUnreadCount] = useState(0)
   const { token, isAuthenticated } = useAuth()
   const serverUrlRef = useRef(null)
+
+  // Fetch initial system unread count on auth
+  useEffect(() => {
+    if (!isAuthenticated) { setSystemUnreadCount(0); return }
+    apiService.getSystemUnreadCount()
+      .then(res => setSystemUnreadCount(res.data?.count || 0))
+      .catch(() => {})
+  }, [isAuthenticated])
 
   const handleServerUpdate = useCallback((updatedServer) => {
     setServerUpdates(prev => ({ ...prev, [updatedServer.id]: updatedServer }))
@@ -266,6 +276,23 @@ export const SocketProvider = ({ children }) => {
       console.log('[Socket] E2EE member removed:', data)
     })
 
+    // System messages — delivered by the server scheduler or admin
+    newSocket.on('system:message', (data) => {
+      console.log('[Socket] System message received:', data?.title)
+      setSystemUnreadCount(prev => prev + 1)
+      // Also surface as a transient notification toast
+      addNotification({
+        type: 'system',
+        category: data.category,
+        title: data.title,
+        message: data.body?.slice(0, 120),
+        severity: data.severity || 'info',
+        icon: data.icon,
+        messageId: data.id
+      })
+      soundService.dmReceived?.()
+    })
+
     setSocket(newSocket)
 
     return () => {
@@ -284,7 +311,9 @@ export const SocketProvider = ({ children }) => {
       const newUpdates = { ...prev }
       delete newUpdates[serverId]
       return newUpdates
-    })
+    }),
+    systemUnreadCount,
+    setSystemUnreadCount
   }
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>
