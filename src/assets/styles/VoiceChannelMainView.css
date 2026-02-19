@@ -9,6 +9,99 @@
   background: var(--volt-bg-primary);
   overflow: hidden;
   position: relative;
+  height: 100%;
+}
+
+/* Mini Voice Bar (when in text channel but still in call) */
+.vc-mini-view {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .vc-mini-view {
+    display: flex;
+    position: fixed;
+    bottom: var(--mobile-nav-height);
+    left: 0;
+    right: 0;
+    background: var(--volt-bg-secondary);
+    border-top: 1px solid var(--volt-border);
+    z-index: 999;
+    flex-direction: column;
+    padding: 8px 12px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .vc-mini-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--volt-bg-tertiary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+
+  .vc-mini-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--volt-text-primary);
+  }
+
+  .vc-mini-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .vc-mini-expand-icon {
+    color: var(--volt-text-muted);
+  }
+
+  .vc-mini-controls {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .vc-mini-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: none;
+    background: var(--volt-bg-tertiary);
+    color: var(--volt-text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .vc-mini-btn:active {
+    transform: scale(0.95);
+  }
+
+  .vc-mini-btn.active {
+    background: var(--volt-primary);
+    color: white;
+  }
+
+  .vc-mini-btn.active.danger {
+    background: var(--volt-danger);
+  }
+
+  .vc-mini-btn.danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--volt-danger);
+  }
+
+  .vc-mini-btn:hover:not(.active):not(.danger) {
+    background: var(--volt-bg-quaternary);
+  }
 }
 
 /* ── Header ── */
@@ -386,6 +479,163 @@
   font-size: 12px;
   color: var(--volt-text-muted);
   margin-top: 8px;
+}
+
+/* Bottom Controls Bar */
+.vc-main-bottom-controls {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  background: var(--volt-bg-secondary);
+  border-top: 1px solid var(--volt-border);
+  z-index: 10;
+}
+
+@media (max-width: 768px) {
+  .vc-main-bottom-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .vc-bottom-controls-left,
+  .vc-bottom-controls-right {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .vc-bottom-controls-center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .vc-bottom-participants {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--volt-text-secondary);
+  }
+
+  .vc-bottom-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: none;
+    background: var(--volt-bg-tertiary);
+    color: var(--volt-text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 56px;
+  }
+
+  .vc-bottom-btn span {
+    font-size: 10px;
+    font-weight: 500;
+  }
+
+  .vc-bottom-btn:active {
+    transform: scale(0.95);
+  }
+
+  .vc-bottom-btn.active {
+    background: var(--volt-primary);
+    color: white;
+  }
+
+  .vc-bottom-btn.active.danger {
+    background: var(--volt-danger);
+    color: white;
+  }
+
+  .vc-bottom-btn.danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--volt-danger);
+  }
+
+  .vc-bottom-btn:hover:not(.active):not(.danger) {
+    background: var(--volt-bg-quaternary);
+  }
+
+  .vc-main-body {
+    padding-bottom: 140px;
+  }
+}
+
+@media (min-width: 769px) {
+  .vc-main-bottom-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    padding: 16px 24px;
+    background: var(--volt-bg-tertiary);
+    border-top: 1px solid var(--volt-border);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .vc-bottom-controls-left,
+  .vc-bottom-controls-right {
+    display: flex;
+    gap: 8px;
+  }
+
+  .vc-bottom-controls-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+
+  .vc-bottom-participants {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--volt-text-secondary);
+  }
+
+  .vc-bottom-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--volt-bg-quaternary);
+    color: var(--volt-text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .vc-bottom-btn:hover {
+    background: var(--volt-border);
+  }
+
+  .vc-bottom-btn.active {
+    background: var(--volt-primary);
+    color: white;
+  }
+
+  .vc-bottom-btn.active.danger,
+  .vc-bottom-btn.danger {
+    background: var(--volt-danger);
+    color: white;
+  }
+
+  .vc-bottom-btn.danger:hover {
+    background: #dc2626;
+  }
 }
 
 /* Mobile styles */

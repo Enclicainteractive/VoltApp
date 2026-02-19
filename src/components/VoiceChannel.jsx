@@ -181,6 +181,17 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     return true
   }, [])
 
+  // Report peer connection state to server for consensus monitoring
+  const reportPeerState = useCallback((targetPeerId, state) => {
+    if (!socket?.connected || !channelIdRef.current) return
+    socket.emit('voice:peer-state-report', {
+      channelId: channelIdRef.current,
+      targetPeerId,
+      state,
+      timestamp: Date.now()
+    })
+  }, [socket])
+
   // Multi-peer connection management for stability - supports up to 100 peers
   const connectionQueueRef = useRef([])      // Queue of peer IDs waiting to connect
   const isProcessingQueueRef = useRef(false) // Whether currently processing queue
@@ -257,6 +268,9 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
 
       // Mirror into React state so the UI reflects real peer status
       setPeerStates(prev => ({ ...prev, [targetUserId]: s }))
+
+      // Report peer state to server for consensus monitoring
+      reportPeerState(targetUserId, s)
 
       if (s === 'connected') {
         const receivers = pc.getReceivers()
@@ -1054,6 +1068,51 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       delete pendingCandidatesRef.current[userId]
     })
 
+    // Handle force-reconnect command from server (consensus broken)
+    socket.on('voice:force-reconnect', (data) => {
+      const { channelId, reason, targetPeer, failurePercent, timestamp } = data
+      if (channelId !== channelIdRef.current) return
+
+      console.log(`[Voice] Force-reconnect received: ${reason}, target=${targetPeer}, failures=${failurePercent}%`)
+
+      if (targetPeer === user?.id) {
+        // I am the problematic peer - perform full reconnect
+        console.log('[Voice] I am the target peer - performing full reconnect in 1s')
+        soundService.error()
+        // Trigger leave and rejoin
+        handleLeave()
+        setTimeout(() => {
+          if (channelIdRef.current === channelId) {
+            console.log('[Voice] Rejoining after force-reconnect')
+            // The effect will handle rejoining via joinKey change
+          }
+        }, 1000)
+      } else if (targetPeer === 'all' || targetPeer === '*') {
+        // Everyone reconnect
+        console.log('[Voice] Full channel reconnect requested - performing full reconnect in 1s')
+        soundService.error()
+        handleLeave()
+        setTimeout(() => {
+          if (channelIdRef.current === channelId) {
+            console.log('[Voice] Rejoining after full channel reconnect')
+          }
+        }, 1000)
+      } else {
+        // Reconnect to specific peer only
+        console.log(`[Voice] Reconnecting to specific peer ${targetPeer}`)
+        if (peerConnections.current[targetPeer]) {
+          try { peerConnections.current[targetPeer].close() } catch {}
+          delete peerConnections.current[targetPeer]
+        }
+        // Clear state and requeue
+        delete makingOfferRef.current[targetPeer]
+        delete ignoreOfferRef.current[targetPeer]
+        delete remoteDescSetRef.current[targetPeer]
+        delete pendingCandidatesRef.current[targetPeer]
+        setTimeout(() => queueConnection(targetPeer), 1000)
+      }
+    })
+
     socket.on('voice:user-updated', (data) => {
       setParticipants(prev => prev.map(p => 
         p.id === data.userId ? { ...p, ...data } : p
@@ -1093,6 +1152,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       socket.off('voice:answer')
       socket.off('voice:ice-candidate')
       socket.off('voice:screen-share-update')
+      socket.off('voice:force-reconnect')
       socket.off('connect', onReconnectJoin)
       
       // Only do full cleanup if we actually joined AND are leaving the channel entirely
