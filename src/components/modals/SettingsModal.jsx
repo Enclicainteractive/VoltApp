@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, User, Bell, Volume2, Shield, Palette, Info, Mic, Video, Monitor, MicOff, VideoOff, Eye, Edit2, Globe, Server, Settings, Bot, Network } from 'lucide-react'
+import { X, User, Bell, Volume2, Shield, Palette, Info, Mic, Video, Monitor, MicOff, VideoOff, Eye, Edit2, Globe, Server, Settings, Bot, Network, Play, Pause } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useBanner } from '../../hooks/useAvatar'
 import { settingsService } from '../../services/settingsService'
+import { soundService } from '../../services/soundService'
 import { pushService } from '../../services/pushService'
 import { apiService } from '../../services/apiService'
 import { getStoredServer } from '../../services/serverConfig'
@@ -31,6 +32,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const bannerUrl = user?.id ? `${imageApiUrl}/api/images/users/${user.id}/banner` : null
   const { bannerSrc } = useBanner(bannerUrl)
   const [settings, setSettings] = useState(() => settingsService.getSettings())
+  
+  useEffect(() => {
+    const unsubscribe = settingsService.subscribe((newSettings) => {
+      setSettings(newSettings)
+    })
+    return unsubscribe
+  }, [])
+
   const [devices, setDevices] = useState({ audio: [], video: [], output: [] })
   const [testingMic, setTestingMic] = useState(false)
   const [testingCamera, setTestingCamera] = useState(false)
@@ -51,6 +60,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const [displayNameError, setDisplayNameError] = useState('')
   const [pushSupported, setPushSupported] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
+  const [previewingSound, setPreviewingSound] = useState(null)
   const micStreamRef = useRef(null)
   const cameraStreamRef = useRef(null)
   const videoPreviewRef = useRef(null)
@@ -748,6 +758,90 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <span className="toggle-slider"></span>
                   </label>
                 </div>
+
+                <div className="setting-item">
+                  <div>
+                    <h4>Sound Pack</h4>
+                    <p>Choose notification sound style</p>
+                  </div>
+                  <select 
+                    className="input"
+                    style={{ width: 'auto', minWidth: '150px' }}
+                    value={settings.soundpack || 'default'}
+                    onChange={(e) => {
+                      const pack = e.target.value
+                      handleSelect('soundpack', pack)
+                      soundService.setSoundpack(pack)
+                      if (pack !== 'default') {
+                        soundService._preloadSounds(pack)
+                      }
+                    }}
+                  >
+                    <option value="default">Default (Generated)</option>
+                    <option value="classic">Enclica Messenger</option>
+                  </select>
+                </div>
+
+                {settings.soundpack && settings.soundpack !== 'default' && (
+                  <>
+                    <div className="setting-item">
+                      <div>
+                        <h4>Sound Pack Volume</h4>
+                        <p>Adjust volume for sound pack</p>
+                      </div>
+                      <div className="volume-control">
+                        <input 
+                          type="range" 
+                          min="0" 
+                          max="100" 
+                          value={settings.soundpackVolume || 100}
+                          onChange={(e) => {
+                            const vol = parseInt(e.target.value)
+                            handleSelect('soundpackVolume', vol)
+                            soundService.setSoundpackVolume(vol)
+                          }}
+                          className="volume-slider"
+                        />
+                        <span className="volume-value">{settings.soundpackVolume || 100}%</span>
+                      </div>
+                    </div>
+
+                    <div className="soundpack-previews">
+                      <h4>Sound Previews</h4>
+                      <div className="sound-preview-grid">
+                        {[
+                          { key: 'messageReceived', label: 'Message' },
+                          { key: 'mention', label: 'Mention' },
+                          { key: 'callJoin', label: 'Friend Call' },
+                          { key: 'userJoined', label: 'Voice Join' },
+                          { key: 'userLeft', label: 'Voice Leave' },
+                          { key: 'ringtone', label: 'Ringtone' },
+                          { key: 'welcome', label: 'Welcome' },
+                          { key: 'logout', label: 'Logout' }
+                        ].map(sound => (
+                          <div key={sound.key} className="sound-preview-item">
+                            <span className="sound-preview-label">{sound.label}</span>
+                            <button 
+                              className={`btn btn-icon ${previewingSound === sound.key ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => {
+                                if (previewingSound === sound.key) {
+                                  setPreviewingSound(null)
+                                } else {
+                                  setPreviewingSound(sound.key)
+                                  soundService.previewSound(sound.key)
+                                  setTimeout(() => setPreviewingSound(null), 2000)
+                                }
+                              }}
+                              disabled={previewingSound && previewingSound !== sound.key}
+                            >
+                              {previewingSound === sound.key ? <Pause size={14} /> : <Play size={14} />}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

@@ -15,6 +15,8 @@ const ChatInput = forwardRef(({
   const editorRef = useRef(null)
   const [isFocused, setIsFocused] = useState(false)
   const [contextMenu, setContextMenu] = useState(null)
+  // Track if we're in the middle of a programmatic update to prevent loops
+  const isUpdatingRef = useRef(false)
 
   // Expose the inner contentEditable node so parent can read cursor position
   useImperativeHandle(ref, () => ({
@@ -64,6 +66,7 @@ const ChatInput = forwardRef(({
     setValueAndCaret: (text, caretOffset) => {
       const el = editorRef.current
       if (!el) return
+      isUpdatingRef.current = true
       el.innerText = text
       el.focus()
       autoResize()
@@ -79,6 +82,7 @@ const ChatInput = forwardRef(({
           range.collapse(true)
           sel.removeAllRanges()
           sel.addRange(range)
+          isUpdatingRef.current = false
           return
         }
         remaining -= node.textContent.length
@@ -90,28 +94,39 @@ const ChatInput = forwardRef(({
       range.collapse(false)
       sel.removeAllRanges()
       sel.addRange(range)
+      isUpdatingRef.current = false
     }
   }), [])
 
   useEffect(() => {
+    // Skip sync if we're in the middle of a programmatic update
+    if (isUpdatingRef.current) return
+    
     if (editorRef.current) {
       const current = editorRef.current.innerText
       // Always sync when value differs — normalize trailing newline browsers sometimes add
       const normalizedCurrent = current.endsWith('\n') ? current.slice(0, -1) : current
       if (normalizedCurrent !== (value || '')) {
+        isUpdatingRef.current = true
         editorRef.current.innerText = value || ''
         autoResize()
+        isUpdatingRef.current = false
       }
     }
   }, [value])
 
   const handleInput = (e) => {
+    // Skip if we're in the middle of a programmatic update
+    if (isUpdatingRef.current) return
+    
     const text = e.target.innerText
     onChange(text)
     autoResize()
   }
 
   const handleKeyDown = (e) => {
+    // Handle Shift+Enter for newline - let the browser handle it naturally
+    // by NOT preventing default for shift+enter
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (onSubmit) onSubmit()

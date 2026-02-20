@@ -222,10 +222,13 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   }, [socket, conversation?.id])
 
   const handleKeyDown = useCallback((e) => {
+    // Only prevent default for plain Enter (not Shift+Enter)
+    // Shift+Enter should be handled by the contentEditable to insert a newline
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
     }
+    // For Shift+Enter, do nothing - let the browser handle the newline insertion
   }, [handleSendMessage])
 
   // ─── File upload ──────────────────────────────────────────────────────────
@@ -279,7 +282,18 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   // ─── Emoji ────────────────────────────────────────────────────────────────
 
   const handleEmojiSelect = (emoji) => {
-    if (typeof emoji === 'string') setInputValue(prev => prev + emoji)
+    if (typeof emoji === 'string') {
+      setInputValue(prev => prev + emoji)
+    } else if (emoji.type === 'gif') {
+      setInputValue(prev => prev + `[GIF: ${emoji.url}]`)
+    } else if (emoji.type === 'custom') {
+      // Insert global emoji format: :host|serverId|emojiId|name:
+      // This ensures the emoji displays correctly everywhere (DMs, other servers, etc.)
+      const emojiFormat = emoji.host && emoji.serverId && emoji.id
+        ? `:${emoji.host}|${emoji.serverId}|${emoji.id}|${emoji.name}:`
+        : `:${emoji.name}:`
+      setInputValue(prev => prev + emojiFormat)
+    }
     setShowEmojiPicker(false)
     requestAnimationFrame(() => inputRef.current?.focus?.())
   }

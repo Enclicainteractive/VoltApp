@@ -1,17 +1,33 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Mic, MicOff, Headphones, VolumeX, PhoneOff, Settings, Volume2, Video, VideoOff, Monitor, MonitorOff, Ghost } from 'lucide-react'
+import { Mic, MicOff, Headphones, VolumeX, PhoneOff, Settings, Volume2, Video, VideoOff, Monitor, MonitorOff, Ghost, Music } from 'lucide-react'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { settingsService } from '../services/settingsService'
 import { soundService } from '../services/soundService'
 import Avatar from './Avatar'
+import VoiceFX from './VoiceFX'
 import '../assets/styles/VoiceChannel.css'
 
-// Default ICE servers — supplemented at runtime with the list from the server
-// Use openrelayproject TURN servers for relay when STUN fails
-const DEFAULT_ICE_SERVERS = [
+// Fallback ICE servers used only before server provides its list
+// Priority order: self-hosted STUN first, then Google's reliable STUN, then Open Relay Project TURN
+// Once the server sends its ICE servers, we use ONLY those for consistency
+const FALLBACK_ICE_SERVERS = [
+  // Self-hosted STUN (volt.voltagechat.app)
+  { urls: 'stun:volt.voltagechat.app:32768' },
+  
+  // Google's STUN servers - most reliable public STUN
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  
+  // Additional reliable public STUN servers
+  { urls: 'stun:stun.ekiga.net' },
+  { urls: 'stun:stun.xten.com' },
+  { urls: 'stun:stun.schlund.de' },
+  
+  // Open Relay Project - ONLY reliable free TURN service
   {
     urls: 'turn:openrelay.metered.ca:80',
     username: 'openrelayproject',
@@ -23,18 +39,39 @@ const DEFAULT_ICE_SERVERS = [
     credential: 'openrelayproject'
   },
   {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
     urls: 'turns:openrelay.metered.ca:443',
     username: 'openrelayproject',
     credential: 'openrelayproject'
   },
 ]
 
-const buildPeerConfig = (serverIceServers = []) => ({
-  iceServers: [...DEFAULT_ICE_SERVERS, ...serverIceServers],
-  bundlePolicy: 'max-bundle',   // all m-lines in one bundle — fixes m-line order errors
-  rtcpMuxPolicy: 'require',
-  iceCandidatePoolSize: 10,
-})
+const buildPeerConfig = (serverIceServers = []) => {
+  // Use ONLY the server's ICE servers if available - this ensures everyone
+  // uses the same configuration for consistent connectivity
+  const iceServers = serverIceServers.length > 0 ? serverIceServers : FALLBACK_ICE_SERVERS
+  
+  const stunCount = iceServers.filter(s => s.urls.startsWith('stun')).length
+  const turnCount = iceServers.filter(s => s.urls.startsWith('turn')).length
+  const source = serverIceServers.length > 0 ? 'server' : 'fallback'
+  console.log(`[WebRTC] Building peer config with ${iceServers.length} ICE servers from ${source} (${stunCount} STUN, ${turnCount} TURN)`)
+  console.log(`[WebRTC] ICE servers:`, iceServers.map(s => s.urls))
+  
+  return {
+    iceServers,
+    bundlePolicy: 'max-bundle',   // all m-lines in one bundle — fixes m-line order errors
+    rtcpMuxPolicy: 'require',
+    iceCandidatePoolSize: 10,
+    // FIX: Add more aggressive ICE settings for global connectivity
+    iceTransports: 'all',         // Use all transport types (UDP, TCP, TLS)
+    // Increase timeouts for global connections (high latency)
+    // Note: These are not standard RTCConfig options but some browsers support them
+  }
+}
 
 // Global flag to track if we're intentionally leaving the voice channel
 // This prevents cleanup from emitting voice:leave when switching views
@@ -59,15 +96,34 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
   const [speaking, setSpeaking] = useState({})
   // Per-peer WebRTC connection state: peerId -> 'connecting'|'connected'|'failed'|'disconnected'
   const [peerStates, setPeerStates] = useState({})
-  // Remote audio analysers for speaking detection: peerId -> { analyser, dataArray }
-  const remoteAnalysersRef = useRef({})
-  // Local per-user overrides: { [userId]: { muted: bool, volume: 0-100 } }
-  const [localUserSettings, setLocalUserSettings] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('voltchat_local_user_settings')) || {} } catch { return {} }
-  })
-  // Right-click context menu state
-  const [participantMenu, setParticipantMenu] = useState(null) // { userId, username, x, y }
   
+  // ICE connection info - track which ICE server we're connected to
+  const [iceConnectionInfo, setIceConnectionInfo] = useState({
+    selectedServer: null,
+    candidatePairs: [],
+    connectionType: null, // 'host', 'srflx', 'relay'
+  })
+  // VoiceFX state
+  const [showVoiceFX, setShowVoiceFX] = useState(false)
+  const [voiceFXEnabled, setVoiceFXEnabled] = useState(false)
+  const [voiceFXEffect, setVoiceFXEffect] = useState('none')
+  const [voiceFXParams, setVoiceFXParams] = useState({})
+  const voiceFXNodesRef = useRef({})
+  const voiceFXDryGainRef = useRef(null)
+  const voiceFXWetGainRef = useRef(null)
+  const voiceFXDestinationRef = useRef(null)
+  const voiceFXSourceRef = useRef(null)
+  const originalAudioTrackRef = useRef(null)
+// Remote audio analysers for speaking detection: peerId -> { analyser, dataArray }
+const remoteAnalysersRef = useRef({})
+// Local per-user overrides: { [userId]: { muted: bool, volume: 0-100 } }
+const [localUserSettings, setLocalUserSettings] = useState(() => {
+  try { return JSON.parse(localStorage.getItem('voltchat_local_user_settings')) || {} } catch { return {} }
+})
+// Right-click context menu state
+const [participantMenu, setParticipantMenu] = useState(null) // { userId, username, x, y }
+// Video stream management state
+const [videoStreams, setVideoStreams] = useState({})
   const peerConnections = useRef({})   // peerId -> RTCPeerConnection
   const remoteStreams = useRef({})
   const audioElements = useRef({})
@@ -116,6 +172,617 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       return next
     })
   }, [applyLocalUserSetting])
+
+  // Apply VoiceFX effect to the audio chain
+  const applyVoiceFXEffect = useCallback((effectName, effectParams) => {
+    console.log('[VoiceFX] Applying effect:', effectName, effectParams)
+    
+    const audioContext = analyserRef.current?.audioContext
+    const source = voiceFXSourceRef.current
+    const destination = voiceFXDestinationRef.current
+    const dryGain = voiceFXDryGainRef.current
+    const wetGain = voiceFXWetGainRef.current
+    
+    if (!audioContext || !source || !destination || !dryGain || !wetGain) {
+      console.log('[VoiceFX] Missing audio nodes, cannot apply effect')
+      return
+    }
+
+    // Stop any oscillators BEFORE clearing nodes
+    const nodes = voiceFXNodesRef.current
+    const oscNames = [
+      'osc', 'lfo', 'robotOsc', 'robotLfo', 'robotMod', 'alienOsc', 'alienOsc1', 'alienOsc2', 'alienOsc3',
+      'tremoloLfo', 'vibratoLfo', 'chorusLfo0', 'chorusLfo1', 'chorusLfo2', 'flangerLfo'
+    ]
+    oscNames.forEach(name => {
+      if (nodes[name]) {
+        try { nodes[name].stop() } catch {}
+      }
+    })
+
+    // Disconnect all existing effect nodes
+    Object.values(nodes).forEach(node => {
+      try { node.disconnect() } catch {}
+    })
+    voiceFXNodesRef.current = {}
+
+    // Reset gains
+    dryGain.disconnect()
+    wetGain.disconnect()
+
+    if (effectName === 'none' || !effectName) {
+      // No effect - direct passthrough
+      source.connect(dryGain)
+      dryGain.connect(destination)
+      dryGain.gain.value = 1
+      wetGain.gain.value = 0
+      
+      // Replace with original track
+      const originalTrack = originalAudioTrackRef.current
+      if (originalTrack && localStreamRef.current) {
+        localStreamRef.current.getAudioTracks().forEach(t => localStreamRef.current.removeTrack(t))
+        localStreamRef.current.addTrack(originalTrack)
+        updateAllPeerTracks(originalTrack)
+      }
+      console.log('[VoiceFX] Effect disabled, using original audio')
+      return
+    }
+
+    const wet = effectParams.wet ?? 0.5
+    dryGain.gain.value = 1 - wet
+    wetGain.gain.value = wet
+
+    // Connect both dry and wet paths from source
+    source.connect(dryGain)
+    source.connect(wetGain)
+    dryGain.connect(destination)
+
+    // Build effect chain on wet path
+    let wetChainEnd = wetGain
+    
+    switch (effectName) {
+      case 'pitch': {
+        const pitchValue = Math.max(0.25, Math.min(4, effectParams.pitch || 1))
+        const sourceProcessor = audioContext.createScriptProcessor(4096, 1, 1)
+        const BUFFER_SIZE = 8192
+        const buffer = new Float32Array(BUFFER_SIZE * 2)
+        let writePos = 0
+        let readPos = 0
+        let samplesInBuffer = 0
+        
+        sourceProcessor.onaudioprocess = (e) => {
+          const inputData = e.inputBuffer.getChannelData(0)
+          const outputData = e.outputBuffer.getChannelData(0)
+          const bufferLen = buffer.length
+          
+          for (let i = 0; i < inputData.length; i++) {
+            buffer[writePos] = inputData[i]
+            writePos = (writePos + 1) % bufferLen
+            if (samplesInBuffer < bufferLen) {
+              samplesInBuffer++
+            }
+          }
+          
+          const step = pitchValue
+          let outputIdx = 0
+          
+          while (outputIdx < outputData.length) {
+            if (samplesInBuffer < 2) {
+              outputData[outputIdx++] = 0
+              continue
+            }
+            
+            const r = Math.floor(readPos)
+            const frac = readPos - r
+            const r1 = r % bufferLen
+            const r2 = (r + 1) % bufferLen
+            
+            outputData[outputIdx] = buffer[r1] * (1 - frac) + buffer[r2] * frac
+            
+            readPos += step
+            outputIdx++
+            
+            while (readPos >= samplesInBuffer && samplesInBuffer > 0) {
+              readPos -= samplesInBuffer
+            }
+          }
+          
+          readPos = readPos % bufferLen
+        }
+        
+        wetGain.disconnect()
+        wetGain.connect(sourceProcessor)
+        sourceProcessor.connect(destination)
+        voiceFXNodesRef.current.pitch = sourceProcessor
+        break
+      }
+      case 'reverb': {
+        const decay = effectParams.decay || 2
+        const sampleRate = audioContext.sampleRate
+        const length = sampleRate * decay
+        const impulse = audioContext.createBuffer(2, length, sampleRate)
+        
+        for (let ch = 0; ch < 2; ch++) {
+          const data = impulse.getChannelData(ch)
+          for (let i = 0; i < length; i++) {
+            const t = i / length
+            const envelope = Math.exp(-3 * t)
+            const diffusion = (Math.random() * 2 - 1) * 0.5
+            const early = i < sampleRate * 0.1 ? Math.sin(i * 0.01) * 0.3 : 0
+            data[i] = (diffusion + early) * envelope
+          }
+        }
+        
+        const convolver = audioContext.createConvolver()
+        convolver.buffer = impulse
+        
+        const wet = audioContext.createGain()
+        wet.gain.value = 0.6
+        
+        const dry = audioContext.createGain()
+        dry.gain.value = 0.4
+        
+        wetGain.connect(convolver)
+        convolver.connect(wet)
+        wet.connect(destination)
+        wetGain.connect(dry)
+        dry.connect(destination)
+        
+        voiceFXNodesRef.current.reverb = convolver
+        voiceFXNodesRef.current.reverbWet = wet
+        voiceFXNodesRef.current.reverbDry = dry
+        break
+      }
+      case 'delay': {
+        const delayTime = effectParams.time || 0.3
+        const feedback = effectParams.feedback || 0.4
+        
+        const delay1 = audioContext.createDelay(1)
+        delay1.delayTime.value = delayTime
+        
+        const delay2 = audioContext.createDelay(1)
+        delay2.delayTime.value = delayTime * 1.5
+        
+        const feedbackGain = audioContext.createGain()
+        feedbackGain.gain.value = feedback
+        
+        const wet = audioContext.createGain()
+        wet.gain.value = 0.5
+        
+        const dry = audioContext.createGain()
+        dry.gain.value = 0.6
+        
+        wetGain.connect(delay1)
+        wetGain.connect(delay2)
+        delay1.connect(feedbackGain)
+        delay2.connect(feedbackGain)
+        feedbackGain.connect(delay1)
+        feedbackGain.connect(delay2)
+        delay1.connect(wet)
+        delay2.connect(wet)
+        wet.connect(destination)
+        wetGain.connect(dry)
+        dry.connect(destination)
+        
+        voiceFXNodesRef.current.delay1 = delay1
+        voiceFXNodesRef.current.delay2 = delay2
+        voiceFXNodesRef.current.feedback = feedbackGain
+        break
+      }
+      case 'distortion': {
+        const amount = effectParams.amount || 20
+        const k = amount / 100
+        const n_samples = 256
+        const curve = new Float32Array(n_samples)
+        
+        for (let i = 0; i < n_samples; i++) {
+          const x = (i * 2) / n_samples - 1
+          if (x > 0) {
+            curve[i] = 1 - Math.exp(-x / k)
+          } else {
+            curve[i] = -1 + Math.exp(x / k)
+          }
+        }
+        
+        const waveshaper = audioContext.createWaveShaper()
+        waveshaper.curve = curve
+        waveshaper.oversample = '4x'
+        
+        const drive = audioContext.createGain()
+        drive.gain.value = 1 + amount / 20
+        
+        const output = audioContext.createGain()
+        output.gain.value = 0.7
+        
+        wetGain.connect(drive)
+        drive.connect(waveshaper)
+        waveshaper.connect(output)
+        output.connect(destination)
+        
+        voiceFXNodesRef.current.distortion = waveshaper
+        voiceFXNodesRef.current.distortionDrive = drive
+        break
+      }
+      case 'chorus': {
+        const rate = effectParams.rate || 1.5
+        const depth = effectParams.depth || 0.5
+        
+        const delays = []
+        const lfos = []
+        
+        for (let i = 0; i < 3; i++) {
+          const delay = audioContext.createDelay(1)
+          delay.delayTime.value = 0.02 + i * 0.005
+          
+          const lfo = audioContext.createOscillator()
+          lfo.type = 'sine'
+          lfo.frequency.value = rate + i * 0.3
+          
+          const lfoGain = audioContext.createGain()
+          lfoGain.gain.value = depth * 0.01
+          
+          lfo.connect(lfoGain)
+          lfoGain.connect(delay.delayTime)
+          
+          wetGain.connect(delay)
+          delay.connect(destination)
+          
+          lfo.start()
+          
+          delays.push(delay)
+          lfos.push(lfo)
+          voiceFXNodesRef.current[`chorusDelay${i}`] = delay
+          voiceFXNodesRef.current[`chorusLfo${i}`] = lfo
+        }
+        break
+      }
+      case 'flanger': {
+        const rate = effectParams.rate || 0.5
+        const depth = effectParams.depth || 0.5
+        
+        const delay = audioContext.createDelay(1)
+        delay.delayTime.value = 0.005
+        
+        const lfo = audioContext.createOscillator()
+        lfo.type = 'sine'
+        lfo.frequency.value = rate
+        
+        const lfoGain = audioContext.createGain()
+        lfoGain.gain.value = depth * 0.004
+        
+        const feedback = audioContext.createGain()
+        feedback.gain.value = 0.5
+        
+        lfo.connect(lfoGain)
+        lfoGain.connect(delay.delayTime)
+        
+        wetGain.connect(delay)
+        delay.connect(feedback)
+        feedback.connect(delay)
+        delay.connect(destination)
+        
+        lfo.start()
+        
+        voiceFXNodesRef.current.flangerDelay = delay
+        voiceFXNodesRef.current.flangerLfo = lfo
+        voiceFXNodesRef.current.flangerFeedback = feedback
+        break
+      }
+      case 'tremolo': {
+        const rate = effectParams.rate || 5
+        const depth = effectParams.depth || 0.5
+        
+        const lfo = audioContext.createOscillator()
+        lfo.type = 'sine'
+        lfo.frequency.value = rate
+        
+        const lfoGain = audioContext.createGain()
+        const baseGain = 1 - depth * 0.5
+        lfoGain.gain.value = depth * 0.5
+        
+        const processor = audioContext.createScriptProcessor(2048, 1, 1)
+        let phase = 0
+        const twoPi = Math.PI * 2
+        
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0)
+          const output = e.outputBuffer.getChannelData(0)
+          const phaseInc = twoPi * rate / audioContext.sampleRate
+          
+          for (let i = 0; i < input.length; i++) {
+            const mod = baseGain + lfoGain.gain.value * Math.sin(phase)
+            output[i] = input[i] * mod
+            phase += phaseInc
+            if (phase > twoPi) phase -= twoPi
+          }
+        }
+        
+        wetGain.connect(processor)
+        processor.connect(destination)
+        
+        lfo.start()
+        
+        voiceFXNodesRef.current.tremoloLfo = lfo
+        voiceFXNodesRef.current.tremoloProcessor = processor
+        break
+      }
+      case 'vibrato': {
+        const rate = effectParams.rate || 5
+        const depth = effectParams.depth || 0.3
+        
+        const delay = audioContext.createDelay(1)
+        delay.delayTime.value = 0.01
+        
+        const lfo = audioContext.createOscillator()
+        lfo.type = 'sine'
+        lfo.frequency.value = rate
+        
+        const lfoGain = audioContext.createGain()
+        lfoGain.gain.value = depth * 0.02
+        
+        lfo.connect(lfoGain)
+        lfoGain.connect(delay.delayTime)
+        
+        wetGain.connect(delay)
+        delay.connect(destination)
+        
+        lfo.start()
+        
+        voiceFXNodesRef.current.vibratoLfo = lfo
+        voiceFXNodesRef.current.vibratoDelay = delay
+        break
+      }
+      case 'robot': {
+        const freq = effectParams.freq || 55
+        const modDepth = effectParams.modDepth || 0.7
+        
+        const osc = audioContext.createOscillator()
+        osc.type = 'square'
+        osc.frequency.value = freq
+        
+        const processor = audioContext.createScriptProcessor(2048, 1, 1)
+        let phase = 0
+        const twoPi = Math.PI * 2
+        
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0)
+          const output = e.outputBuffer.getChannelData(0)
+          const phaseInc = twoPi * freq / audioContext.sampleRate
+          
+          for (let i = 0; i < input.length; i++) {
+            const mod = (1 - modDepth) + modDepth * Math.sin(phase)
+            output[i] = input[i] * mod
+            phase += phaseInc
+            if (phase > twoPi) phase -= twoPi
+          }
+        }
+        
+        const filter = audioContext.createBiquadFilter()
+        filter.type = 'lowpass'
+        filter.frequency.value = 2500
+        filter.Q.value = 3
+        
+        wetGain.connect(processor)
+        processor.connect(filter)
+        filter.connect(destination)
+        
+        osc.start()
+        
+        voiceFXNodesRef.current.robotOsc = osc
+        voiceFXNodesRef.current.robotProcessor = processor
+        voiceFXNodesRef.current.robotFilter = filter
+        break
+      }
+      case 'alien': {
+        const freq = effectParams.freq || 100
+        const wetValue = effectParams.wet || 0.6
+        
+        const osc = audioContext.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        
+        const processor = audioContext.createScriptProcessor(2048, 1, 1)
+        let phase = 0
+        const twoPi = Math.PI * 2
+        
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0)
+          const output = e.outputBuffer.getChannelData(0)
+          const phaseInc = twoPi * freq / audioContext.sampleRate
+          const mix1 = 1 - wetValue
+          const mix2 = wetValue
+          
+          for (let i = 0; i < input.length; i++) {
+            const mod = Math.sin(phase)
+            const dry = input[i] * mix1
+            const wet = input[i] * mod * mix2
+            output[i] = dry + wet
+            phase += phaseInc
+            if (phase > twoPi) phase -= twoPi
+          }
+        }
+        
+        const highpass = audioContext.createBiquadFilter()
+        highpass.type = 'highpass'
+        highpass.frequency.value = 200
+        
+        const lowpass = audioContext.createBiquadFilter()
+        lowpass.type = 'lowpass'
+        lowpass.frequency.value = 4000
+        
+        wetGain.connect(processor)
+        processor.connect(highpass)
+        highpass.connect(lowpass)
+        lowpass.connect(destination)
+        
+        osc.start()
+        
+        voiceFXNodesRef.current.alienOsc = osc
+        voiceFXNodesRef.current.alienProcessor = processor
+        break
+      }
+      case 'radio': {
+        const highpass = audioContext.createBiquadFilter()
+        highpass.type = 'highpass'
+        highpass.frequency.value = 400
+        
+        const lowpass = audioContext.createBiquadFilter()
+        lowpass.type = 'lowpass'
+        lowpass.frequency.value = 2600
+        
+        const bandpass = audioContext.createBiquadFilter()
+        bandpass.type = 'bandpass'
+        bandpass.frequency.value = 1200
+        bandpass.Q.value = 1
+        
+        const compressor = audioContext.createDynamicsCompressor()
+        compressor.threshold.value = -20
+        compressor.knee.value = 10
+        compressor.ratio.value = 4
+        compressor.attack.value = 0.005
+        compressor.release.value = 0.1
+        
+        const processor = audioContext.createScriptProcessor(2048, 1, 1)
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0)
+          const output = e.outputBuffer.getChannelData(0)
+          
+          for (let i = 0; i < input.length; i++) {
+            const s = input[i]
+            output[i] = Math.tanh(s * 2) * 0.8
+          }
+        }
+        
+        wetGain.connect(highpass)
+        highpass.connect(lowpass)
+        lowpass.connect(bandpass)
+        bandpass.connect(compressor)
+        compressor.connect(processor)
+        processor.connect(destination)
+        
+        voiceFXNodesRef.current.radioHighpass = highpass
+        voiceFXNodesRef.current.radioLowpass = lowpass
+        voiceFXNodesRef.current.radioBand = bandpass
+        voiceFXNodesRef.current.radioCompressor = compressor
+        break
+      }
+      case 'vocoder': {
+        const processor = audioContext.createScriptProcessor(4096, 1, 1)
+        
+        const bandFreqs = [300, 500, 700, 1000, 1400, 2000, 2800, 4000]
+        
+        const filters = bandFreqs.map(freq => {
+          const filter = audioContext.createBiquadFilter()
+          filter.type = 'bandpass'
+          filter.frequency.value = freq
+          filter.Q.value = 8
+          return filter
+        })
+        
+        const envs = new Array(bandFreqs.length).fill(0)
+        const envAttack = 0.15
+        const envRelease = 0.3
+        
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0)
+          const output = e.outputBuffer.getChannelData(0)
+          const frameSize = Math.floor(input.length / bandFreqs.length)
+          
+          for (let b = 0; b < bandFreqs.length; b++) {
+            let sum = 0
+            const start = b * frameSize
+            const end = Math.min(start + frameSize, input.length)
+            for (let i = start; i < end; i++) {
+              sum += Math.abs(input[i])
+            }
+            const level = sum / (end - start)
+            
+            const target = level * 4
+            if (target > envs[b]) {
+              envs[b] = envs[b] + (target - envs[b]) * envAttack
+            } else {
+              envs[b] = envs[b] + (target - envs[b]) * envRelease
+            }
+          }
+          
+          for (let i = 0; i < output.length; i++) {
+            const bandIdx = Math.floor((i / input.length) * bandFreqs.length)
+            const env = envs[Math.min(bandIdx, bandFreqs.length - 1)]
+            output[i] = input[i] * (0.3 + env * 0.7) * 0.8
+          }
+        }
+        
+        wetGain.connect(processor)
+        processor.connect(destination)
+        
+        voiceFXNodesRef.current.vocoderProcessor = processor
+        break
+      }
+      case 'phone': {
+        const lowpass = audioContext.createBiquadFilter()
+        lowpass.type = 'lowpass'
+        lowpass.frequency.value = 1800
+        
+        const highpass = audioContext.createBiquadFilter()
+        highpass.type = 'highpass'
+        highpass.frequency.value = 300
+        
+        const processor = audioContext.createScriptProcessor(2048, 1, 1)
+        processor.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0)
+          const output = e.outputBuffer.getChannelData(0)
+          
+          for (let i = 0; i < input.length; i++) {
+            output[i] = Math.round(input[i] * 127) / 128
+          }
+        }
+        
+        wetGain.connect(highpass)
+        highpass.connect(lowpass)
+        lowpass.connect(processor)
+        processor.connect(destination)
+        
+        voiceFXNodesRef.current.phoneLowpass = lowpass
+        voiceFXNodesRef.current.phoneHighpass = highpass
+        break
+      }
+      default:
+        break
+    }
+
+    // Get the processed audio track and replace in stream + peers
+    const processedTrack = destination.stream.getAudioTracks()[0]
+    if (!processedTrack) {
+      console.warn('[VoiceFX] No processed track found in destination stream')
+      return
+    }
+    if (localStreamRef.current) {
+      // Replace in local stream
+      localStreamRef.current.getAudioTracks().forEach(t => localStreamRef.current.removeTrack(t))
+      localStreamRef.current.addTrack(processedTrack)
+      setLocalStream(localStreamRef.current)
+      
+      // Update all peer connections
+      updateAllPeerTracks(processedTrack)
+    }
+    
+    console.log('[VoiceFX] Applied effect:', effectName)
+  }, [])
+
+  // Helper to update all peer connections with a new audio track
+  const updateAllPeerTracks = useCallback((track) => {
+    Object.values(peerConnections.current).forEach(pc => {
+      try {
+        const senders = pc.getSenders()
+        const audioSender = senders.find(s => s.track?.kind === 'audio')
+        if (audioSender && track) {
+          audioSender.replaceTrack(track).catch(() => {})
+        }
+      } catch (e) {
+        console.warn('[VoiceFX] Failed to update peer track:', e)
+      }
+    })
+  }, [])
 
   // Re-apply saved local user settings whenever audio elements are (re)created
   useEffect(() => {
@@ -278,6 +945,37 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       }
     }
 
+    // Track selected ICE candidate pair for connection info display
+    pc.onicecandidatepair = (event) => {
+      if (event && event.candidatePair) {
+        const pair = event.candidatePair
+        const selectedServer = pair.remote?.candidate || pair.local?.candidate || null
+        let connectionType = 'unknown'
+        
+        // Determine connection type from candidate types
+        if (selectedServer) {
+          const candType = pair.remote?.candidate?.type || pair.local?.candidate?.type
+          if (candType === 'host') connectionType = 'host'
+          else if (candType === 'srflx') connectionType = 'srflx'  // Server reflexive (STUN)
+          else if (candType === 'relay') connectionType = 'relay'  // TURN relay
+        }
+        
+        // Update ICE connection info
+        const iceInfo = {
+          selectedServer: selectedServer?.split(' ')[4] || selectedServer?.split(' ')[5] || 'unknown',
+          candidatePairs: [...iceConnectionInfo.candidatePairs, {
+            local: pair.local?.candidate?.ip || 'unknown',
+            remote: pair.remote?.candidate?.ip || 'unknown',
+            type: connectionType,
+            state: pair.state
+          }].slice(-10), // Keep last 10
+          connectionType
+        }
+        setIceConnectionInfo(iceInfo)
+        console.log(`[WebRTC] ICE candidate pair selected for ${targetUserId}: ${connectionType} (${iceInfo.selectedServer})`)
+      }
+    }
+
     pc.onicegatheringstatechange = () => {
       console.log(`[WebRTC] ICE gathering with ${targetUserId}:`, pc.iceGatheringState)
     }
@@ -367,13 +1065,18 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         }
       }
       if (s === 'failed') {
-        console.log(`[WebRTC] Connection failed with ${targetUserId} — will keep retrying until connected`)
-        // Close and remove the stale pc, then reconnect after a brief pause
+        console.log(`[WebRTC] Connection failed with ${targetUserId} — will wait for peer to reconnect`)
+        // Don't auto-reconnect - the peer who initiated will retry, or we'll get an offer from them
         try { pc.close() } catch {}
         delete peerConnections.current[targetUserId]
         makingOfferRef.current[targetUserId] = false
-        // Don't give up - keep retrying until connected
-        // The watchdog interval will handle reconnection attempts
+        ignoreOfferRef.current[targetUserId] = false
+        remoteDescSetRef.current[targetUserId] = false
+      }
+      // Handle 'new' state that gets stuck - just restart ICE
+      if (s === 'new') {
+        console.log(`[WebRTC] Connection stuck in 'new' state for ${targetUserId} — restarting ICE`)
+        pc.restartIce()
       }
       if (s === 'closed') {
         delete peerConnections.current[targetUserId]
@@ -552,25 +1255,83 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       }
 
       if (track.kind === 'video') {
-        // Prevent duplicate video track handling - check if we already have this track
-        const existingStream = remoteStreams.current[targetUserId]
-        const existingVideoTrack = existingStream?.getVideoTracks()?.find(t => t.id === track.id)
-        if (existingVideoTrack) {
-          console.log(`[WebRTC] Video track already exists for ${targetUserId}, skipping state update`)
-          return
+        console.log(`[WebRTC] ========== VIDEO TRACK RECEIVED from ${targetUserId} ==========`)
+        console.log(`[WebRTC] Video track details: id=${track.id}, readyState=${track.readyState}, enabled=${track.enabled}, muted=${track.muted}`)
+        
+        // Get or create the remote stream for this user
+        let videoStream = remoteStreams.current[targetUserId]
+        
+        if (!videoStream) {
+          // Create a new stream with this video track
+          videoStream = new MediaStream([track])
+          remoteStreams.current[targetUserId] = videoStream
+          console.log(`[WebRTC] Created NEW video stream for ${targetUserId}`)
+        } else {
+          // Check if this video track is already in the stream
+          const existingVideoTrack = videoStream.getVideoTracks()?.find(t => t.id === track.id)
+          if (existingVideoTrack) {
+            console.log(`[WebRTC] Video track already in stream for ${targetUserId}`)
+          } else {
+            // Add the video track to the existing stream
+            videoStream.addTrack(track)
+            console.log(`[WebRTC] Added video track to existing stream for ${targetUserId}, stream now has ${videoStream.getTracks().length} tracks`)
+          }
         }
         
-        // Use functional update to prevent race conditions
+        // Log the stream state
+        console.log(`[WebRTC] Video stream for ${targetUserId}: active=${videoStream.active}, tracks=${videoStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(',')}`)
+        
+        // Determine if this is a screen share or camera based on track settings
+        // Screen shares typically have different aspect ratios or are marked
+        const isScreenShare = track.label?.toLowerCase().includes('screen') || 
+                              track.label?.toLowerCase().includes('monitor') ||
+                              event.streams[0]?.id?.includes('screen') ||
+                              false
+        
+        console.log(`[WebRTC] Video type for ${targetUserId}: ${isScreenShare ? 'screen share' : 'camera'}`)
+        
+        // Update video streams state with the video stream
+        setVideoStreams(prev => ({ ...prev, [targetUserId]: videoStream }))
+        
+        // Force update participants state with the video stream
         setParticipants(prev => {
-          const existing = prev.find(p => p.id === targetUserId)
-          // Check if already has video with the same stream
-          if (existing?.hasVideo && existing?.videoStream === remoteStream) {
-            return prev // No change needed
+          const existingIndex = prev.findIndex(p => p.id === targetUserId)
+          
+          if (existingIndex === -1) {
+            // Participant not in list yet - add them with video
+            console.log(`[WebRTC] Adding NEW participant ${targetUserId} with video`)
+            return [...prev, { 
+              id: targetUserId, 
+              hasVideo: true, 
+              videoStream: videoStream,
+              isScreenSharing: isScreenShare
+            }]
           }
-          return prev.map(p =>
-            p.id === targetUserId ? { ...p, hasVideo: true, videoStream: remoteStream } : p
-          )
+          
+          // Update existing participant
+          const existing = prev[existingIndex]
+          const updatedParticipant = {
+            ...existing,
+            hasVideo: true,
+            videoStream: videoStream,
+            // If this is a screen share, mark it
+            ...(isScreenShare ? { isScreenSharing: true } : {})
+          }
+          
+          console.log(`[WebRTC] Updating participant ${targetUserId}: hasVideo=true, isScreenSharing=${isScreenShare}`)
+          
+          const newParticipants = [...prev]
+          newParticipants[existingIndex] = updatedParticipant
+          return newParticipants
         })
+        
+        // Also emit a local event to notify any video elements
+        // This helps when the video element is already mounted
+        window.dispatchEvent(new CustomEvent('voltchat:video-track', {
+          detail: { userId: targetUserId, stream: videoStream, isScreenShare }
+        }))
+        
+        console.log(`[WebRTC] ========== VIDEO TRACK PROCESSING COMPLETE for ${targetUserId} ==========`)
       }
     }
 
@@ -893,6 +1654,26 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         source.connect(analyser)
         analyserRef.current = { audioContext, analyser }
         
+        // Initialize VoiceFX audio processing chain
+        const voiceFXDestination = audioContext.createMediaStreamDestination()
+        const voiceFXDryGain = audioContext.createGain()
+        const voiceFXWetGain = audioContext.createGain()
+        voiceFXDryGain.gain.value = 1
+        voiceFXWetGain.gain.value = 0
+        
+        voiceFXDestinationRef.current = voiceFXDestination
+        voiceFXDryGainRef.current = voiceFXDryGain
+        voiceFXWetGainRef.current = voiceFXWetGain
+        voiceFXSourceRef.current = source
+        
+        // Connect: source -> dry path -> destination (initially no effects)
+        source.connect(voiceFXDryGain)
+        voiceFXDryGain.connect(voiceFXDestination)
+        
+        // Store original audio track reference
+        const audioTrack = stream.getAudioTracks()[0]
+        originalAudioTrackRef.current = audioTrack
+        
         if (audioContext.state === 'suspended') {
           audioContext.resume().catch(err => {
             console.log('[Voice] AudioContext resume failed:', err)
@@ -903,8 +1684,8 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         hasJoinedRef.current = true
         hasLeftRef.current = false
         
-        // Play join sound for self (ascending arpeggio)
-        soundService.callJoin()
+        // Play join sound for self (callConnected plays when connection is established)
+        // soundService.callJoin() - removed to avoid duplicate sounds
         
         // resumeAudio is registered at effect scope above — no need to add again here
         
@@ -979,23 +1760,30 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       const staggerMs = tier.staggerPerPeer
       
       peerIds.forEach((peerId, index) => {
-        // Skip if already connected
+        // Skip if already connected or connecting - don't retry if connection in progress
         const existing = peerConnections.current[peerId]
         if (existing) {
           const s = existing.connectionState
-          if (s === 'connected' || s === 'connecting' || s === 'completed') return
+          if (s === 'connected' || s === 'completed') return
+          // If connecting or new, skip - let the existing connection attempt continue
+          if (s === 'connecting' || s === 'new') {
+            console.log(`[WebRTC] Skipping ${peerId} - already ${s}`)
+            return
+          }
+          // If failed/closed, will create new connection below
         }
         
         // Skip if at capacity
         if (!canAcceptPeer(peerId)) return
         
-        // Stagger connections with increasing delays
+        // Simple staggered connections - no retry spam
         const delay = baseDelay + (index * staggerMs) + (Math.random() * 300)
-        console.log(`[WebRTC] Queuing connection to ${peerId} in ${Math.round(delay)}ms (position ${index + 1}/${peerIds.length})`)
+        console.log(`[WebRTC] Queuing connection to ${peerId} in ${Math.round(delay)}ms`)
         setTimeout(() => queueConnection(peerId), delay)
       })
     })
 
+    // Simple user-joined handler - don't spam connections
     socket.on('voice:user-joined', (userInfo) => {
       setParticipants(prev => {
         if (prev.find(p => p.id === userInfo.id)) return prev
@@ -1004,17 +1792,31 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       if (userInfo.id !== user.id) {
         soundService.userJoined()
         
+        // Check if already connected - don't reconnect if we already have a good connection
+        const existing = peerConnections.current[userInfo.id]
+        if (existing) {
+          const s = existing.connectionState
+          if (s === 'connected' || s === 'completed') {
+            console.log(`[WebRTC] Already connected to ${userInfo.id}, skipping`)
+            return
+          }
+          if (s === 'connecting' || s === 'new') {
+            console.log(`[WebRTC] Already connecting to ${userInfo.id}, skipping`)
+            return
+          }
+          // If failed/closed, will try to reconnect below
+        }
+        
         // Check capacity before connecting
         if (!canAcceptPeer(userInfo.id)) {
           console.log(`[WebRTC] Cannot accept peer ${userInfo.id}: at capacity`)
           return
         }
         
-        // Use tiered delays based on current peer count
+        // Simple delay - no retry spam
         const tier = getTierConfig()
-        const peerCount = Object.keys(peerConnections.current).length
-        const delay = tier.staggerBase + (peerCount * tier.staggerPerPeer * 0.5) + (Math.random() * 400)
-        console.log(`[WebRTC] Scheduling connection to new peer ${userInfo.id} in ${Math.round(delay)}ms (we have ${peerCount} existing peers, tier: ${tier.maxPeers} max)`)
+        const delay = 800 + Math.random() * 400
+        console.log(`[WebRTC] Scheduling connection to new peer ${userInfo.id} in ${Math.round(delay)}ms`)
         setTimeout(() => queueConnection(userInfo.id), delay)
       }
     })
@@ -1050,6 +1852,9 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     })
 
     // Perfect negotiation — handle incoming offers
+    // FIX: Always process ALL offers regardless of collision to prevent deadlocks
+    // The original "ignore colliding offers when impolite" logic caused connection issues
+    // when both peers tried to connect simultaneously
     socket.on('voice:offer', async (data) => {
       const { from, offer, channelId } = data
       if (channelId && channelId !== channelIdRef.current) return
@@ -1057,7 +1862,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       // Debounce rapid offers from the same peer (prevents loops)
       const now = Date.now()
       const lastOffer = lastOfferTimeRef.current[from] || 0
-      if (now - lastOffer < 500) {
+      if (now - lastOffer < 300) {
         console.log('[WebRTC] Debouncing rapid offer from', from)
         return
       }
@@ -1065,7 +1870,14 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       
       // Check if we're already in a negotiation with this peer
       if (negotiationLockRef.current[from]) {
-        console.log('[WebRTC] Negotiation already in progress for', from, '- skipping offer')
+        console.log('[WebRTC] Negotiation already in progress for', from, '- queuing offer')
+        // Queue this offer for later instead of ignoring
+        setTimeout(() => {
+          if (negotiationLockRef.current[from]) {
+            // Still locked, try again
+            lastOfferTimeRef.current[from] = 0 // Reset debounce
+          }
+        }, 500)
         return
       }
       
@@ -1076,20 +1888,32 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       const offerCollision = makingOfferRef.current[from] || pc.signalingState !== 'stable'
       const polite = isPolite(from)
 
-      ignoreOfferRef.current[from] = !polite && offerCollision
-      if (ignoreOfferRef.current[from]) {
-        console.log('[WebRTC] Ignoring colliding offer from', from, '(impolite)')
-        negotiationLockRef.current[from] = false
-        return
+      // FIX: Never ignore offers - always respond to ensure connectivity
+      // Original logic caused deadlocks when both peers ignored each other
+      if (offerCollision) {
+        console.log('[WebRTC] Handling offer collision for', from, '- polite:', polite)
+        // If we're already making an offer, we need to handle the collision
+        if (makingOfferRef.current[from]) {
+          // We're also trying to connect - let the polite peer win
+          // Wait a bit then proceed anyway to ensure connection
+          if (!polite) {
+            // Give polite peer time to complete their offer
+            await new Promise(r => setTimeout(r, 200))
+          }
+        }
+        // Regardless of politeness, rollback if needed to accept the offer
+        if (pc.signalingState !== 'stable') {
+          console.log('[WebRTC] Rolling back for', from)
+          try {
+            await pc.setLocalDescription({ type: 'rollback' })
+          } catch (e) {
+            // Rollback might fail if we're already in stable state - that's ok
+          }
+          makingOfferRef.current[from] = false
+        }
       }
 
       try {
-        if (offerCollision && polite) {
-          console.log('[WebRTC] Polite rollback for', from)
-          await pc.setLocalDescription({ type: 'rollback' })
-          makingOfferRef.current[from] = false
-        }
-
         await pc.setRemoteDescription(new RTCSessionDescription(offer))
         remoteDescSetRef.current[from] = true
 
@@ -1110,6 +1934,9 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
           channelId: channelIdRef.current
         })
         console.log('[WebRTC] Sent answer to:', from)
+        // Don't initiate return connection - it creates collisions
+        // The peer who sent the offer will maintain the connection to us
+        
       } catch (err) {
         console.error('[WebRTC] Failed to handle offer from', from, ':', err.message)
       } finally {
@@ -1120,14 +1947,34 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       }
     })
 
+    // FIX: Improved answer handling - always process and ensure bidirectional connectivity
     socket.on('voice:answer', async (data) => {
       const { from, answer, channelId } = data
       if (channelId && channelId !== channelIdRef.current) return
       const pc = peerConnections.current[from]
-      if (!pc || pc.signalingState === 'stable') return
-      // NOTE: Do NOT check ignoreOffer here! ignoreOffer is only for ignoring
-      // colliding OFFERS when we're impolite. We must always accept ANSWERS
-      // to our own offers, otherwise we get stuck waiting forever.
+      if (!pc) {
+        console.log('[WebRTC] No peer connection for answer from', from, '- creating one')
+        // FIX: Create a new connection if we don't have one
+        const newPc = createPeerConnection(from)
+        try {
+          await newPc.setRemoteDescription(new RTCSessionDescription(answer))
+          remoteDescSetRef.current[from] = true
+          // Flush any buffered ICE candidates
+          const pending = pendingCandidatesRef.current[from] || []
+          pendingCandidatesRef.current[from] = []
+          for (const c of pending) {
+            try { await newPc.addIceCandidate(new RTCIceCandidate(c)) } catch {}
+          }
+          if (pending.length) console.log(`[WebRTC] Flushed ${pending.length} buffered ICE for ${from}`)
+        } catch (err) {
+          console.error('[WebRTC] Failed to set answer from', from, ':', err.message)
+        }
+        return
+      }
+      if (pc.signalingState === 'stable') {
+        console.log('[WebRTC] Already stable with', from, '- ignoring duplicate answer')
+        return
+      }
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer))
@@ -1145,13 +1992,14 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
           try { await pc.addIceCandidate(new RTCIceCandidate(c)) } catch {}
         }
         if (pending.length) console.log(`[WebRTC] Flushed ${pending.length} buffered ICE for ${from}`)
+        // Don't retry - let the connection establish naturally
       } catch (err) {
-        if (!ignoreOfferRef.current[from]) {
-          console.error('[WebRTC] Failed to set answer from', from, ':', err.message)
-        }
+        console.error('[WebRTC] Failed to set answer from', from, ':', err.message)
       }
     })
 
+    // FIX: Improved ICE candidate handling - always process candidates
+    // regardless of ignoreOffer state to ensure connectivity
     socket.on('voice:ice-candidate', async (data) => {
       const { from, candidate, channelId } = data
       if (channelId && channelId !== channelIdRef.current) return
@@ -1159,21 +2007,31 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
 
       const pc = peerConnections.current[from]
 
-      if (!pc || !remoteDescSetRef.current[from]) {
-        // Buffer until remote description is set
+      if (!pc) {
+        // No peer connection yet - buffer the candidate
         if (!pendingCandidatesRef.current[from]) pendingCandidatesRef.current[from] = []
         pendingCandidatesRef.current[from].push(candidate)
+        console.log('[WebRTC] Buffered ICE candidate from', from, '- no PC yet')
         return
       }
 
-      if (ignoreOfferRef.current[from]) return
+      // FIX: Always try to add candidates even if remote desc isn't set
+      // This ensures we don't miss candidates during connection setup
+      if (!remoteDescSetRef.current[from]) {
+        // Buffer if remote description not yet set
+        if (!pendingCandidatesRef.current[from]) pendingCandidatesRef.current[from] = []
+        pendingCandidatesRef.current[from].push(candidate)
+        console.log('[WebRTC] Buffered ICE candidate from', from, '- waiting for remote desc')
+        return
+      }
 
+      // FIX: Remove ignoreOfferRef check - we should always accept ICE candidates
+      // to ensure connectivity with all peers regardless of negotiation state
       try {
         await pc.addIceCandidate(new RTCIceCandidate(candidate))
       } catch (err) {
-        if (!ignoreOfferRef.current[from]) {
-          console.error('[WebRTC] Failed to add ICE candidate from', from, ':', err.message)
-        }
+        console.warn('[WebRTC] Failed to add ICE candidate from', from, ':', err.message)
+        // Don't treat this as fatal - ICE can fail for various reasons
       }
     })
 
@@ -1284,6 +2142,26 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       setParticipants(prev => prev.map(p => 
         p.id === data.userId ? { ...p, isScreenSharing: data.enabled } : p
       ))
+      console.log(`[WebRTC] User ${data.userId} ${data.enabled ? 'started' : 'stopped'} screen sharing`)
+    })
+
+    socket.on('voice:video-update', (data) => {
+      const { userId, username, enabled } = data
+      console.log(`[WebRTC] User ${userId} (${username}) ${enabled ? 'enabled' : 'disabled'} video`)
+      
+      // Update participants state to reflect video status
+      setParticipants(prev => prev.map(p => 
+        p.id === userId ? { ...p, hasVideo: enabled } : p
+      ))
+      
+      // Play a sound for video toggle (optional)
+      if (userId !== user?.id) {
+        if (enabled) {
+          soundService.cameraOn()
+        } else {
+          soundService.cameraOff()
+        }
+      }
     })
 
     return () => {
@@ -1315,6 +2193,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       socket.off('voice:answer')
       socket.off('voice:ice-candidate')
       socket.off('voice:screen-share-update')
+      socket.off('voice:video-update')
       socket.off('voice:force-reconnect')
       socket.off('connect', onReconnectJoin)
       
@@ -1383,39 +2262,37 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     return () => { delete window.__vcGetPCs }
   }, [])
 
-  // Connection watchdog — every 8 s check all peers and reconnect dead ones
+  // Connection watchdog — gentle monitoring, minimal interference
+  // Only restart ICE for disconnected peers, don't aggressively reconnect
+  
   useEffect(() => {
     if (!socket) return
     const watchdog = setInterval(() => {
       if (!hasJoinedRef.current) return
       
-      // Count failed/closed connections
-      const failedPeers = []
       Object.entries(peerConnections.current).forEach(([peerId, pc]) => {
         const s = pc.connectionState
+        const iceS = pc.iceConnectionState
+        
+        // Only handle completely failed connections - close them cleanly
         if (s === 'failed' || s === 'closed') {
-          console.log(`[WebRTC] Watchdog: ${peerId} is ${s} — will reconnect`)
+          console.log(`[WebRTC] Watchdog: ${peerId} is ${s}`)
           try { pc.close() } catch {}
           delete peerConnections.current[peerId]
           makingOfferRef.current[peerId] = false
-          failedPeers.push(peerId)
+          // Don't auto-reconnect - let the peer reconnect to us naturally
+          return
         }
-        // Also restart ICE for stuck disconnected state
-        if (s === 'disconnected' && pc.iceConnectionState === 'disconnected') {
-          console.log(`[WebRTC] Watchdog: ${peerId} still disconnected — restarting ICE`)
+        
+        // Only restart ICE for truly stuck connections, don't reconnect
+        if (s === 'disconnected' && iceS === 'disconnected') {
+          console.log(`[WebRTC] Watchdog: ${peerId} disconnected — restarting ICE`)
           pc.restartIce()
         }
       })
-      
-      // Requeue failed connections with staggered delays
-      failedPeers.forEach((peerId, index) => {
-        const delay = 1000 + (index * 600) + (Math.random() * 400)
-        console.log(`[WebRTC] Watchdog: Reconnecting to ${peerId} in ${Math.round(delay)}ms`)
-        setTimeout(() => queueConnection(peerId), delay)
-      })
-    }, 8000)
+    }, 10000) // Check less frequently - every 10 seconds
     return () => clearInterval(watchdog)
-  }, [socket, queueConnection])
+  }, [socket])
 
   // Heartbeat to keep backend session alive and allow grace on reconnects
   useEffect(() => {
@@ -1798,7 +2675,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     // Mark as intentional leave so cleanup doesn't re-emit voice:leave
     isIntentionalLeave = true
     
-    soundService.callLeft()
+    // soundService.callLeft() - removed, cleanup handles this
 
     // Stop all media tracks
     localStream?.getTracks().forEach(t => t.stop())
@@ -2026,8 +2903,8 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         const participant = participants.find(p => p.id === peerId)
         const isMuted = participant?.muted || false
         
-        // Speaking threshold - audio level above 15 and not muted
-        const isSpeakingRaw = average > 15 && !isMuted
+        // Speaking threshold - audio level above 10 and not muted
+        const isSpeakingRaw = average > 10 && !isMuted
         
         const wasSpeaking = speakingStateRef.current[peerId]
         speakingStateRef.current[peerId] = isSpeakingRaw
@@ -2054,6 +2931,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
     }
     
     const remoteSpeakingInterval = setInterval(checkRemoteSpeaking, 100)
+    checkRemoteSpeaking()
     
     return () => {
       clearInterval(remoteSpeakingInterval)
@@ -2076,17 +2954,8 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
       const currentStream = el.srcObject
       const lastStreamId = lastVideoStreamRef.current[participantId]
       
-      // Get the expected stream for this participant
-      const participant = displayParticipants.find(p => p.id === participantId)
-      let expectedStream = null
-      if (participant) {
-        if (participant.id === user?.id) {
-          expectedStream = isScreenSharing ? screenStream : (isVideoOn ? localVideoStream : null)
-        } else {
-          expectedStream = participant.videoStream
-        }
-      }
-      
+      // Get the expected stream for this participant from videoStreams state
+      const expectedStream = videoStreams[participantId]
       const expectedStreamId = expectedStream?.id || null
       
       // Only update if stream actually changed
@@ -2097,7 +2966,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         console.log(`[Video] Updated video element for ${participantId}, stream: ${expectedStreamId}`)
       }
     }
-  }, [displayParticipants, user?.id, isScreenSharing, screenStream, isVideoOn, localVideoStream])
+  }, [videoStreams])
 
   const getScreenShareStream = (participant) => {
     if (participant.id === user?.id && isScreenSharing) return screenStream
@@ -2127,9 +2996,7 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
   const mainVideoStream = mainVideoParticipant ? (
     mainVideoParticipant.id === user?.id
       ? (isScreenSharing ? screenStream : localVideoStream)
-      : mainVideoParticipant.isScreenSharing
-        ? mainVideoParticipant.videoStream
-        : mainVideoParticipant.videoStream
+      : videoStreams[mainVideoParticipant.id]
   ) : null
 
   const mainVideoType = mainVideoParticipant ? (
@@ -2360,6 +3227,14 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
         >
           <Settings size={24} />
         </button>
+
+        <button 
+          className={`voice-control-btn ${showVoiceFX ? 'active' : ''}`}
+          title="Voice Effects"
+          onClick={() => setShowVoiceFX(true)}
+        >
+          <Music size={24} />
+        </button>
       </div>
 
       {/* Participant right-click context menu */}
@@ -2441,6 +3316,28 @@ const VoiceChannel = ({ channel, joinKey, onLeave, isMuted: externalMuted, isDea
           </>
         )
       })()}
+
+      {/* VoiceFX Modal */}
+      <VoiceFX 
+        isOpen={showVoiceFX}
+        onClose={() => setShowVoiceFX(false)}
+        applyEffect={applyVoiceFXEffect}
+        currentEffect={voiceFXEffect}
+        currentParams={voiceFXParams}
+        isEnabled={voiceFXEnabled}
+        onToggle={(enabled) => {
+          setVoiceFXEnabled(enabled)
+          if (!enabled) {
+            applyVoiceFXEffect('none', {})
+          }
+        }}
+        onReset={() => {
+          setVoiceFXEffect('none')
+          setVoiceFXParams({})
+          setVoiceFXEnabled(false)
+          applyVoiceFXEffect('none', {})
+        }}
+      />
     </div>
   )
 }

@@ -27,6 +27,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useE2e } from '../contexts/E2eContext'
 import { useE2eTrue } from '../contexts/E2eTrueContext'
 import { apiService } from '../services/apiService'
+import { useAppStore } from '../store/useAppStore'
 import { soundService } from '../services/soundService'
 import { settingsService } from '../services/settingsService'
 import '../assets/styles/ChatPage.css'
@@ -50,6 +51,7 @@ const ChatPage = () => {
   const { serverId, channelId } = useParams()
   const { socket, connected, serverUpdates, clearServerUpdate } = useSocket()
   const { user, refreshUser, isAuthenticated } = useAuth()
+  const { setGlobalEmojis, addGlobalEmoji, removeGlobalEmoji } = useAppStore()
   const { 
     decryptMessageFromServer, 
     isEncryptionEnabled, 
@@ -483,6 +485,40 @@ const ChatPage = () => {
     }
   }, [socket, connected, currentServer?.id])
 
+  // Load global emojis on mount and listen for emoji updates
+  useEffect(() => {
+    if (!socket || !connected) return
+
+    const loadGlobalEmojis = async () => {
+      try {
+        const res = await apiService.getGlobalEmojis()
+        setGlobalEmojis(res.data || [])
+        console.log('[Emoji] Loaded global emojis:', res.data?.length || 0)
+      } catch (err) {
+        console.error('[Emoji] Failed to load global emojis:', err)
+      }
+    }
+    loadGlobalEmojis()
+
+    const handleEmojiCreated = (emoji) => {
+      console.log('[Emoji] Global emoji created:', emoji.name)
+      addGlobalEmoji(emoji)
+    }
+
+    const handleEmojiDeleted = ({ emojiId, serverId }) => {
+      console.log('[Emoji] Global emoji deleted:', emojiId)
+      removeGlobalEmoji(emojiId, serverId)
+    }
+
+    socket.on('emoji:created', handleEmojiCreated)
+    socket.on('emoji:deleted', handleEmojiDeleted)
+
+    return () => {
+      socket.off('emoji:created', handleEmojiCreated)
+      socket.off('emoji:deleted', handleEmojiDeleted)
+    }
+  }, [socket, connected, setGlobalEmojis, addGlobalEmoji, removeGlobalEmoji])
+
   const loadServers = async () => {
     try {
       console.log('[API] Loading servers...')
@@ -490,6 +526,9 @@ const ChatPage = () => {
       console.log('[API] Servers loaded:', response.data)
       
       setServers(response.data)
+      // Also sync with global store so other components see the update
+      const { setServers: setGlobalServers } = useAppStore.getState()
+      setGlobalServers(response.data)
       setLoading(false)
       
       if (response.data.length > 0 && (!serverId || serverId === 'null')) {
@@ -510,6 +549,15 @@ const ChatPage = () => {
     if (currentServer?.id === serverId) {
       navigate('/chat', { replace: true })
     }
+  }
+
+  const handleDMClick = (conversationId, recipient) => {
+    console.log('[DM] Opening DM conversation:', conversationId, recipient)
+    // Set the selected DM and navigate to DMs
+    const conv = { id: conversationId, recipient }
+    setSelectedDM(conv)
+    setViewMode('dms')
+    navigate('/chat/dms')
   }
 
   const loadServerData = async (id) => {
@@ -905,6 +953,7 @@ const ChatPage = () => {
           friendRequestCount={friendRequestCount}
           dmNotifications={dmNotifications}
           serverUnreadCounts={serverUnreadCounts}
+          onDMClick={handleDMClick}
         />
       )}
 
@@ -918,6 +967,7 @@ const ChatPage = () => {
           dmNotifications={dmNotifications.length}
           serverUnreadCounts={serverUnreadCounts}
           servers={servers}
+          onDMClick={handleDMClick}
         />
       )}
       

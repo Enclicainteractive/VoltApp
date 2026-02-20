@@ -4,7 +4,7 @@ import { X, Wifi, Activity, Server, Mic, Volume2 } from 'lucide-react'
 // How often to poll RTCPeerConnection stats (ms)
 const POLL_MS = 1000
 // How many samples to keep in the ping graph
-const GRAPH_SAMPLES = 30
+const GRAPH_SAMPLES = 100
 
 const VoiceInfoModal = ({ channel, onClose }) => {
   const [peers, setPeers] = useState([])   // [{ id, conn, ice, sig, rtt, jitter, packetsLost, bytesReceived, bytesSent }]
@@ -77,62 +77,129 @@ const VoiceInfoModal = ({ channel, onClose }) => {
     return () => clearInterval(timerRef.current)
   }, [poll])
 
-  // Draw the ping graph
+  // Draw the ping graph - real-time scrolling style
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || pingHistory.length < 2) return
+    if (!canvas) return
     const ctx = canvas.getContext('2d')
     const w = canvas.width
     const h = canvas.height
+    
+    // Clear canvas
     ctx.clearRect(0, 0, w, h)
 
-    const max = Math.max(...pingHistory, 100)
-    const min = 0
+    // If no data yet, don't draw
+    if (pingHistory.length < 1) return
 
-    // Grid lines
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+    // Calculate min/max for scaling (use at least 50ms range for stability)
+    const dataMax = Math.max(...pingHistory)
+    const max = Math.max(dataMax, 50)
+    const min = 0
+    const range = max - min
+
+    // Draw grid lines with labels
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
     ctx.lineWidth = 1
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'
+    ctx.font = '9px monospace'
     for (let i = 0; i <= 4; i++) {
       const y = (h / 4) * i
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(w, y)
+      ctx.stroke()
+      // Label on right side
+      const val = Math.round(max - (range * i / 4))
+      ctx.fillText(`${val}`, w - 24, y + 10)
     }
 
-    // Colour based on max ping
-    const lineColor = max > 200 ? '#ef4444' : max > 100 ? '#f59e0b' : '#22c55e'
+    // Vertical grid lines (every 10 samples)
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)'
+    for (let i = 0; i < GRAPH_SAMPLES; i += 10) {
+      const x = (i / (GRAPH_SAMPLES - 1)) * w
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, h)
+      ctx.stroke()
+    }
 
-    // Fill
-    ctx.beginPath()
+    // Colour based on latest ping value
+    const lastPing = pingHistory[pingHistory.length - 1]
+    const lineColor = lastPing > 200 ? '#ef4444' : lastPing > 100 ? '#f59e0b' : '#22c55e'
+
+    // Calculate step size - data scrolls from right to left
+    // Newest data is on the right, oldest on the left
     const step = w / (GRAPH_SAMPLES - 1)
+    
+    // Start drawing from the right edge for the newest data
+    // If we have less than GRAPH_SAMPLES, start from the right
+    const startIndex = Math.max(0, GRAPH_SAMPLES - pingHistory.length)
+
+    // Draw fill gradient
+    ctx.beginPath()
     pingHistory.forEach((v, i) => {
-      const x = i * step
-      const y = h - ((v - min) / (max - min)) * h
+      const x = (startIndex + i) * step
+      const y = h - ((v - min) / range) * h
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
     })
-    ctx.lineTo((pingHistory.length - 1) * step, h)
-    ctx.lineTo(0, h)
+    // Close the path for fill
+    const lastX = (startIndex + pingHistory.length - 1) * step
+    const firstX = startIndex * step
+    ctx.lineTo(lastX, h)
+    ctx.lineTo(firstX, h)
     ctx.closePath()
+    
     const grad = ctx.createLinearGradient(0, 0, 0, h)
-    grad.addColorStop(0, lineColor + '55')
+    grad.addColorStop(0, lineColor + '40')
     grad.addColorStop(1, lineColor + '00')
     ctx.fillStyle = grad
     ctx.fill()
 
-    // Line
+    // Draw the line on top
     ctx.beginPath()
     ctx.strokeStyle = lineColor
     ctx.lineWidth = 2
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
     pingHistory.forEach((v, i) => {
-      const x = i * step
-      const y = h - ((v - min) / (max - min)) * h
+      const x = (startIndex + i) * step
+      const y = h - ((v - min) / range) * h
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
     })
     ctx.stroke()
 
-    // Latest value label
-    const last = pingHistory[pingHistory.length - 1]
+    // Draw a dot at the latest point
+    const latestX = (startIndex + pingHistory.length - 1) * step
+    const latestY = h - ((lastPing - min) / range) * h
+    ctx.beginPath()
+    ctx.arc(latestX, latestY, 4, 0, Math.PI * 2)
     ctx.fillStyle = lineColor
-    ctx.font = 'bold 12px monospace'
-    ctx.fillText(`${last} ms`, w - 48, 16)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+
+    // Latest value label with background
+    const labelText = `${lastPing} ms`
+    ctx.font = 'bold 11px monospace'
+    const textWidth = ctx.measureText(labelText).width
+    const labelX = Math.min(latestX - textWidth / 2, w - textWidth - 8)
+    const labelY = Math.max(latestY - 10, 14)
+    
+    // Label background
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'
+    ctx.beginPath()
+    ctx.roundRect(labelX - 4, labelY - 11, textWidth + 8, 14, 3)
+    ctx.fill()
+    
+    // Label text
+    ctx.fillStyle = lineColor
+    ctx.fillText(labelText, labelX, labelY)
+
+    // Draw data point count indicator
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'
+    ctx.font = '9px monospace'
+    ctx.fillText(`${pingHistory.length}/${GRAPH_SAMPLES}`, 4, 12)
   }, [pingHistory])
 
   const fmt = (n) => n == null ? '—' : n
@@ -174,11 +241,11 @@ const VoiceInfoModal = ({ channel, onClose }) => {
             <canvas
               ref={canvasRef}
               width={460}
-              height={72}
-              style={{ width: '100%', height: 72, borderRadius: 8, background: 'var(--volt-bg-tertiary)', display: 'block' }}
+              height={100}
+              style={{ width: '100%', height: 100, borderRadius: 8, background: 'var(--volt-bg-tertiary)', display: 'block' }}
             />
             {pingHistory.length === 0 && (
-              <div style={{ textAlign: 'center', color: 'var(--volt-text-muted)', fontSize: 12, marginTop: -50, position: 'relative' }}>
+              <div style={{ textAlign: 'center', color: 'var(--volt-text-muted)', fontSize: 12, marginTop: -60, position: 'relative' }}>
                 Gathering stats…
               </div>
             )}

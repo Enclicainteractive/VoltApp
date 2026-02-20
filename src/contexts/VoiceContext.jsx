@@ -449,7 +449,7 @@ export const VoiceProvider = ({ children }) => {
       
       setConnectionState('connected')
       setIsConnected(true)
-      soundService.callJoin()
+      // soundService.callJoin() - removed, callConnected handles the join sound
     } catch (err) {
       console.error('[Voice] Failed to get microphone:', err)
       setConnectionState('error')
@@ -591,6 +591,7 @@ export const VoiceProvider = ({ children }) => {
   useEffect(() => {
     if (!socket || !connected) return
     
+    // FIX: Simplified connection handling - no aggressive retries
     socket.on('voice:participants', (data) => {
       if (data.channelId !== channelIdRef.current) return
       if (data.iceServers?.length) serverIceServersRef.current = data.iceServers
@@ -598,8 +599,14 @@ export const VoiceProvider = ({ children }) => {
       const peerIds = (data.participants || []).filter(p => p.id !== user.id).map(p => p.id)
       setParticipants(data.participants || [])
       
+      // Simple staggered connections without retries
       peerIds.forEach((peerId, index) => {
-        setTimeout(() => queueConnection(peerId), index * 100)
+        // Skip if already connected
+        const existing = peerConnections.current[peerId]
+        if (existing && (existing.connectionState === 'connected' || existing.connectionState === 'completed')) {
+          return
+        }
+        setTimeout(() => queueConnection(peerId), index * 100 + Math.random() * 200)
       })
     })
     
@@ -609,7 +616,12 @@ export const VoiceProvider = ({ children }) => {
         return [...prev, userInfo]
       })
       if (userInfo.id !== user.id) {
-        setTimeout(() => queueConnection(userInfo.id), 500)
+        // Skip if already connected
+        const existing = peerConnections.current[userInfo.id]
+        if (existing && (existing.connectionState === 'connected' || existing.connectionState === 'completed')) {
+          return
+        }
+        setTimeout(() => queueConnection(userInfo.id), 500 + Math.random() * 300)
       }
     })
     
@@ -631,6 +643,7 @@ export const VoiceProvider = ({ children }) => {
       }
     })
     
+    // FIX: Always process all offers - don't ignore
     socket.on('voice:offer', async (data) => {
       const { from, offer, channelId } = data
       if (channelId && channelId !== channelIdRef.current) return
@@ -639,15 +652,15 @@ export const VoiceProvider = ({ children }) => {
       const offerCollision = makingOfferRef.current[from] || pc.signalingState !== 'stable'
       const polite = isPolite(from)
       
-      ignoreOfferRef.current[from] = !polite && offerCollision
-      if (ignoreOfferRef.current[from]) return
+      // FIX: Never ignore offers - always respond to ensure connectivity
+      if (offerCollision) {
+        try {
+          await pc.setLocalDescription({ type: 'rollback' })
+        } catch {}
+        makingOfferRef.current[from] = false
+      }
       
       try {
-        if (offerCollision && polite) {
-          await pc.setLocalDescription({ type: 'rollback' })
-          makingOfferRef.current[from] = false
-        }
-        
         await pc.setRemoteDescription(new RTCSessionDescription(offer))
         remoteDescSetRef.current[from] = true
         

@@ -55,14 +55,14 @@
 
 .server-dropdown {
   position: absolute;
-  top: 100%;
+  top: 48px;
   left: 8px;
   right: 8px;
   background: var(--volt-bg-primary);
   border: 1px solid var(--volt-border);
   border-radius: 8px;
   padding: 8px;
-  z-index: 100;
+  z-index: 9999;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 

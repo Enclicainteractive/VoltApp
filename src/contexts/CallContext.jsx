@@ -38,28 +38,16 @@ export const CallProvider = ({ children }) => {
   const peerConnectionRef = useRef(null)
   const localStreamRef = useRef(null)
   const audioElementRef = useRef(null)
-  const ringtoneIntervalRef = useRef(null)
   const callTimerRef = useRef(null)
 
-  // Play ringtone on incoming call
+  // Play ringtone on incoming call - uses soundService.startRingtone() which loops
   const startRingtone = useCallback(() => {
-    if (ringtoneIntervalRef.current) return
-    
-    // Play immediately
-    soundService.callRingtone()
-    
-    // Then play every 3 seconds
-    ringtoneIntervalRef.current = setInterval(() => {
-      soundService.callRingtone()
-    }, 3000)
+    soundService.startRingtone()
   }, [])
 
-  // Stop ringtone
+  // Stop ringtone - uses soundService.stopRingtone() which stops immediately
   const stopRingtone = useCallback(() => {
-    if (ringtoneIntervalRef.current) {
-      clearInterval(ringtoneIntervalRef.current)
-      ringtoneIntervalRef.current = null
-    }
+    soundService.stopRingtone()
   }, [])
 
   // Start call timer

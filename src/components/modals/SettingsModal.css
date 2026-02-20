@@ -918,3 +918,51 @@
     right: 10px;
   }
 }
+
+/* Sound Pack Previews */
+.soundpack-previews {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--volt-border);
+}
+
+.soundpack-previews h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--volt-text-secondary);
+  margin-bottom: 12px;
+}
+
+.sound-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.sound-preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--volt-bg-tertiary);
+  border-radius: var(--border-radius-sm);
+  gap: 8px;
+}
+
+.sound-preview-label {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.btn-icon {
+  padding: 6px;
+  min-width: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

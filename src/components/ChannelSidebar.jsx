@@ -542,24 +542,24 @@ const ChannelSidebar = ({
           <button className="server-menu-btn" title="Server Settings">
             <ChevronDown size={20} style={{ transform: showServerMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
           </button>
-          
-          {showServerMenu && (
-            <div className="server-dropdown" onClick={e => e.stopPropagation()}>
-              <button onClick={() => { onOpenServerSettings?.(); setShowServerMenu(false) }}>
-                <Settings size={16} /> Server Settings
-              </button>
-              <button onClick={() => { setShowCreateModal(true); setShowServerMenu(false) }}>
-                <Plus size={16} /> Create Channel
-              </button>
-              <button onClick={() => { setShowCreateCategoryModal(true); setShowServerMenu(false) }}>
-                <Folder size={16} /> Create Category
-              </button>
-              <button onClick={() => { onInvite?.(); setShowServerMenu(false) }}>
-                <UserPlus size={16} /> Invite People
-              </button>
-            </div>
-          )}
         </div>
+        
+        {showServerMenu && (
+          <div className="server-dropdown" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { onOpenServerSettings?.(); setShowServerMenu(false) }}>
+              <Settings size={16} /> Server Settings
+            </button>
+            <button onClick={() => { setShowCreateModal(true); setShowServerMenu(false) }}>
+              <Plus size={16} /> Create Channel
+            </button>
+            <button onClick={() => { setShowCreateCategoryModal(true); setShowServerMenu(false) }}>
+              <Folder size={16} /> Create Category
+            </button>
+            <button onClick={() => { onInvite?.(); setShowServerMenu(false) }}>
+              <UserPlus size={16} /> Invite People
+            </button>
+          </div>
+        )}
 
         <div className="channel-list">
           {categoryOrder.map(categoryId => {

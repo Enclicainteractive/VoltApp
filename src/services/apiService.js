@@ -296,6 +296,7 @@ export const apiService = {
   getMutualFriends: (userId) => api.get(`/user/${userId}/mutual-friends`),
   getMutualServers: (userId) => api.get(`/user/${userId}/mutual-servers`),
   getServerEmojis: (serverId) => api.get(`/servers/${serverId}/emojis`),
+  getGlobalEmojis: () => api.get('/servers/emojis/global'),
   addServerEmoji: (serverId, name, url) => api.post(`/servers/${serverId}/emojis`, { name, url }),
   deleteServerEmoji: (serverId, emojiId) => api.delete(`/servers/${serverId}/emojis/${emojiId}`),
 

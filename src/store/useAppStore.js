@@ -14,6 +14,7 @@ export const useAppStore = create((set, get) => ({
   selfHostedServers: [],
   mainServers: getMainServers(),
   currentMainServer: getStoredServer(),
+  globalEmojis: [],
   settings: {
     theme: 'dark',
     notifications: true,
@@ -66,5 +67,13 @@ export const useAppStore = create((set, get) => ({
   addFriend: (friend) => set((state) => ({ friends: [...state.friends, friend] })),
   removeFriend: (friendId) => set((state) => ({ 
     friends: state.friends.filter(f => f.id !== friendId) 
+  })),
+  
+  setGlobalEmojis: (emojis) => set({ globalEmojis: emojis }),
+  addGlobalEmoji: (emoji) => set((state) => ({ 
+    globalEmojis: [...state.globalEmojis, emoji] 
+  })),
+  removeGlobalEmoji: (emojiId, serverId) => set((state) => ({ 
+    globalEmojis: state.globalEmojis.filter(e => !(e.id === emojiId && e.serverId === serverId))
   })),
 }))

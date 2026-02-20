@@ -29,13 +29,210 @@ class SoundService {
     this._comp  = null   // DynamicsCompressor
 
     this.enabled = true
-    this.volume  = 0.2
+    this.volume  = 0.453556436375
     this.pitchShift = 0.6
 
     this._queue          = []     // fns waiting for first gesture
     this._gestureReady   = false  // true once context is running
     this._listenerAdded  = false  // native gesture listeners registered
     this._playingSources = []     // currently playing audio sources for UI sounds
+    
+    this.soundpack = 'default'
+    this.soundpackVolume = 1
+    this._audioElements = {}
+    
+    // Ringtone loop state
+    this._ringtoneInterval = null  // Interval ID for ringtone loop
+    this._ringtonePlaying = false  // Whether ringtone is currently looping
+  }
+
+  setSoundpack(pack) {
+    this.soundpack = pack
+    this._preloadSounds(pack)
+  }
+
+  setSoundpackVolume(vol) {
+    this.soundpackVolume = Math.max(0, Math.min(1, vol / 100))
+    if (this._out) {
+      // Apply volume to all currently playing audio elements
+      Object.values(this._audioElements).forEach(audio => {
+        if (audio && !audio.paused) {
+          audio.volume = this.soundpackVolume * this.volume
+        }
+      })
+    }
+  }
+
+  _preloadSounds(pack) {
+    if (pack === 'default') return
+    
+    const sounds = this._getSoundpackSounds(pack)
+    Object.entries(sounds).forEach(([key, filename]) => {
+      if (!this._audioElements[key]) {
+        const audio = new Audio(`/sounds/classic/${filename}`)
+        audio.preload = 'auto'
+        this._audioElements[key] = audio
+      }
+    })
+  }
+
+  _getSoundpackSounds(pack) {
+    const packs = {
+      classic: {
+        ringtone: 'ring.mp3',
+        callJoin: 'noti4.mp3',
+        callConnected: 'connecting_call.mp3',
+        userJoined: 'connecting_call.mp3',
+        userLeft: 'declined_call.mp3',
+        mention: 'noti6.mp3',
+        messageReceived: 'noti7.mp3',
+        welcome: 'welcome.mp3',
+        logout: 'logout.mp3',
+        screenShareStop: 'denied1.mp3',
+        screenShareStart: 'denied2.mp3'
+      }
+    }
+    return packs[pack] || {}
+  }
+
+  _tryPlaySoundpack(soundKey) {
+    if (this.soundpack === 'default') return false
+    
+    const sounds = this._getSoundpackSounds(this.soundpack)
+    const filename = sounds[soundKey]
+    
+    if (!filename) return false
+
+    let audio = this._audioElements[soundKey]
+    if (!audio) {
+      audio = new Audio(`/sounds/classic/${filename}`)
+      audio.preload = 'auto'
+      this._audioElements[soundKey] = audio
+    }
+
+    if (audio) {
+      audio.volume = this.soundpackVolume * this.volume
+      audio.currentTime = 0
+      audio.play().catch(() => {})
+      return true
+    }
+    return false
+  }
+
+  _playSoundpackSound(soundKey) {
+    if (this.soundpack === 'default') return false
+    
+    const sounds = this._getSoundpackSounds(this.soundpack)
+    const filename = sounds[soundKey]
+    
+    if (!filename) return false
+
+    let audio = this._audioElements[soundKey]
+    if (!audio) {
+      audio = new Audio(`/sounds/classic/${filename}`)
+      audio.preload = 'auto'
+      this._audioElements[soundKey] = audio
+    }
+
+    if (audio) {
+      audio.volume = this.soundpackVolume * this.volume
+      audio.currentTime = 0
+      audio.play().catch(() => {})
+      return true
+    }
+    return false
+  }
+
+  playSound(soundKey) {
+    if (!this.enabled) return
+    
+    // If using soundpack and sound exists in pack, play from pack
+    if (this.soundpack !== 'default') {
+      if (this._playSoundpackSound(soundKey)) {
+        return
+      }
+    }
+    
+    // Fall back to default generated sound
+    const methodMap = {
+      ringtone: 'callRingtone',
+      messageReceived: 'messageReceived',
+      dmReceived: 'dmReceived',
+      mention: 'mention',
+      dmMention: 'dmMention',
+      callJoin: 'callJoin',
+      callConnected: 'callConnected',
+      callLeft: 'callLeft',
+      callEnded: 'callEnded',
+      callDeclined: 'callDeclined',
+      userJoined: 'userJoined',
+      userLeft: 'userLeft',
+      mute: 'mute',
+      unmute: 'unmute',
+      deafen: 'deafen',
+      undeafen: 'undeafen',
+      screenShareStart: 'screenShareStart',
+      screenShareStop: 'screenShareStop',
+      cameraOn: 'cameraOn',
+      cameraOff: 'cameraOff',
+      voiceKick: 'voiceKick',
+      serverJoined: 'serverJoined',
+      roleAdded: 'roleAdded',
+      roleRemoved: 'roleRemoved',
+      notification: 'notification',
+      error: 'error',
+      success: 'success',
+      typing: 'typing',
+      welcome: 'welcome',
+      logout: 'logoutSound'
+    }
+    
+    const method = methodMap[soundKey]
+    if (method && typeof this[method] === 'function') {
+      this[method]()
+    }
+  }
+
+  welcome() {
+    if (this._tryPlaySoundpack('welcome')) return
+    this._play((ctx) => {
+      const t = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 3, 3)
+      const dly = this._delay(ctx, 0.12, 0.6)
+      const rg = this._gain(ctx, 0.06)
+      const dg = this._gain(ctx, 0.5)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const notes = [261.63, 329.63, 392, 523.25]
+      notes.forEach((freq, i) => {
+        const g = this._ambient(ctx, freq, t + i * 0.12, 0.4, 0.035, 0.05)
+        g.connect(out); g.connect(dly.node); g.connect(rev)
+      })
+    })
+  }
+
+  logoutSound() {
+    if (this._tryPlaySoundpack('logout')) return
+    this._play((ctx) => {
+      const t = ctx.currentTime
+      const out = this._out
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.08, 0.4)
+      const rg = this._gain(ctx, 0.04)
+      const dg = this._gain(ctx, 0.4)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const notes = [392, 329.63, 261.63, 196]
+      notes.forEach((freq, i) => {
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.025, 0.02)
+        g.connect(out); g.connect(dly.node); g.connect(rev)
+      })
+    })
+  }
+
+  previewSound(soundKey) {
+    this.playSound(soundKey)
   }
 
   _playUISound(freq, dur) {
@@ -62,6 +259,43 @@ class SoundService {
 
   init() {
     this._addGestureListeners()
+    
+    // Load soundpack settings
+    this._loadSoundpackSettings()
+    
+    // Subscribe to settings changes
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key === 'voltchat_settings' && e.newValue) {
+          try {
+            const settings = JSON.parse(e.newValue)
+            if (settings.soundpack && settings.soundpack !== this.soundpack) {
+              this.setSoundpack(settings.soundpack)
+            }
+            if (settings.soundpackVolume !== undefined) {
+              this.setSoundpackVolume(settings.soundpackVolume)
+            }
+          } catch (e) {}
+        }
+      })
+    }
+  }
+
+  _loadSoundpackSettings() {
+    try {
+      const saved = localStorage.getItem('voltchat_settings')
+      if (saved) {
+        const settings = JSON.parse(saved)
+        if (settings.soundpack && settings.soundpack !== 'default') {
+          this.setSoundpack(settings.soundpack)
+        }
+        if (settings.soundpackVolume !== undefined) {
+          this.setSoundpackVolume(settings.soundpackVolume)
+        }
+      }
+    } catch (e) {
+      console.error('[Sound] Error loading soundpack settings:', e)
+    }
   }
 
   // ─── Private: native-event gesture listeners ─────────────────────────────
@@ -329,6 +563,7 @@ class SoundService {
   // ─── Sound methods ────────────────────────────────────────────────────────
 
   messageReceived() {
+    if (this._tryPlaySoundpack('messageReceived')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -347,6 +582,7 @@ class SoundService {
   }
 
   dmReceived() {
+    if (this._tryPlaySoundpack('messageReceived')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -365,6 +601,7 @@ class SoundService {
   }
 
   mention() {
+    if (this._tryPlaySoundpack('mention')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -383,6 +620,7 @@ class SoundService {
   }
 
   dmMention() {
+    if (this._tryPlaySoundpack('mention')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -401,6 +639,7 @@ class SoundService {
   }
 
   callJoin() {
+    if (this._tryPlaySoundpack('callJoin')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -419,6 +658,7 @@ class SoundService {
   }
 
   callConnected() {
+    if (this._tryPlaySoundpack('callConnected')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -437,6 +677,7 @@ class SoundService {
   }
 
   callLeft() {
+    if (this._tryPlaySoundpack('userLeft')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -491,6 +732,7 @@ class SoundService {
   }
 
   userJoined() {
+    if (this._tryPlaySoundpack('userJoined')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -509,6 +751,7 @@ class SoundService {
   }
 
   userLeft() {
+    if (this._tryPlaySoundpack('userLeft')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -527,6 +770,7 @@ class SoundService {
   }
 
   mute() {
+    if (this._tryPlaySoundpack('mute')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -545,6 +789,7 @@ class SoundService {
   }
 
   unmute() {
+    if (this._tryPlaySoundpack('unmute')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -563,6 +808,7 @@ class SoundService {
   }
 
   deafen() {
+    if (this._tryPlaySoundpack('deafen')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -581,6 +827,7 @@ class SoundService {
   }
 
   undeafen() {
+    if (this._tryPlaySoundpack('undeafen')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -599,6 +846,7 @@ class SoundService {
   }
 
   screenShareStart() {
+    if (this._tryPlaySoundpack('screenShareStart')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -617,6 +865,7 @@ class SoundService {
   }
 
   screenShareStop() {
+    if (this._tryPlaySoundpack('screenShareStop')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -635,6 +884,7 @@ class SoundService {
   }
 
   cameraOn() {
+    if (this._tryPlaySoundpack('screenShareStart')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -653,6 +903,7 @@ class SoundService {
   }
 
   cameraOff() {
+    if (this._tryPlaySoundpack('screenShareStop')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -671,6 +922,7 @@ class SoundService {
   }
 
   voiceKick() {
+    if (this._tryPlaySoundpack('userLeft')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -689,6 +941,7 @@ class SoundService {
   }
 
   callConnected() {
+    if (this._tryPlaySoundpack('callConnected')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -707,6 +960,7 @@ class SoundService {
   }
 
   callLeft() {
+    if (this._tryPlaySoundpack('userLeft')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -725,6 +979,7 @@ class SoundService {
   }
 
   callEnded() {
+    if (this._tryPlaySoundpack('userLeft')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -743,6 +998,7 @@ class SoundService {
   }
 
   callDeclined() {
+    if (this._tryPlaySoundpack('userLeft')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
@@ -760,9 +1016,44 @@ class SoundService {
     })
   }
 
+  // ─── Ringtone Loop Control ────────────────────────────────────────────────
+  // Start repeating ringtone - plays until stopRingtone() is called
+  // Call this when an incoming call arrives
+  startRingtone() {
+    if (this._ringtonePlaying) return  // Already playing
+    this._ringtonePlaying = true
+    
+    // Play immediately
+    this.callRingtone()
+    
+    // Calculate ringtone duration (8 notes * (0.25 + 0.08) = 2.64s, plus some buffer)
+    const ringtoneDuration = 3000  // 3 seconds
+    
+    // Set up interval to repeat
+    this._ringtoneInterval = setInterval(() => {
+      if (this._ringtonePlaying) {
+        this.callRingtone()
+      }
+    }, ringtoneDuration)
+  }
+
+  // Stop the ringtone loop - call when call is accepted, declined, or cancelled
+  stopRingtone() {
+    this._ringtonePlaying = false
+    
+    if (this._ringtoneInterval) {
+      clearInterval(this._ringtoneInterval)
+      this._ringtoneInterval = null
+    }
+    
+    // Also stop any currently playing sounds
+    this._stopCurrentSounds()
+  }
+
   // 8-note ambient melodic ringtone - pentatonic scale with effects
   // Notes: C5, D5, E5, G5, A5, C6, D6, E6 (pentatonic - naturally melodic)
   callRingtone() {
+    if (this._tryPlaySoundpack('ringtone')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out

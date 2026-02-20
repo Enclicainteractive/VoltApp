@@ -330,6 +330,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
   }
 
   const handleKeyDown = (e) => {
+    // Only handle mention suggestions when they're shown
     if (showMentionSuggestions && mentionSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -354,10 +355,13 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
       }
     }
     
+    // Only prevent default for plain Enter (not Shift+Enter)
+    // Shift+Enter should be handled by the contentEditable to insert a newline
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
     }
+    // For Shift+Enter, do nothing - let the browser handle the newline insertion
   }
 
   const handleEmojiSelect = (emoji) => {
@@ -366,7 +370,12 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     } else if (emoji.type === 'gif') {
       setInputValue(prev => prev + `[GIF: ${emoji.url}]`)
     } else if (emoji.type === 'custom') {
-      setInputValue(prev => prev + `:${emoji.name}:`)
+      // Insert global emoji format: :host|serverId|emojiId|name:
+      // This ensures the emoji displays correctly everywhere (DMs, other servers, etc.)
+      const emojiFormat = emoji.host && emoji.serverId && emoji.id
+        ? `:${emoji.host}|${emoji.serverId}|${emoji.id}|${emoji.name}:`
+        : `:${emoji.name}:`
+      setInputValue(prev => prev + emojiFormat)
     }
     // inputRef is now a forwarded ref object with a .focus() helper
     requestAnimationFrame(() => inputRef.current?.focus?.())

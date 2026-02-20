@@ -17,17 +17,17 @@ const EMBED_PATTERNS = {
   reddit: /reddit\.com\/r\/([a-zA-Z0-9_]+)\/comments\/([a-zA-Z0-9]+)/,
   github_repo: /github\.com\/([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)\/?$/,
   github_gist: /gist\.github\.com\/([a-zA-Z0-9_.-]+\/[a-zA-Z0-9]+)/,
-  codepen: /codepen\.io\/([a-zA-Z0-9_-]+)\/(?:pen|full)\/([a-zA-Z0-9]+)/,
-  tiktok: /tiktok\.com\/@([a-zA-Z0-9_.]+)\/video\/(\d+)/,
-  imgur: /imgur\.com\/(?:a\/|gallery\/)?([a-zA-Z0-9]+)/,
-  steam: /store\.steampowered\.com\/app\/(\d+)/,
-  tenor: /tenor\.com\/view\/[a-zA-Z0-9_-]+-(\d+)/,
-  giphy: /giphy\.com\/gifs\/(?:[a-zA-Z0-9-]+-)*([a-zA-Z0-9]+)/,
+  codepen: /codepen\.io\/[a-zA-Z0-9_-]+\/(?:pen|full)\/[a-zA-Z0-9]+/,
+  tiktok: /tiktok\.com\/@[a-zA-Z0-9_.]+\/video\/\d+/,
+  imgur: /imgur\.com\/(?:a\/|gallery\/)?[a-zA-Z0-9]+/,
+  steam: /store\.steampowered\.com\/app\/\d+/,
+  tenor: /tenor\.com\/view\/[a-zA-Z0-9_-]+-\d+/,
+  giphy: /giphy\.com\/gifs\/[a-zA-Z0-9-]+/,
   // Age-restricted embeds (require age verification)
   e621: /e621\.net\/posts\/(\d+)/,
   furaffinity: /furaffinity\.net\/(?:view|full)\/(\d+)/,
   // fxfuraffinity - direct image embed service (replaces furaffinity.net with fxfuraffinity.net)
-  fxfuraffinity: /fxfuraffinity\.net\/view\/(\d+)/,
+  fxfuraffinity: /(?:www\.)?fxfuraffinity\.net\/view\/(\d+)/,
 }
 
 // Patterns that require age verification

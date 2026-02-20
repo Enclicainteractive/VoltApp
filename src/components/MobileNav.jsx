@@ -10,7 +10,8 @@ const MobileNav = ({
   friendRequestCount = 0,
   dmNotifications = 0,
   serverUnreadCounts = {},
-  servers = []
+  servers = [],
+  onDMClick
 }) => {
   const totalNotifications = friendRequestCount + dmNotifications + 
     Object.values(serverUnreadCounts).reduce((a, b) => a + b, 0)

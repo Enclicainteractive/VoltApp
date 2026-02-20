@@ -16,7 +16,9 @@ const defaultSettings = {
   noiseSuppression: true,
   echoCancellation: true,
   autoGainControl: true,
-  serverMutes: {}
+  serverMutes: {},
+  soundpack: 'default',
+  soundpackVolume: 100
 }
 
 // Simple event emitter so components can react to live settings changes

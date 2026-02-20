@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react'
 import InviteEmbed from './InviteEmbed'
 import LinkEmbed, { extractEmbedUrls, AGE_RESTRICTED_EMBEDS } from './LinkEmbed'
 import { useAuth } from '../contexts/AuthContext'
+import { useAppStore } from '../store/useAppStore'
 import '../assets/styles/MarkdownMessage.css'
 
 // ─── Language map for syntax highlighting labels ───────────────────────────
@@ -117,7 +118,7 @@ function parseInline(text, key = 0, mentionProps = {}) {
     // spoiler ||text||
     { re: /\|\|(.+?)\|\|/, type: 'spoiler' },
     // @mention — supports @username:host (federated) and @username (local/special)
-    { re: /(@(?:everyone|here|[a-zA-Z0-9_\-.]+(?::[a-zA-Z0-9_\-.]+)?))/, type: 'mention' },
+    { re: /@(?:everyone|here|[a-zA-Z0-9_.:-]+)/, type: 'mention' },
     // URL
     { re: /(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])/, type: 'url' },
   ]
@@ -477,9 +478,15 @@ function renderCustomEmojis(text, serverEmojis) {
 
 const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionClick, serverEmojis }) => {
   const { user } = useAuth()
+  const globalEmojis = useAppStore(state => state.globalEmojis)
   const isAgeVerified = user?.ageVerification?.verified && user?.ageVerification?.category === 'adult'
   
   if (!content) return null
+
+  // Combine server emojis with global emojis - server emojis take priority
+  const allEmojis = serverEmojis?.length > 0 
+    ? [...serverEmojis, ...globalEmojis.filter(g => !serverEmojis.some(s => s.name === g.name))]
+    : globalEmojis
 
   const mentionProps = { currentUserId, mentions, members, onMentionClick }
   const invites = extractInvites(content)
@@ -490,13 +497,13 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
 
   // Helper to render a text segment with custom emojis
   const renderTextSegment = (text, key) => {
-    if (!serverEmojis || serverEmojis.length === 0) {
+    if (!allEmojis || allEmojis.length === 0) {
       return <span key={key}>{parseBlocks(text, mentionProps)}</span>
     }
     // First parse blocks (markdown), then replace custom emojis in the result
     const parsed = parseBlocks(text, mentionProps)
     // We need to walk the parsed output and replace :emoji: in string nodes
-    const withEmojis = replaceInReactTree(parsed, serverEmojis)
+    const withEmojis = replaceInReactTree(parsed, allEmojis)
     return <span key={key}>{withEmojis}</span>
   }
 
@@ -513,8 +520,8 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
           )}
         </>
       ) : (
-        serverEmojis && serverEmojis.length > 0
-          ? replaceInReactTree(parseBlocks(content, mentionProps), serverEmojis)
+        allEmojis && allEmojis.length > 0
+          ? replaceInReactTree(parseBlocks(content, mentionProps), allEmojis)
           : parseBlocks(content, mentionProps)
       )}
       {invites.map(({ code, url }) => (
@@ -535,14 +542,24 @@ function replaceInReactTree(nodes, serverEmojis) {
   if (!serverEmojis || serverEmojis.length === 0) return nodes
   if (!Array.isArray(nodes)) nodes = [nodes]
   
+  // Build emoji map from both name and id for global format lookup
   const emojiMap = {}
-  serverEmojis.forEach(e => { emojiMap[e.name] = e.url })
+  const emojiIdMap = {} // emojiId -> { url, name, host, serverId }
+  serverEmojis.forEach(e => { 
+    emojiMap[e.name] = e.url
+    if (e.id) {
+      emojiIdMap[e.id] = { url: e.url, name: e.name, host: e.host, serverId: e.serverId }
+    }
+  })
   const emojiNames = Object.keys(emojiMap)
   if (emojiNames.length === 0) return nodes
   
-  // Build a regex that matches any known server emoji name
+  // Build a regex that matches any known server emoji name OR global format
+  // Global format: :host|serverId|emojiId|name:
   const escapedNames = emojiNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const re = new RegExp(`:(?:${escapedNames.join('|')}):`, 'g')
+  // Match either local emoji names OR global format (host|serverId|emojiId|name)
+  const globalEmojiPattern = '([^|]+)\\|([^|]+)\\|([^|]+)\\|([^:]+)'
+  const re = new RegExp(`:(?:${escapedNames.join('|')}|${globalEmojiPattern}):`, 'g')
   
   let keyCounter = 0
   
@@ -555,17 +572,51 @@ function replaceInReactTree(nodes, serverEmojis) {
       let last = 0
       let m
       while ((m = re.exec(node)) !== null) {
-        const name = m[0].slice(1, -1) // Remove colons
-        const url = emojiMap[name]
-        if (!url) continue
+        // Check if it's global format (has pipe separators)
+        const matchContent = m[0].slice(1, -1) // Remove colons
+        let url = null
+        let name = matchContent
+        let tooltip = `:${matchContent}:`
+        
+        if (matchContent.includes('|')) {
+          // Global format: host|serverId|emojiId|name
+          const parts = matchContent.split('|')
+          if (parts.length >= 4) {
+            const [host, serverId, emojiId, emojiName] = parts
+            // Look up by ID first, then by name
+            const emojiData = emojiIdMap[emojiId] || { url: emojiMap[emojiName], name: emojiName }
+            if (emojiData?.url) {
+              url = emojiData.url
+              name = emojiData.name || emojiName
+              tooltip = `:${emojiName}: (${serverId})`
+            } else {
+              // Emoji not found locally - might be from another server
+              // Try to construct URL or show placeholder
+              url = null
+            }
+          }
+        } else {
+          // Local format: just emoji name
+          url = emojiMap[matchContent]
+          name = matchContent
+          tooltip = `:${name}:`
+        }
+        
+        if (!url) {
+          // Emoji not found - keep the original text
+          if (m.index > last) parts.push(node.slice(last, m.index))
+          parts.push(m[0])
+          last = m.index + m[0].length
+          continue
+        }
         
         if (m.index > last) parts.push(node.slice(last, m.index))
         parts.push(
           <img
             key={`ce-${keyCounter++}`}
             src={url}
-            alt={`:${name}:`}
-            title={`:${name}:`}
+            alt={tooltip}
+            title={tooltip}
             className="custom-emoji-inline"
             style={{ width: '1.375em', height: '1.375em', verticalAlign: 'bottom', margin: '0 1px', display: 'inline-block', objectFit: 'contain' }}
             loading="lazy"

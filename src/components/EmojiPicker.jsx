@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, X, Loader, Heart, Star } from 'lucide-react'
+import { useAppStore } from '../store/useAppStore'
 import '../assets/styles/EmojiPicker.css'
 
 const TENOR_API_KEY = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ'
@@ -23,7 +24,13 @@ function saveFavs(favs) {
 }
 
 const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) => {
-  const [activeTab, setActiveTab] = useState(serverEmojis.length > 0 ? 'server' : 'emoji')
+  const globalEmojis = useAppStore(state => state.globalEmojis)
+  // Combine server emojis with global emojis - server emojis shown first
+  const allEmojis = serverEmojis?.length > 0 
+    ? [...serverEmojis, ...globalEmojis.filter(g => !serverEmojis.some(s => s.name === g.name))]
+    : globalEmojis
+    
+  const [activeTab, setActiveTab] = useState(allEmojis?.length > 0 ? 'server' : 'emoji')
   const [searchQuery, setSearchQuery] = useState('')
   const [gifs, setGifs] = useState([])
   const [gifNext, setGifNext] = useState(null)   // Tenor next pos token
@@ -107,7 +114,15 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
   }
 
   const handleServerEmojiSelect = (emoji) => {
-    onSelect({ type: 'custom', url: emoji.url, name: emoji.name })
+    // Pass all emoji data including host, serverId, id for global format
+    onSelect({ 
+      type: 'custom', 
+      url: emoji.url, 
+      name: emoji.name,
+      host: emoji.host,
+      serverId: emoji.serverId,
+      id: emoji.id
+    })
     onClose?.()
   }
 
@@ -145,7 +160,7 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
       <div className="emoji-picker-header">
         <div className="emoji-tabs">
           <button className={`emoji-tab ${activeTab === 'emoji' ? 'active' : ''}`} onClick={() => setActiveTab('emoji')}>😀</button>
-          {serverEmojis.length > 0 && (
+          {allEmojis?.length > 0 && (
             <button className={`emoji-tab ${activeTab === 'server' ? 'active' : ''}`} onClick={() => setActiveTab('server')}>🤖</button>
           )}
           {showGifs && (
@@ -215,12 +230,12 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
           <div className="emoji-section">
             <h4>Server Emojis</h4>
             <div className="emoji-grid server-emojis">
-              {serverEmojis.map((emoji, i) => (
-                <button key={i} className="emoji-btn server-emoji-btn" onClick={() => handleServerEmojiSelect(emoji)} title={emoji.name}>
+              {allEmojis?.map((emoji, i) => (
+                <button key={i} className="emoji-btn server-emoji-btn" onClick={() => handleServerEmojiSelect(emoji)} title={emoji.serverName ? `${emoji.name} (${emoji.serverName})` : emoji.name}>
                   <img src={emoji.url} alt={emoji.name} />
                 </button>
               ))}
-              {serverEmojis.length === 0 && <div className="no-emoji">No server emojis</div>}
+              {(!allEmojis || allEmojis.length === 0) && <div className="no-emoji">No server emojis</div>}
             </div>
           </div>
         )}

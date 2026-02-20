@@ -4,6 +4,7 @@ import { Users, Check, X, Loader2, Globe, Link2 } from 'lucide-react'
 import { apiService } from '../services/apiService'
 import { getStoredServer } from '../services/serverConfig'
 import { useAuth } from '../contexts/AuthContext'
+import { useAppStore } from '../store/useAppStore'
 import '../assets/styles/InvitePage.css'
 
 const InvitePage = () => {
@@ -11,6 +12,7 @@ const InvitePage = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { isAuthenticated, loading: authLoading } = useAuth()
+  const addServer = useAppStore(state => state.addServer)
   const [invite, setInvite] = useState(null)
   const [inviteType, setInviteType] = useState(null) // 'local' | 'cross-host' | 'external'
   const [loading, setLoading] = useState(true)
@@ -121,9 +123,14 @@ const InvitePage = () => {
 
       setJoined(true)
       const serverId = res?.data?.id
-      setTimeout(() => {
-        navigate(serverId ? `/chat/${serverId}` : '/chat')
-      }, 1500)
+      
+      // Add the new server to the global store so it shows in the sidebar
+      if (res?.data) {
+        addServer(res.data)
+      }
+      
+      // Navigate immediately - ChatPage will load fresh server list
+      navigate(serverId ? `/chat/${serverId}` : '/chat')
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to join server')
       setJoining(false)
