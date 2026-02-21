@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import { X, Folder, Trash2 } from 'lucide-react'
 import { apiService } from '../../services/apiService'
+import { useTranslation } from '../../hooks/useTranslation'
 import './Modal.css'
 
 const CategorySettingsModal = ({ category, onClose, onUpdate, onDelete }) => {
+  const { t } = useTranslation()
   const [categoryData, setCategoryData] = useState({
     name: category?.name || ''
   })
@@ -40,7 +42,7 @@ const CategorySettingsModal = ({ category, onClose, onUpdate, onDelete }) => {
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <Folder size={24} />
-            <h2>Category Settings</h2>
+            <h2>{t('serverSettings.categories')}</h2>
           </div>
           <button className="modal-close" onClick={onClose}>
             <X size={24} />
@@ -49,7 +51,7 @@ const CategorySettingsModal = ({ category, onClose, onUpdate, onDelete }) => {
 
         <div className="modal-body">
           <div className="form-group">
-            <label>Category Name</label>
+            <label>{t('modals.categoryName')}</label>
             <div className="category-name-input">
               <Folder size={18} />
               <input

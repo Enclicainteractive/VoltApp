@@ -731,6 +731,109 @@
   padding: 4px 0;
 }
 
+.migration-install-btn {
+  margin-top: 10px;
+}
+
+.operations-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ops-issues-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ops-card {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.ops-card h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--volt-text-primary);
+}
+
+.ops-line {
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.ops-line:last-child {
+  margin-bottom: 0;
+}
+
+.ops-line.error {
+  color: var(--volt-danger);
+}
+
+.ops-line.warning {
+  color: #fbbf24;
+}
+
+.ops-line.muted {
+  color: var(--volt-text-muted);
+}
+
+.ops-logs-wrap h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--volt-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ops-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ops-log-item {
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  background: var(--volt-bg-secondary);
+  overflow: hidden;
+}
+
+.ops-log-item summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--volt-text-primary);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+}
+
+.ops-log-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.ops-log-item pre {
+  margin: 0;
+  padding: 12px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.45;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: var(--volt-text-secondary);
+  background: rgba(0, 0, 0, 0.22);
+}
+
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -771,6 +874,10 @@
   }
 
   .config-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-issues-grid {
     grid-template-columns: 1fr;
   }
 }

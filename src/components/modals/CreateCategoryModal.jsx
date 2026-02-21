@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import { X, Folder } from 'lucide-react'
 import { apiService } from '../../services/apiService'
+import { useTranslation } from '../../hooks/useTranslation'
 import './Modal.css'
 
 const CreateCategoryModal = ({ serverId, onClose, onSuccess }) => {
+  const { t } = useTranslation()
   const [categoryName, setCategoryName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -12,7 +14,7 @@ const CreateCategoryModal = ({ serverId, onClose, onSuccess }) => {
     e.preventDefault()
     
     if (!categoryName.trim()) {
-      setError('Category name is required')
+      setError(t('modals.categoryNameRequired') || t('errors.invalidInput'))
       return
     }
 
@@ -25,7 +27,7 @@ const CreateCategoryModal = ({ serverId, onClose, onSuccess }) => {
       })
       onSuccess()
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create category')
+      setError(err.response?.data?.error || t('errors.generic'))
     } finally {
       setLoading(false)
     }
@@ -35,7 +37,7 @@ const CreateCategoryModal = ({ serverId, onClose, onSuccess }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Create Category</h2>
+          <h2>{t('modals.createCategory')}</h2>
           <button className="modal-close" onClick={onClose}>
             <X size={24} />
           </button>
@@ -44,13 +46,13 @@ const CreateCategoryModal = ({ serverId, onClose, onSuccess }) => {
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             <div className="form-group">
-              <label>Category Name</label>
+              <label>{t('modals.categoryName')}</label>
               <div className="category-name-input">
                 <Folder size={18} />
                 <input
                   type="text"
                   className="input"
-                  placeholder="New Category"
+                  placeholder={t('modals.categoryNamePlaceholder')}
                   value={categoryName}
                   onChange={e => setCategoryName(e.target.value)}
                   autoFocus
@@ -66,10 +68,10 @@ const CreateCategoryModal = ({ serverId, onClose, onSuccess }) => {
 
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn-primary" disabled={loading || !categoryName.trim()}>
-              {loading ? 'Creating...' : 'Create Category'}
+              {loading ? t('common.loading') : t('modals.createCategory')}
             </button>
           </div>
         </form>

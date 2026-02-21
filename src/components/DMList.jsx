@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Users, Plus, X, Search, Copy, Trash2, Bell } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { apiService } from '../services/apiService'
 import { useSocket } from '../contexts/SocketContext'
@@ -10,6 +11,7 @@ import '../assets/styles/DMList.css'
 import '../assets/styles/SystemMessagePanel.css'
 
 const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onOpenSystemInbox }) => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const { socket, connected, systemUnreadCount } = useSocket()
@@ -19,6 +21,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
   const [showNewDM, setShowNewDM] = useState(false)
   const [searchUsers, setSearchUsers] = useState([])
   const [searching, setSearching] = useState(false)
+  const [selectedUserIds, setSelectedUserIds] = useState([])
   const [contextMenu, setContextMenu] = useState(null)
 
   useEffect(() => {
@@ -105,6 +108,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
     try {
       const res = await apiService.searchDMUsers(query)
       setSearchUsers(res.data)
+      setSelectedUserIds([])
     } catch (err) {
       console.error('Failed to search users:', err)
     }
@@ -117,6 +121,37 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
       setShowNewDM(false)
       setSearchQuery('')
       setSearchUsers([])
+      loadConversations()
+      onSelectConversation?.(res.data)
+    } catch (err) {
+      console.error('Failed to start conversation:', err)
+    }
+  }
+
+  const toggleSelectedUser = (userId) => {
+    setSelectedUserIds(prev => (
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    ))
+  }
+
+  const handleCreateSelectedConversation = async () => {
+    if (selectedUserIds.length === 0) return
+    try {
+      let res
+      if (selectedUserIds.length === 1) {
+        res = await apiService.createDirectMessage(selectedUserIds[0])
+      } else {
+        const baseName = selectedUserIds
+          .map(id => searchUsers.find(u => u.id === id)?.displayName || searchUsers.find(u => u.id === id)?.username)
+          .filter(Boolean)
+          .slice(0, 3)
+          .join(', ')
+        res = await apiService.createGroupDirectMessage(selectedUserIds, baseName)
+      }
+      setShowNewDM(false)
+      setSearchQuery('')
+      setSearchUsers([])
+      setSelectedUserIds([])
       loadConversations()
       onSelectConversation?.(res.data)
     } catch (err) {
@@ -137,10 +172,17 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
     }
   }
 
-  const filteredConversations = conversations.filter(conv => 
-    conv.recipient?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    conv.recipient?.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredConversations = conversations.filter(conv => {
+    const q = searchQuery.toLowerCase()
+    const title = (conv.title || conv.groupName || '').toLowerCase()
+    const recipientMatch =
+      (conv.recipient?.username || '').toLowerCase().includes(q) ||
+      (conv.recipient?.displayName || '').toLowerCase().includes(q)
+    const recipientsMatch = (conv.recipients || []).some(r =>
+      (r.username || '').toLowerCase().includes(q) || (r.displayName || '').toLowerCase().includes(q)
+    )
+    return title.includes(q) || recipientMatch || recipientsMatch
+  })
 
   return (
     <div className="dm-list">
@@ -149,7 +191,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
           <Search size={16} className="search-icon" />
           <input 
             type="text" 
-            placeholder="Find or start a conversation"
+            placeholder={t('dm.selectDm')}
             className="input"
             value={searchQuery}
             onChange={e => handleSearchUsers(e.target.value)}
@@ -163,26 +205,26 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
           onClick={() => navigate('/chat/friends')}
         >
           <Users size={24} />
-          <span>Friends</span>
+          <span>{t('friends.title')}</span>
         </button>
 
         <button
           className={`dm-item nav-item sysmsg-sidebar-entry`}
           onClick={onOpenSystemInbox}
-          title="System Inbox"
+          title={t('system.systemInbox')}
         >
           <div className="sysmsg-sidebar-icon">
             <Bell size={18} />
           </div>
-          <span>System Inbox</span>
+          <span>{t('system.systemInbox')}</span>
           {systemUnreadCount > 0 && (
             <span className="sysmsg-sidebar-badge">{systemUnreadCount > 99 ? '99+' : systemUnreadCount}</span>
           )}
         </button>
 
         <div className="dm-section-header">
-          <span>DIRECT MESSAGES</span>
-          <button className="dm-add-btn" onClick={() => setShowNewDM(!showNewDM)} title="New DM">
+          <span>{t('dm.title').toUpperCase()}</span>
+          <button className="dm-add-btn" onClick={() => setShowNewDM(!showNewDM)} title={t('dm.newMessage')}>
             {showNewDM ? <X size={16} /> : <Plus size={16} />}
           </button>
         </div>
@@ -191,20 +233,20 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
           <div className="new-dm-section">
             <input
               type="text"
-              placeholder="Search for a user..."
+              placeholder={t('search.searchPlaceholder')}
               className="input"
               value={searchQuery}
               onChange={e => handleSearchUsers(e.target.value)}
               autoFocus
             />
-            {searching && <div className="dm-loading-small">Searching...</div>}
+            {searching && <div className="dm-loading-small">{t('common.search')}</div>}
             {searchUsers.length > 0 && (
               <div className="search-results">
                 {searchUsers.map(user => (
                   <button 
                     key={user.id} 
-                    className="search-result-item"
-                    onClick={() => handleStartConversation(user.id)}
+                    className={`search-result-item ${selectedUserIds.includes(user.id) ? 'selected' : ''}`}
+                    onClick={() => toggleSelectedUser(user.id)}
                   >
                     <Avatar
                       src={user.avatar}
@@ -216,21 +258,40 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                 ))}
               </div>
             )}
+            {selectedUserIds.length > 0 && (
+              <button
+                className="dm-create-group-btn"
+                onClick={handleCreateSelectedConversation}
+              >
+                {selectedUserIds.length === 1
+                  ? t('dm.newMessage', 'New Message')
+                  : `Create Group DM (${selectedUserIds.length})`}
+              </button>
+            )}
             {searchQuery.length >= 2 && searchUsers.length === 0 && !searching && (
-              <div className="no-results">No users found</div>
+              <div className="no-results">{t('common.noResults')}</div>
             )}
           </div>
         )}
 
         {loading ? (
-              <div className="dm-loading">Loading...</div>
+              <div className="dm-loading">{t('common.loading')}</div>
             ) : filteredConversations.length === 0 ? (
               <div className="empty-dms">
-                {searchQuery ? 'No conversations found' : 'No direct messages yet'}
+                {searchQuery ? 'No conversations found' : t('dm.chooseConversation')}
               </div>
             ) : (
               <div className="dm-conversations">
-                {filteredConversations.map(conv => (
+                {filteredConversations.map(conv => {
+                    const isGroup = !!conv.isGroup || (conv.recipients?.length > 1)
+                    const convTitle = isGroup
+                      ? (conv.groupName || conv.title || (conv.recipients || []).map(r => r.displayName || r.username).slice(0, 3).join(', ') || 'Group DM')
+                      : (conv.recipient?.displayName || conv.recipient?.username)
+                    const convStatus = isGroup
+                      ? `${(conv.recipients || []).length} members`
+                      : conv.recipient?.customStatus
+                    const copyId = isGroup ? conv.id : conv.recipient?.id
+                    return (
                   <button 
                     key={conv.id}
                     className={`dm-conversation ${selectedConversation?.id === conv.id ? 'active' : ''}`}
@@ -240,7 +301,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                       const items = [
                         {
                           icon: <X size={16} />,
-                          label: 'Close DM',
+                          label: t('modals.close'),
                           onClick: () => {
                             if (onClose) onClose(conv.id)
                             setConversations(prev => prev.filter(c => c.id !== conv.id))
@@ -249,8 +310,8 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                         { type: 'separator' },
                         {
                           icon: <Copy size={16} />,
-                          label: 'Copy User ID',
-                          onClick: () => navigator.clipboard.writeText(conv.recipient?.id)
+                          label: isGroup ? t('common.copy', 'Copy conversation id') : t('account.userId'),
+                          onClick: () => copyId && navigator.clipboard.writeText(copyId)
                         },
                       ]
                       setContextMenu({ x: e.clientX, y: e.clientY, items })
@@ -258,21 +319,23 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                   >
                     <div className="dm-avatar-wrapper">
                       <Avatar
-                        src={conv.recipient?.avatar}
-                        fallback={conv.recipient?.username}
+                        src={isGroup ? null : conv.recipient?.avatar}
+                        fallback={isGroup ? convTitle : conv.recipient?.username}
                         size={32}
                       />
-                      <span 
-                        className="dm-status-dot"
-                        style={{ backgroundColor: getStatusColor(conv.recipient?.status) }}
-                      />
+                      {!isGroup && (
+                        <span 
+                          className="dm-status-dot"
+                          style={{ backgroundColor: getStatusColor(conv.recipient?.status) }}
+                        />
+                      )}
                     </div>
                     <div className="dm-conv-info">
                       <span className="dm-conv-name">
-                        {conv.recipient?.displayName || conv.recipient?.username}
+                        {convTitle}
                       </span>
-                      {conv.recipient?.customStatus && (
-                        <span className="dm-conv-status">{conv.recipient.customStatus}</span>
+                      {convStatus && (
+                        <span className="dm-conv-status">{convStatus}</span>
                       )}
                     </div>
                     <button 
@@ -288,7 +351,8 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                       <X size={14} />
                     </button>
                   </button>
-                ))}
+                    )
+                })}
               </div>
             )}
       </div>

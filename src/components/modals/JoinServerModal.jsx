@@ -2,10 +2,12 @@ import React, { useState } from 'react'
 import { X, Link, ArrowRight } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import { soundService } from '../../services/soundService'
+import { useTranslation } from '../../hooks/useTranslation'
 import './Modal.css'
 import './JoinServerModal.css'
 
 const JoinServerModal = ({ onClose, onSuccess }) => {
+  const { t } = useTranslation()
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -23,7 +25,7 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
     
     const code = extractInviteCode(inviteCode)
     if (!code) {
-      setError('Please enter an invite link or code')
+      setError(t('modals.invalidInvite'))
       return
     }
 
@@ -36,7 +38,7 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
       onSuccess?.(res.data)
       onClose()
     } catch (err) {
-      setError(err.response?.data?.error || 'Invalid invite or server not found')
+      setError(err.response?.data?.error || t('modals.invalidInviteError'))
     } finally {
       setLoading(false)
     }
@@ -46,7 +48,7 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content join-server-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Join a Server</h2>
+          <h2>{t('modals.joinServer')}</h2>
           <button className="modal-close" onClick={onClose}>
             <X size={24} />
           </button>
@@ -59,21 +61,21 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
             </div>
             
             <p className="join-description">
-              Enter an invite link or code to join an existing server
+              {t('modals.enterInvite')}
             </p>
 
             <div className="form-group">
-              <label>Invite Link</label>
+              <label>{t('modals.inviteLink')}</label>
               <input
                 type="text"
                 className="input"
-                placeholder="https://volt.voltagechat.app/invite/ABC123 or ABC123"
+                placeholder={t('modals.invitePlaceholder')}
                 value={inviteCode}
                 onChange={e => setInviteCode(e.target.value)}
                 autoFocus
               />
               <span className="input-hint">
-                Invites look like: volt.voltagechat.app/invite/hTKzmak or hTKzmak
+                {t('modals.inviteHint')}
               </span>
             </div>
 
@@ -82,14 +84,14 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
 
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button 
               type="submit" 
               className="btn btn-primary"
               disabled={loading || !inviteCode.trim()}
             >
-              {loading ? 'Joining...' : <>Join Server <ArrowRight size={16} /></>}
+              {loading ? t('common.loading') : <>{t('modals.joinServerBtn')} <ArrowRight size={16} /></>}
             </button>
           </div>
         </form>

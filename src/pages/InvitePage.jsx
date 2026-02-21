@@ -5,6 +5,7 @@ import { apiService } from '../services/apiService'
 import { getStoredServer } from '../services/serverConfig'
 import { useAuth } from '../contexts/AuthContext'
 import { useAppStore } from '../store/useAppStore'
+import { useTranslation } from '../hooks/useTranslation'
 import '../assets/styles/InvitePage.css'
 
 const InvitePage = () => {
@@ -12,6 +13,7 @@ const InvitePage = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { isAuthenticated, loading: authLoading } = useAuth()
+  const { t } = useTranslation()
   const addServer = useAppStore(state => state.addServer)
   const [invite, setInvite] = useState(null)
   const [inviteType, setInviteType] = useState(null) // 'local' | 'cross-host' | 'external'
@@ -88,7 +90,7 @@ const InvitePage = () => {
         return
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not resolve invite from that host')
+      setError(err.response?.data?.error || t('invitePage.resolveExternalError', 'Could not resolve invite from that host'))
     }
     setLoading(false)
   }
@@ -132,7 +134,7 @@ const InvitePage = () => {
       // Navigate immediately - ChatPage will load fresh server list
       navigate(serverId ? `/chat/${serverId}` : '/chat')
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to join server')
+      setError(err.response?.data?.error || t('invitePage.joinServerError', 'Failed to join server'))
       setJoining(false)
     }
   }
@@ -146,7 +148,7 @@ const InvitePage = () => {
   }
 
   const getServerName = () => {
-    return invite?.server?.name || invite?.name || 'Server'
+    return invite?.server?.name || invite?.name || t('invitePage.defaultServerName', 'Server')
   }
 
   if (authLoading || loading) {
@@ -154,7 +156,7 @@ const InvitePage = () => {
       <div className="invite-page">
         <div className="invite-card loading">
           <Loader2 size={48} className="spin" />
-          <p>Loading invite...</p>
+          <p>{t('invitePage.loadingInvite', 'Loading invite...')}</p>
         </div>
       </div>
     )
@@ -167,26 +169,26 @@ const InvitePage = () => {
           <div className="invite-icon" style={{ background: 'rgba(31,182,255,0.1)', color: 'var(--volt-primary, #1fb6ff)' }}>
             <Globe size={48} />
           </div>
-          <h1>External Invite</h1>
+          <h1>{t('invitePage.externalInviteTitle', 'External Invite')}</h1>
           <p style={{ color: 'var(--volt-text-secondary)', marginBottom: 16 }}>
-            This invite code wasn't found locally. Enter the host it came from to connect.
+            {t('invitePage.externalInviteDescription', "This invite code wasn't found locally. Enter the host it came from to connect.")}
           </p>
           <form onSubmit={handleExternalLookup} style={{ width: '100%', maxWidth: 340, margin: '0 auto' }}>
             <input
               type="text"
-              placeholder="e.g. chat.example.com"
+              placeholder={t('invitePage.hostPlaceholder', 'e.g. chat.example.com')}
               value={externalHost}
               onChange={e => setExternalHost(e.target.value)}
               className="invite-host-input"
               autoFocus
             />
             <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: 10, width: '100%' }}>
-              <Link2 size={18} /> Look Up Invite
+              <Link2 size={18} /> {t('invitePage.lookUpInvite', 'Look Up Invite')}
             </button>
           </form>
           {error && <div className="error-message" style={{ marginTop: 12 }}>{error}</div>}
           <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => navigate('/chat')}>
-            Go to VoltChat
+            {t('invitePage.goToVoltChat', 'Go to VoltChat')}
           </button>
         </div>
       </div>
@@ -200,10 +202,10 @@ const InvitePage = () => {
           <div className="invite-icon error">
             <X size={48} />
           </div>
-          <h1>Invalid Invite</h1>
+          <h1>{t('invitePage.invalidInviteTitle', 'Invalid Invite')}</h1>
           <p>{error}</p>
           <button className="btn btn-secondary" onClick={() => navigate('/chat')}>
-            Go to VoltChat
+            {t('invitePage.goToVoltChat', 'Go to VoltChat')}
           </button>
         </div>
       </div>
@@ -217,9 +219,9 @@ const InvitePage = () => {
           <div className="invite-icon success">
             <Check size={48} />
           </div>
-          <h1>Joined!</h1>
-          <p>Welcome to {getServerName()}</p>
-          <p className="redirect-text">Redirecting you to the server...</p>
+          <h1>{t('invitePage.joinedTitle', 'Joined!')}</h1>
+          <p>{t('invitePage.welcomeToServer', 'Welcome to {server}', { server: getServerName() })}</p>
+          <p className="redirect-text">{t('invitePage.redirectingToServer', 'Redirecting you to the server...')}</p>
         </div>
       </div>
     )
@@ -235,7 +237,7 @@ const InvitePage = () => {
   return (
     <div className="invite-page">
       <div className="invite-card">
-        <p className="invite-label">You've been invited to join</p>
+        <p className="invite-label">{t('invitePage.invitedToJoin', "You've been invited to join")}</p>
         
         <div className="server-preview">
           <div className="server-icon-large">
@@ -258,13 +260,13 @@ const InvitePage = () => {
             {onlineCount > 0 && (
               <div className="stat">
                 <span className="stat-dot online"></span>
-                <span>{onlineCount} Online</span>
-              </div>
-            )}
-            <div className="stat">
-              <Users size={16} />
-              <span>{memberCount} Members</span>
+              <span>{t('invitePage.onlineCount', '{count} Online', { count: onlineCount })}</span>
             </div>
+          )}
+          <div className="stat">
+            <Users size={16} />
+              <span>{t('invitePage.memberCount', '{count} Members', { count: memberCount })}</span>
+          </div>
           </div>
 
           {invite?.server?.description && (
@@ -279,14 +281,14 @@ const InvitePage = () => {
               alt={invite.inviter.username}
               className="inviter-avatar"
             />
-            <span>Invited by <strong>{invite.inviter.username}</strong></span>
+            <span>{t('invitePage.invitedBy', 'Invited by')} <strong>{invite.inviter.username}</strong></span>
           </div>
         )}
 
         {isExternal && invite?.newPeer && (
           <div className="federation-notice">
             <Globe size={14} />
-            <span>A federation link will be established automatically</span>
+            <span>{t('invitePage.federationNotice', 'A federation link will be established automatically')}</span>
           </div>
         )}
 
@@ -300,17 +302,17 @@ const InvitePage = () => {
           {joining ? (
             <>
               <Loader2 size={20} className="spin" />
-              Joining...
+              {t('invitePage.joining', 'Joining...')}
             </>
           ) : isAuthenticated ? (
-            isExternal ? 'Join Federated Server' : 'Accept Invite'
+            isExternal ? t('invitePage.joinFederatedServer', 'Join Federated Server') : t('invitePage.acceptInvite', 'Accept Invite')
           ) : (
-            'Login to Join'
+            t('invitePage.loginToJoin', 'Login to Join')
           )}
         </button>
 
         {!isAuthenticated && (
-          <p className="login-hint">You need to be logged in to join servers</p>
+          <p className="login-hint">{t('common.loginRequired')}</p>
         )}
       </div>
     </div>

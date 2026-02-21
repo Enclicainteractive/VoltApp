@@ -239,7 +239,8 @@
 
 .voicefx-toggle,
 .voicefx-save,
-.voicefx-reset {
+.voicefx-reset,
+.voicefx-preview {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -294,6 +295,20 @@
 
 .voicefx-reset:hover {
   background: #5d5f66;
+}
+
+.voicefx-preview {
+  background: rgba(59, 130, 246, 0.12);
+  color: #bfdbfe;
+}
+
+.voicefx-preview:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.voicefx-preview.active {
+  background: rgba(16, 185, 129, 0.2);
+  color: #a7f3d0;
 }
 
 .voicefx-preset-delete {

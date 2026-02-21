@@ -1,12 +1,14 @@
 import React, { useState } from 'react'
 import { X, Hash, Volume2, Lock, Trash2, Shield } from 'lucide-react'
 import { apiService } from '../../services/apiService'
+import { useTranslation } from '../../hooks/useTranslation'
 import BioEditor from '../BioEditor'
 import './Modal.css'
 import './ChannelSettingsModal.css'
 import '../../assets/styles/RichTextEditor.css'
 
 const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) => {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('overview')
   const [channelData, setChannelData] = useState({
     name: channel?.name || '',
@@ -41,8 +43,8 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
   }
 
   const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'permissions', label: 'Permissions' }
+    { id: 'overview', label: t('serverSettings.overview') },
+    { id: 'permissions', label: t('roles.permissions') || 'Permissions' }
   ]
 
   return (
@@ -69,7 +71,7 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 size={16} />
-                Delete Channel
+                {t('channel.deleteChannel', 'Delete Channel')}
               </button>
             </div>
           </div>
@@ -81,10 +83,10 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
 
             {activeTab === 'overview' && (
               <div className="settings-panel">
-                <h2>Channel Overview</h2>
+                <h2>{t('channel.channelOverview', 'Channel Overview')}</h2>
 
                 <div className="form-group">
-                  <label>Channel Name</label>
+                  <label>{t('channel.channelName', 'Channel Name')}</label>
                   <div className="channel-name-input">
                     {channel?.type === 'voice' ? <Volume2 size={18} /> : <Hash size={18} />}
                     <input
@@ -99,38 +101,38 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
                 {channel?.type === 'text' && (
                   <>
                     <div className="form-group">
-                      <label>Channel Topic</label>
+                      <label>{t('channel.channelTopic', 'Channel Topic')}</label>
                       <BioEditor
                         value={channelData.topic}
                         onChange={(text) => setChannelData(p => ({ ...p, topic: text }))}
-                        placeholder="Describe what this channel is about"
+                        placeholder={t('channel.topicPlaceholder', 'Describe what this channel is about')}
                         maxLength={1024}
                       />
                     </div>
 
                     <div className="setting-row">
                       <div className="setting-info">
-                        <h4>Slow Mode</h4>
-                        <p>Limit how often users can send messages</p>
+                        <h4>{t('channel.slowMode', 'Slow Mode')}</h4>
+                        <p>{t('channel.slowModeDesc', 'Limit how often users can send messages')}</p>
                       </div>
                       <select
                         className="input select-small"
                         value={channelData.slowMode}
                         onChange={e => setChannelData(p => ({ ...p, slowMode: parseInt(e.target.value) }))}
                       >
-                        <option value={0}>Off</option>
-                        <option value={5}>5 seconds</option>
-                        <option value={10}>10 seconds</option>
-                        <option value={30}>30 seconds</option>
-                        <option value={60}>1 minute</option>
-                        <option value={300}>5 minutes</option>
+                        <option value={0}>{t('common.off', 'Off')}</option>
+                        <option value={5}>{t('common.seconds', { count: 5 }, '5 seconds')}</option>
+                        <option value={10}>{t('common.seconds', { count: 10 }, '10 seconds')}</option>
+                        <option value={30}>{t('common.seconds', { count: 30 }, '30 seconds')}</option>
+                        <option value={60}>{t('common.minute', '1 minute')}</option>
+                        <option value={300}>{t('common.minutes', { count: 5 }, '5 minutes')}</option>
                       </select>
                     </div>
 
                     <div className="setting-row">
                       <div className="setting-info">
-                        <h4>Age-Restricted Channel</h4>
-                        <p>Users must be 18+ to view this channel</p>
+                        <h4>{t('channel.ageRestricted', 'Age-Restricted Channel')}</h4>
+                        <p>{t('channel.ageRestrictedDesc', 'Users must be 18+ to view this channel')}</p>
                       </div>
                       <label className="toggle">
                         <input
@@ -145,9 +147,9 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
                 )}
 
                 <div className="settings-actions">
-                  <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+                  <button className="btn btn-secondary" onClick={onClose}>{t('common.cancel', 'Cancel')}</button>
                   <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                    {saving ? 'Saving...' : 'Save Changes'}
+                    {saving ? t('common.saving', 'Saving...') : t('channel.saveChanges', 'Save Changes')}
                   </button>
                 </div>
               </div>
@@ -155,8 +157,8 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
 
             {activeTab === 'permissions' && (
               <div className="settings-panel">
-                <h2>Channel Permissions</h2>
-                <p className="section-desc">Control who can access and use this channel</p>
+                <h2>{t('channel.channelPermissions', 'Channel Permissions')}</h2>
+                <p className="section-desc">{t('channel.permissionsDesc', 'Control who can access and use this channel')}</p>
 
                 <div className="permissions-list">
                   {(server?.roles || [{ id: 'everyone', name: '@everyone', color: '#99aab5' }]).map(role => (
@@ -167,21 +169,21 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
                       </div>
                       <div className="permission-toggles">
                         <label className="permission-item">
-                          <span>View Channel</span>
+                          <span>{t('channel.viewChannel', 'View Channel')}</span>
                           <input type="checkbox" defaultChecked />
                         </label>
                         <label className="permission-item">
-                          <span>Send Messages</span>
+                          <span>{t('channel.sendMessages', 'Send Messages')}</span>
                           <input type="checkbox" defaultChecked />
                         </label>
                         {channel?.type === 'voice' && (
                           <>
                             <label className="permission-item">
-                              <span>Connect</span>
+                              <span>{t('channel.connect', 'Connect')}</span>
                               <input type="checkbox" defaultChecked />
                             </label>
                             <label className="permission-item">
-                              <span>Speak</span>
+                              <span>{t('channel.speak', 'Speak')}</span>
                               <input type="checkbox" defaultChecked />
                             </label>
                           </>
@@ -196,11 +198,11 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
             {confirmDelete && (
               <div className="delete-confirm-overlay">
                 <div className="delete-confirm-dialog">
-                  <h3>Delete Channel</h3>
-                  <p>Are you sure you want to delete <strong>#{channel?.name}</strong>? This cannot be undone.</p>
+                  <h3>{t('channel.deleteChannel', 'Delete Channel')}</h3>
+                  <p>{t('channel.deleteConfirm', 'Are you sure you want to delete #{{channel}}? This cannot be undone.', { channel: channel?.name })}</p>
                   <div className="delete-confirm-actions">
-                    <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
-                    <button className="btn btn-danger" onClick={handleDelete}>Delete Channel</button>
+                    <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>{t('common.cancel', 'Cancel')}</button>
+                    <button className="btn btn-danger" onClick={handleDelete}>{t('channel.deleteChannel', 'Delete Channel')}</button>
                   </div>
                 </div>
               </div>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, User, Bell, Volume2, Shield, Palette, Info, Mic, Video, Monitor, MicOff, VideoOff, Eye, Edit2, Globe, Server, Settings, Bot, Network, Play, Pause } from 'lucide-react'
+import { X, User, Bell, Volume2, Shield, Palette, Info, Mic, Video, Monitor, MicOff, VideoOff, Eye, Edit2, Globe, Server, Settings, Bot, Network, Play, Pause, Languages } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useI18n } from '../../contexts/I18nContext'
 import { useBanner } from '../../hooks/useAvatar'
 import { settingsService } from '../../services/settingsService'
 import { soundService } from '../../services/soundService'
@@ -26,6 +27,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const [showSidebar, setShowSidebar] = useState(true)
   const { user, logout, refreshUser } = useAuth()
   const { theme, setTheme, allThemes, customThemes, addCustomTheme, removeCustomTheme } = useTheme()
+  const { t, language, setLanguage, availableLanguages } = useI18n()
   const server = getStoredServer()
   const apiUrl = server?.apiUrl || ''
   const imageApiUrl = server?.imageApiUrl || apiUrl
@@ -380,17 +382,18 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   }
 
   const allTabs = [
-    { id: 'account', label: 'My Account', icon: User },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'voice', label: 'Voice & Video', icon: Volume2 },
-    { id: 'privacy', label: 'Privacy', icon: Shield },
-    { id: 'age', label: 'Age Verification', icon: Shield },
-    { id: 'selfvolt', label: 'Self-Volt', icon: Globe },
-    { id: 'federation', label: 'Federation', icon: Network, adminOnly: true },
-    { id: 'bots', label: 'Bots', icon: Bot },
-    { id: 'serverconfig', label: 'Server Config', icon: Settings, adminOnly: true },
-    { id: 'appearance', label: 'Appearance', icon: Palette },
-    { id: 'about', label: 'About', icon: Info },
+    { id: 'account', label: t('settings.account'), icon: User },
+    { id: 'notifications', label: t('settings.notifications'), icon: Bell },
+    { id: 'language', label: t('settings.language'), icon: Languages },
+    { id: 'voice', label: t('settings.voice'), icon: Volume2 },
+    { id: 'privacy', label: t('settings.privacy'), icon: Shield },
+    { id: 'age', label: t('settings.age'), icon: Shield },
+    { id: 'selfvolt', label: t('settings.selfvolt'), icon: Globe },
+    { id: 'federation', label: t('settings.federation'), icon: Network, adminOnly: true },
+    { id: 'bots', label: t('settings.bots'), icon: Bot },
+    { id: 'serverconfig', label: t('settings.serverconfig'), icon: Settings, adminOnly: true },
+    { id: 'appearance', label: t('settings.appearance'), icon: Palette },
+    { id: 'about', label: t('settings.about'), icon: Info },
   ]
   const isVoltageServer = server?.name?.toLowerCase() === 'voltage'
   const canAccessAdminTabs = isAdminUser && (!isVoltageServer || server?.ownerId === user?.id)
@@ -458,7 +461,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
             <div className="settings-sidebar">
               {isMobile && (
                 <div className="settings-mobile-header">
-                  <h3>Settings</h3>
+                  <h3>{t('settings.title')}</h3>
+                  <button className="settings-mobile-close" onClick={onClose} aria-label={t('common.close', 'Close')}>
+                    <X size={18} />
+                  </button>
                 </div>
               )}
               <div className="settings-tabs">
@@ -478,7 +484,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
               </div>
               <div className="settings-footer">
                 <button className="btn btn-danger" onClick={logout}>
-                  Logout
+                  {t('settings.logout')}
                 </button>
               </div>
             </div>
@@ -487,15 +493,18 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
           {isMobile && !showSidebar && (
             <div className="settings-mobile-nav">
               <button className="settings-back-btn" onClick={handleBack}>
-                ← Back
+                ← {t('settings.back')}
               </button>
               <span className="settings-mobile-title">
                 {tabs.find(t => t.id === activeTab)?.label}
               </span>
+              <button className="settings-mobile-close" onClick={onClose} aria-label={t('common.close', 'Close')}>
+                <X size={18} />
+              </button>
             </div>
           )}
 
-          <div className={`settings-content ${isMobile && !showSidebar ? 'mobile-full' : ''}`}>
+          <div className={`settings-content ${isMobile && !showSidebar ? 'mobile-full' : ''} ${isMobile && showSidebar ? 'mobile-hidden' : ''}`}>
             {!isMobile && (
               <button className="settings-close" onClick={onClose}>
                 <X size={24} />
@@ -504,7 +513,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'account' && (
               <div className="settings-section">
-                <h2>My Account</h2>
+                <h2>{t('settings.account')}</h2>
                 <div className="user-profile-card">
                   <div 
                     className="user-banner"
@@ -529,7 +538,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 </div>
 
                 <div className="form-group">
-                  <label>User ID</label>
+                  <label>{t('account.userId')}</label>
                   <input 
                     type="text" 
                     className="input" 
@@ -539,18 +548,18 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 </div>
 
                 <div className="form-group">
-                  <label>Account Username (cannot change)</label>
+                  <label>{t('account.usernameCannotChange')}</label>
                   <input 
                     type="text" 
                     className="input" 
                     value={user?.username || ''}
                     disabled
                   />
-                  <small className="form-hint">This is your account username from login</small>
+                  <small className="form-hint">{t('account.usernameCannotChange')}</small>
                 </div>
 
                 <div className="form-group">
-                  <label>Custom Username</label>
+                  <label>{t('account.customUsername')}</label>
                   <input 
                     type="text" 
                     className={`input ${usernameError ? 'input-error' : ''}`}
@@ -565,18 +574,18 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                           .then(() => refreshUser?.())
                           .catch(err => {
                             console.error('Failed to update username:', err)
-                            setUsernameError(err.response?.data?.error || 'Failed to update username')
+                            setUsernameError(err.response?.data?.error || t('errors.generic'))
                           })
                       }
                     }}
-                    placeholder="Enter custom username"
+                    placeholder={t('account.customUsernamePlaceholder')}
                   />
                   {usernameError && <span className="error-text">{usernameError}</span>}
-                  <small className="form-hint">Letters, numbers, underscores only (2-32 chars)</small>
+                  <small className="form-hint">{t('account.usernameHint')}</small>
                 </div>
 
                 <div className="form-group">
-                  <label>Display Name</label>
+                  <label>{t('account.displayName')}</label>
                   <input 
                     type="text" 
                     className={`input ${displayNameError ? 'input-error' : ''}`}
@@ -591,18 +600,18 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                           .then(() => refreshUser?.())
                           .catch(err => {
                             console.error('Failed to update display name:', err)
-                            setDisplayNameError(err.response?.data?.error || 'Failed to update display name')
+                            setDisplayNameError(err.response?.data?.error || t('errors.generic'))
                           })
                       }
                     }}
-                    placeholder="Enter display name"
+                    placeholder={t('account.displayNamePlaceholder')}
                   />
                   {displayNameError && <span className="error-text">{displayNameError}</span>}
-                  <small className="form-hint">How others see you (2-100 chars)</small>
+                  <small className="form-hint">{t('account.displayNameHint')}</small>
                 </div>
 
                 <div className="form-group">
-                  <label>Email</label>
+                  <label>{t('account.email')}</label>
                   <input 
                     type="email" 
                     className="input" 
@@ -612,7 +621,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 </div>
 
                 <div className="form-group">
-                  <label>Bio</label>
+                  <label>{t('account.bio')}</label>
                   <div className="bio-editor">
                     <div className="bio-editor-tabs">
                       <button 
@@ -620,14 +629,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         className={`bio-tab ${!bioPreview ? 'active' : ''}`}
                         onClick={() => setBioPreview(false)}
                       >
-                        <Edit2 size={14} /> Write
+                        <Edit2 size={14} /> {t('account.write')}
                       </button>
                       <button 
                         type="button"
                         className={`bio-tab ${bioPreview ? 'active' : ''}`}
                         onClick={() => setBioPreview(true)}
                       >
-                        <Eye size={14} /> Preview
+                        <Eye size={14} /> {t('account.preview')}
                       </button>
                     </div>
                     {bioPreview ? (
@@ -635,7 +644,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         {bioValue || user?.bio ? (
                           <MarkdownMessage content={bioValue || user?.bio || ''} />
                         ) : (
-                          <span className="bio-preview-empty">Nothing to preview</span>
+                          <span className="bio-preview-empty">{t('account.nothingToPreview')}</span>
                         )}
                       </div>
                     ) : (
@@ -648,7 +657,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                             .then(() => refreshUser?.())
                             .catch(err => console.error('Failed to update bio:', err))
                         }}
-                        placeholder="Write something about yourself... (Markdown supported)"
+                        placeholder={t('account.bioPlaceholder')}
                         maxLength={500}
                       />
                     )}
@@ -658,15 +667,43 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
               </div>
             )}
 
+            {activeTab === 'language' && (
+              <div className="settings-section">
+                <h2>{t('settings.language')}</h2>
+                <p style={{ marginBottom: '20px', color: 'var(--volt-text-secondary)' }}>
+                  {t('settings.selectLanguage')}
+                </p>
+                
+                <div className="language-grid">
+                  {availableLanguages.map((lang) => (
+                    <button
+                      key={lang.code}
+                      className={`language-card ${language === lang.code ? 'active' : ''}`}
+                      onClick={() => setLanguage(lang.code)}
+                    >
+                      <span className="language-flag">{lang.flag}</span>
+                      <div className="language-info">
+                        <span className="language-name">{lang.nativeName}</span>
+                        <span className="language-english">{lang.name}</span>
+                      </div>
+                      {language === lang.code && (
+                        <span className="language-check">✓</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {activeTab === 'notifications' && (
               <div className="settings-section">
-                <h2>Notifications</h2>
+                <h2>{t('settings.notifications')}</h2>
                 
                 {pushSupported && (
                   <div className="setting-item">
                     <div>
-                      <h4>Push Notifications</h4>
-                      <p>Receive notifications even when the app is closed</p>
+                      <h4>{t('notifications.pushNotifications')}</h4>
+                      <p>{t('notifications.pushNotificationsDesc')}</p>
                     </div>
                     <label className="toggle">
                       <input 
@@ -701,8 +738,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="setting-item">
                   <div>
-                    <h4>Enable Desktop Notifications</h4>
-                    <p>Get notified of new messages</p>
+                    <h4>{t('notifications.desktopNotifications')}</h4>
+                    <p>{t('notifications.desktopNotificationsDesc')}</p>
                   </div>
                   <label className="toggle">
                     <input 
@@ -716,8 +753,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="setting-item">
                   <div>
-                    <h4>Message Notifications</h4>
-                    <p>Show notifications for messages</p>
+                    <h4>{t('notifications.messageNotifications')}</h4>
+                    <p>{t('notifications.messageNotificationsDesc')}</p>
                   </div>
                   <label className="toggle">
                     <input 
@@ -731,8 +768,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="setting-item">
                   <div>
-                    <h4>Friend Requests</h4>
-                    <p>Get notified of friend requests</p>
+                    <h4>{t('notifications.friendRequests')}</h4>
+                    <p>{t('notifications.friendRequestsDesc')}</p>
                   </div>
                   <label className="toggle">
                     <input 
@@ -746,8 +783,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="setting-item">
                   <div>
-                    <h4>Notification Sounds</h4>
-                    <p>Play sounds for notifications</p>
+                    <h4>{t('notifications.notificationSounds')}</h4>
+                    <p>{t('notifications.notificationSoundsDesc')}</p>
                   </div>
                   <label className="toggle">
                     <input 
@@ -761,8 +798,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="setting-item">
                   <div>
-                    <h4>Sound Pack</h4>
-                    <p>Choose notification sound style</p>
+                    <h4>{t('notifications.soundPack', 'Sound Pack')}</h4>
+                    <p>{t('notifications.soundPackDescription', 'Choose notification sound style')}</p>
                   </div>
                   <select 
                     className="input"
@@ -776,49 +813,49 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         soundService._preloadSounds(pack)
                       }
                     }}
-                  >
-                    <option value="default">Default (Generated)</option>
-                    <option value="classic">Enclica Messenger</option>
-                  </select>
-                </div>
+                    >
+                      <option value="default">{t('notifications.defaultSoundpack', 'Default (Generated)')}</option>
+                      <option value="classic">{t('notifications.classicSoundpack', 'Enclica Messenger')}</option>
+                    </select>
+                  </div>
 
-                {settings.soundpack && settings.soundpack !== 'default' && (
-                  <>
-                    <div className="setting-item">
-                      <div>
-                        <h4>Sound Pack Volume</h4>
-                        <p>Adjust volume for sound pack</p>
+                  {settings.soundpack && settings.soundpack !== 'default' && (
+                    <>
+                      <div className="setting-item">
+                        <div>
+                          <h4>{t('notifications.soundPackVolume')}</h4>
+                          <p>{t('notifications.soundPackVolumeDesc', 'Adjust volume for sound pack')}</p>
+                        </div>
+                        <div className="volume-control">
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            value={settings.soundpackVolume || 100}
+                            onChange={(e) => {
+                              const vol = parseInt(e.target.value)
+                              handleSelect('soundpackVolume', vol)
+                              soundService.setSoundpackVolume(vol)
+                            }}
+                            className="volume-slider"
+                          />
+                          <span className="volume-value">{settings.soundpackVolume || 100}%</span>
+                        </div>
                       </div>
-                      <div className="volume-control">
-                        <input 
-                          type="range" 
-                          min="0" 
-                          max="100" 
-                          value={settings.soundpackVolume || 100}
-                          onChange={(e) => {
-                            const vol = parseInt(e.target.value)
-                            handleSelect('soundpackVolume', vol)
-                            soundService.setSoundpackVolume(vol)
-                          }}
-                          className="volume-slider"
-                        />
-                        <span className="volume-value">{settings.soundpackVolume || 100}%</span>
-                      </div>
-                    </div>
 
-                    <div className="soundpack-previews">
-                      <h4>Sound Previews</h4>
-                      <div className="sound-preview-grid">
-                        {[
-                          { key: 'messageReceived', label: 'Message' },
-                          { key: 'mention', label: 'Mention' },
-                          { key: 'callJoin', label: 'Friend Call' },
-                          { key: 'userJoined', label: 'Voice Join' },
-                          { key: 'userLeft', label: 'Voice Leave' },
-                          { key: 'ringtone', label: 'Ringtone' },
-                          { key: 'welcome', label: 'Welcome' },
-                          { key: 'logout', label: 'Logout' }
-                        ].map(sound => (
+                      <div className="soundpack-previews">
+                        <h4>{t('notifications.soundPreviews')}</h4>
+                        <div className="sound-preview-grid">
+                          {[
+                            { key: 'messageReceived', label: t('notifications.soundMessage', 'Message') },
+                            { key: 'mention', label: t('notifications.soundMention', 'Mention') },
+                            { key: 'callJoin', label: t('notifications.soundFriendCall', 'Friend Call') },
+                            { key: 'userJoined', label: t('notifications.soundVoiceJoin', 'Voice Join') },
+                            { key: 'userLeft', label: t('notifications.soundVoiceLeave', 'Voice Leave') },
+                            { key: 'ringtone', label: t('notifications.soundRingtone', 'Ringtone') },
+                            { key: 'welcome', label: t('notifications.soundWelcome', 'Welcome') },
+                            { key: 'logout', label: t('common.logout') }
+                          ].map(sound => (
                           <div key={sound.key} className="sound-preview-item">
                             <span className="sound-preview-label">{sound.label}</span>
                             <button 
@@ -847,28 +884,28 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'voice' && (
               <div className="settings-section">
-                <h2>Voice & Video</h2>
+                <h2>{t('settings.voice')}</h2>
                 
                 <div className="voice-settings-group">
-                  <h3><Mic size={18} /> Voice Settings</h3>
+                  <h3><Mic size={18} /> {t('voice.voiceSettings')}</h3>
                   
                   {!permissionsGranted && devices.audio.length === 0 && (
                     <div className="permission-notice">
-                      <p>Grant microphone access to see available devices</p>
+                      <p>{t('voice.grantMicAccess')}</p>
                       <button className="btn btn-secondary btn-sm" onClick={requestPermissions}>
-                        <Mic size={14} /> Allow Access
+                        <Mic size={14} /> {t('voice.allowAccess')}
                       </button>
                     </div>
                   )}
                   
                   <div className="form-group">
-                    <label>Input Device</label>
+                    <label>{t('voice.inputDevice')}</label>
                     <select 
                       className="input"
                       value={settings.inputDevice}
                       onChange={(e) => handleSelect('inputDevice', e.target.value)}
                     >
-                      <option value="default">Default - System Microphone</option>
+                      <option value="default">{t('voice.defaultMicrophone')}</option>
                       {devices.audio.map(d => (
                         <option key={d.deviceId} value={d.deviceId}>
                           {d.label || `Microphone (${d.deviceId.slice(0, 8)}...)`}
@@ -876,14 +913,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       ))}
                     </select>
                     {devices.audio.length > 0 && (
-                      <span className="device-count">{devices.audio.length} microphone(s) detected</span>
+                      <span className="device-count">{devices.audio.length} {t('voice.devicesDetected')}</span>
                     )}
                   </div>
 
                   <div className="setting-item">
                     <div>
-                      <h4>Input Volume</h4>
-                      <p>Adjust your microphone volume</p>
+                      <h4>{t('voice.inputVolume')}</h4>
+                      <p>{t('voice.inputVolumeDesc', 'Adjust your microphone volume')}</p>
                     </div>
                     <div className="volume-control">
                       <input 
@@ -899,13 +936,13 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   </div>
 
                   <div className="form-group">
-                    <label>Output Device</label>
+                    <label>{t('voice.outputDevice')}</label>
                     <select 
                       className="input"
                       value={settings.outputDevice}
                       onChange={(e) => handleSelect('outputDevice', e.target.value)}
                     >
-                      <option value="default">Default - System Speakers</option>
+                      <option value="default">{t('voice.defaultSpeaker')}</option>
                       {devices.output.map(d => (
                         <option key={d.deviceId} value={d.deviceId}>
                           {d.label || `Speaker (${d.deviceId.slice(0, 8)}...)`}
@@ -913,14 +950,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       ))}
                     </select>
                     {devices.output.length > 0 && (
-                      <span className="device-count">{devices.output.length} output device(s) detected</span>
+                      <span className="device-count">{devices.output.length} {t('voice.devicesDetected')}</span>
                     )}
                   </div>
 
                   <div className="setting-item">
                     <div>
-                      <h4>Output Volume</h4>
-                      <p>Adjust the volume of voice channels</p>
+                      <h4>{t('voice.outputVolume')}</h4>
+                      <p>{t('voice.outputVolumeDesc', 'Adjust your output volume')}</p>
                     </div>
                     <div className="volume-control">
                       <input 
@@ -937,8 +974,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                   <div className="setting-item">
                     <div>
-                      <h4>Mute All</h4>
-                      <p>Mute all voice channels</p>
+                      <h4>{t('voice.muteAll')}</h4>
+                      <p>{t('voice.muteAllDesc', 'Mute all voice channels')}</p>
                     </div>
                     <label className="toggle">
                       <input 
@@ -951,20 +988,20 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   </div>
 
                   <div className="mic-test-section">
-                    <h4>Microphone Test</h4>
-                    <p>Test your microphone to make sure it's working</p>
+                    <h4>{t('voice.microphoneTest')}</h4>
+                    <p>{t('voice.microphoneTestDesc') || 'Test your microphone to make sure it\'s working'}</p>
                     {micError && <div className="test-error">{micError}</div>}
                     <div className="mic-test-controls">
                       <button 
                         className={`btn ${testingMic ? 'btn-danger' : 'btn-primary'}`}
                         onClick={testingMic ? stopMicTest : startMicTest}
                       >
-                        {testingMic ? <><MicOff size={16} /> Stop Test</> : <><Mic size={16} /> Test Microphone</>}
+                        {testingMic ? <><MicOff size={16} /> {t('voice.stopTest')}</> : <><Mic size={16} /> {t('voice.testMicrophone')}</>}
                       </button>
                     </div>
                     {testingMic && (
                       <div className="mic-level-container">
-                        <span className="mic-level-label">Input Level</span>
+                        <span className="mic-level-label">{t('voice.inputLevel')}</span>
                         <div className="mic-level-bar">
                           <div className="mic-level-fill" style={{ width: `${micLevel}%` }} />
                         </div>
@@ -972,22 +1009,22 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       </div>
                     )}
                     {testingMic && (
-                      <p className="test-hint">Speak into your microphone to see the level indicator move</p>
+                      <p className="test-hint">{t('voice.speakToSeeLevel')}</p>
                     )}
                   </div>
                 </div>
 
                 <div className="voice-settings-group">
-                  <h3><Video size={18} /> Video Settings</h3>
+                  <h3><Video size={18} /> {t('voice.videoSettings')}</h3>
                   
                   <div className="form-group">
-                    <label>Camera</label>
+                    <label>{t('voice.camera')}</label>
                     <select 
                       className="input"
                       value={settings.videoDevice}
                       onChange={(e) => handleSelect('videoDevice', e.target.value)}
                     >
-                      <option value="default">Default - System Camera</option>
+                      <option value="default">{t('voice.defaultCamera')}</option>
                       {devices.video.map(d => (
                         <option key={d.deviceId} value={d.deviceId}>
                           {d.label || `Camera (${d.deviceId.slice(0, 8)}...)`}
@@ -995,13 +1032,13 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       ))}
                     </select>
                     {devices.video.length > 0 && (
-                      <span className="device-count">{devices.video.length} camera(s) detected</span>
+                      <span className="device-count">{devices.video.length} {t('voice.devicesDetected')}</span>
                     )}
                   </div>
 
                   <div className="camera-test-section">
-                    <h4>Camera Preview</h4>
-                    <p>Test your camera to make sure it's working</p>
+                    <h4>{t('voice.cameraPreview')}</h4>
+                    <p>{t('voice.cameraPreviewDesc') || 'Test your camera to make sure it\'s working'}</p>
                     {cameraError && <div className="test-error">{cameraError}</div>}
                     <div className="camera-preview-container">
                       {testingCamera ? (
@@ -1020,8 +1057,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       ) : (
                         <div className="camera-preview-placeholder">
                           <VideoOff size={48} />
-                          <span>Camera preview off</span>
-                          <span className="preview-hint">Click the button below to start</span>
+                          <span>{t('voice.cameraPreviewOff')}</span>
+                          <span className="preview-hint">{t('voice.clickToStart')}</span>
                         </div>
                       )}
                     </div>
@@ -1029,18 +1066,18 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       className={`btn ${testingCamera ? 'btn-danger' : 'btn-primary'}`}
                       onClick={testingCamera ? stopCameraTest : startCameraTest}
                     >
-                      {testingCamera ? <><VideoOff size={16} /> Stop Preview</> : <><Video size={16} /> Start Camera Preview</>}
+                      {testingCamera ? <><VideoOff size={16} /> {t('voice.stopPreview')}</> : <><Video size={16} /> {t('voice.startCameraPreview')}</>}
                     </button>
                   </div>
                 </div>
 
                 <div className="voice-settings-group">
-                  <h3><Monitor size={18} /> Advanced</h3>
+                  <h3><Monitor size={18} /> {t('voice.advanced')}</h3>
 
                   <div className="setting-item">
                     <div>
-                      <h4>Noise Suppression</h4>
-                      <p>Reduce background noise from your microphone</p>
+                      <h4>{t('voice.noiseSuppression')}</h4>
+                      <p>{t('voice.noiseSuppressionDesc')}</p>
                     </div>
                     <label className="toggle">
                       <input 
@@ -1054,8 +1091,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                   <div className="setting-item">
                     <div>
-                      <h4>Echo Cancellation</h4>
-                      <p>Prevent echo in voice channels</p>
+                      <h4>{t('voice.echoCancellation')}</h4>
+                      <p>{t('voice.echoCancellationDesc')}</p>
                     </div>
                     <label className="toggle">
                       <input 
@@ -1069,8 +1106,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                   <div className="setting-item">
                     <div>
-                      <h4>Automatic Gain Control</h4>
-                      <p>Automatically adjust microphone sensitivity</p>
+                      <h4>{t('voice.autoGainControl')}</h4>
+                      <p>{t('voice.autoGainControlDesc')}</p>
                     </div>
                     <label className="toggle">
                       <input 
@@ -1087,22 +1124,22 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'privacy' && (
               <div className="settings-section">
-                <h2>Privacy & Safety</h2>
+                <h2>{t('settings.privacy')}</h2>
                 <p style={{marginBottom: '20px', color: 'var(--volt-text-secondary)'}}>
-                  Manage your privacy settings and keep your account secure.
+                  {t('privacy.description')}
                 </p>
                 
                 <div className="privacy-note">
-                  <h4>Direct Messages</h4>
-                  <p>Control who can send you direct messages</p>
+                  <h4>{t('privacy.directMessages')}</h4>
+                  <p>{t('privacy.dmDesc')}</p>
                   <select 
                     className="input"
                     value={settings.dmPermissions}
                     onChange={(e) => handleSelect('dmPermissions', e.target.value)}
                   >
-                    <option value="everyone">Everyone</option>
-                    <option value="friends">Friends Only</option>
-                    <option value="nobody">Nobody</option>
+                    <option value="everyone">{t('privacy.everyone')}</option>
+                    <option value="friends">{t('privacy.friendsOnly')}</option>
+                    <option value="nobody">{t('privacy.nobody')}</option>
                   </select>
                 </div>
               </div>
@@ -1110,33 +1147,33 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'age' && (
               <div className="settings-section">
-                <h2>Age Verification</h2>
+                <h2>{t('settings.age')}</h2>
                 <p style={{ marginBottom: '16px', color: 'var(--volt-text-secondary)' }}>
-                  Review your current verification status or rerun verification.
+                  {t('age.description')}
                 </p>
 
                 {ageLoading ? (
-                  <div className="privacy-note">Loading status...</div>
+                  <div className="privacy-note">{t('age.loading')}</div>
                 ) : (
                   <div className="privacy-note">
-                    <h4>Status</h4>
-                    <p>{ageInfo?.verified ? 'Verified' : 'Not verified'}</p>
+                    <h4>{t('age.status')}</h4>
+                    <p>{ageInfo?.verified ? t('age.verified') : t('age.notVerified')}</p>
                     {ageInfo && (
                       <div className="age-meta">
-                        <div><strong>Category:</strong> {ageInfo.category || 'unknown'}</div>
-                        <div><strong>Method:</strong> {ageInfo.method || 'unknown'}</div>
-                        <div><strong>Verified at:</strong> {ageInfo.verifiedAt ? new Date(ageInfo.verifiedAt).toLocaleString() : '—'}</div>
-                        <div><strong>Expires:</strong> {ageInfo.expiresAt ? new Date(ageInfo.expiresAt).toLocaleString() : '—'}</div>
-                        <div><strong>Estimated age:</strong> {ageInfo.estimatedAge ?? '—'}</div>
+                        <div><strong>{t('age.category')}:</strong> {ageInfo.category || t('age.unknown')}</div>
+                        <div><strong>{t('age.method')}:</strong> {ageInfo.method || t('age.unknown')}</div>
+                        <div><strong>{t('age.verifiedAt')}:</strong> {ageInfo.verifiedAt ? new Date(ageInfo.verifiedAt).toLocaleString() : '—'}</div>
+                        <div><strong>{t('age.expiresAt')}:</strong> {ageInfo.expiresAt ? new Date(ageInfo.expiresAt).toLocaleString() : '—'}</div>
+                        <div><strong>{t('age.estimatedAge')}:</strong> {ageInfo.estimatedAge ?? '—'}</div>
                       </div>
                     )}
                     {ageError && <div className="test-error" style={{ marginTop: 8 }}>{ageError}</div>}
                     <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary" onClick={() => { setShowAgeVerify(true); setAgeError('') }}>
-                        Re-run verification
+                        {t('age.rerunVerification')}
                       </button>
                       <button className="btn btn-secondary" onClick={loadAgeInfo}>
-                        Refresh
+                        {t('age.refresh')}
                       </button>
                     </div>
                   </div>
@@ -1146,17 +1183,17 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'appearance' && (
               <div className="settings-section">
-                <h2>Appearance</h2>
-                <p className="theme-description">Choose how VoltChat looks to you. 70+ curated palettes, custom themes, and gradients.</p>
+                <h2>{t('appearance.title')}</h2>
+                <p className="theme-description">{t('appearance.description')}</p>
                 <div className="theme-grid">
-                  {allThemes.map(t => (
+                  {allThemes.map(themeOption => (
                     <button
-                      key={t.id}
-                      className={`theme-card ${theme === t.id ? 'active' : ''}`}
-                      onClick={() => setTheme(t.id)}
-                      aria-label={`Apply ${t.name} theme`}
+                      key={themeOption.id}
+                      className={`theme-card ${theme === themeOption.id ? 'active' : ''}`}
+                      onClick={() => setTheme(themeOption.id)}
+                      aria-label={t('appearance.applyTheme', 'Apply {{name}} theme', { name: themeOption.name })}
                     >
-                      <div className="theme-card-preview" style={{ background: getThemePreviewBackground(t) }}>
+                      <div className="theme-card-preview" style={{ background: getThemePreviewBackground(themeOption) }}>
                         <div className="theme-card-sidebar"></div>
                         <div className="theme-card-content">
                           <div className="theme-card-header"></div>
@@ -1167,30 +1204,36 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         </div>
                       </div>
                       <div className="theme-card-meta">
-                        <div className="theme-name">{t.name}</div>
+                        <div className="theme-name">{themeOption.name}</div>
                         <div className="theme-mode">
-                          {t.isCustom ? 'Custom' : t.mode === 'auto' ? 'System' : t.mode === 'dark' ? 'Dark' : 'Light'}
+                          {themeOption.isCustom
+                            ? t('appearance.custom', 'Custom')
+                            : themeOption.mode === 'auto'
+                              ? t('appearance.system', 'System')
+                              : themeOption.mode === 'dark'
+                                ? t('appearance.dark', 'Dark')
+                                : t('appearance.light', 'Light')}
                         </div>
                       </div>
-                      {t.isCustom && (
+                      {themeOption.isCustom && (
                         <span
                           className="theme-remove"
                           role="button"
                           tabIndex={0}
-                          aria-label={`Remove ${t.name} theme`}
+                          aria-label={t('appearance.removeTheme', 'Remove {{name}} theme', { name: themeOption.name })}
                           onClick={(e) => {
                             e.stopPropagation()
-                            removeCustomTheme(t.id)
+                            removeCustomTheme(themeOption.id)
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault()
                               e.stopPropagation()
-                              removeCustomTheme(t.id)
+                              removeCustomTheme(themeOption.id)
                             }
                           }}
                         >
-                          Remove
+                          {t('appearance.remove', 'Remove')}
                         </span>
                       )}
                     </button>
@@ -1200,37 +1243,37 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 <div className="divider" />
 
                 <div className="theme-customizer">
-                  <h3>Custom Theme</h3>
-                  <p className="theme-customizer-desc">Create your own palette and optionally add a background gradient.</p>
+                  <h3>{t('appearance.customTheme', 'Custom Theme')}</h3>
+                  <p className="theme-customizer-desc">{t('appearance.customThemeDesc', 'Create your own palette and optionally add a background gradient.')}</p>
 
                   <div className="form-grid">
                     <div className="form-group">
-                      <label>Name</label>
+                      <label>{t('appearance.themeName', 'Name')}</label>
                       <input
                         type="text"
                         className="input"
                         value={customThemeDraft.name}
                         onChange={(e) => setCustomThemeDraft(p => ({ ...p, name: e.target.value }))}
-                        placeholder="My Theme"
+                        placeholder={t('appearance.themeNamePlaceholder', 'My Theme')}
                       />
                     </div>
 
                     <div className="form-group">
-                      <label>Mode</label>
+                      <label>{t('appearance.mode', 'Mode')}</label>
                       <select
                         className="input"
                         value={customThemeDraft.mode}
                         onChange={(e) => setCustomThemeDraft(p => ({ ...p, mode: e.target.value }))}
                       >
-                        <option value="dark">Dark</option>
-                        <option value="light">Light</option>
+                        <option value="dark">{t('appearance.dark', 'Dark')}</option>
+                        <option value="light">{t('appearance.light', 'Light')}</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="form-grid">
                     <div className="form-group">
-                      <label>Primary</label>
+                      <label>{t('appearance.primary', 'Primary')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.primary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, primary: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.primary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, primary: e.target.value }))} />
@@ -1238,7 +1281,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Success</label>
+                      <label>{t('appearance.success', 'Success')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.success} onChange={(e) => setCustomThemeDraft(p => ({ ...p, success: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.success} onChange={(e) => setCustomThemeDraft(p => ({ ...p, success: e.target.value }))} />
@@ -1246,7 +1289,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Warning</label>
+                      <label>{t('appearance.warning', 'Warning')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.warning} onChange={(e) => setCustomThemeDraft(p => ({ ...p, warning: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.warning} onChange={(e) => setCustomThemeDraft(p => ({ ...p, warning: e.target.value }))} />
@@ -1254,7 +1297,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Danger</label>
+                      <label>{t('appearance.danger', 'Danger')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.danger} onChange={(e) => setCustomThemeDraft(p => ({ ...p, danger: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.danger} onChange={(e) => setCustomThemeDraft(p => ({ ...p, danger: e.target.value }))} />
@@ -1262,7 +1305,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Background (Primary)</label>
+                      <label>{t('appearance.backgroundPrimary', 'Background (Primary)')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.bgPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgPrimary: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.bgPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgPrimary: e.target.value }))} />
@@ -1270,7 +1313,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Background (Secondary)</label>
+                      <label>{t('appearance.backgroundSecondary', 'Background (Secondary)')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.bgSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgSecondary: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.bgSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgSecondary: e.target.value }))} />
@@ -1278,7 +1321,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Background (Tertiary)</label>
+                      <label>{t('appearance.backgroundTertiary', 'Background (Tertiary)')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.bgTertiary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgTertiary: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.bgTertiary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgTertiary: e.target.value }))} />
@@ -1286,7 +1329,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Background (Quaternary)</label>
+                      <label>{t('appearance.backgroundQuaternary', 'Background (Quaternary)')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.bgQuaternary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgQuaternary: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.bgQuaternary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, bgQuaternary: e.target.value }))} />
@@ -1294,7 +1337,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Text (Primary)</label>
+                      <label>{t('appearance.textPrimary', 'Text (Primary)')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.textPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textPrimary: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.textPrimary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textPrimary: e.target.value }))} />
@@ -1302,7 +1345,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Text (Secondary)</label>
+                      <label>{t('appearance.textSecondary', 'Text (Secondary)')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.textSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textSecondary: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.textSecondary} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textSecondary: e.target.value }))} />
@@ -1310,7 +1353,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Text (Muted)</label>
+                      <label>{t('appearance.textMuted', 'Text (Muted)')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.textMuted} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textMuted: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.textMuted} onChange={(e) => setCustomThemeDraft(p => ({ ...p, textMuted: e.target.value }))} />
@@ -1318,7 +1361,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
 
                     <div className="form-group">
-                      <label>Border</label>
+                      <label>{t('appearance.border', 'Border')}</label>
                       <div className="color-input-row">
                         <input type="color" className="color-picker" value={customThemeDraft.border} onChange={(e) => setCustomThemeDraft(p => ({ ...p, border: e.target.value }))} />
                         <input type="text" className="input" value={customThemeDraft.border} onChange={(e) => setCustomThemeDraft(p => ({ ...p, border: e.target.value }))} />
@@ -1333,13 +1376,13 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         checked={customThemeDraft.gradientEnabled}
                         onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientEnabled: e.target.checked }))}
                       />
-                      Enable gradient background
+                      {t('appearance.enableGradient')}
                     </label>
 
                     {customThemeDraft.gradientEnabled && (
                       <div className="form-grid">
                         <div className="form-group">
-                          <label>Gradient Angle</label>
+                          <label>{t('appearance.gradientAngle', 'Gradient Angle')}</label>
                           <input
                             type="number"
                             className="input"
@@ -1349,7 +1392,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         </div>
 
                         <div className="form-group">
-                          <label>Gradient A</label>
+                          <label>{t('appearance.gradientA', 'Gradient A')}</label>
                           <div className="color-input-row">
                             <input type="color" className="color-picker" value={customThemeDraft.gradientA} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientA: e.target.value }))} />
                             <input type="text" className="input" value={customThemeDraft.gradientA} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientA: e.target.value }))} />
@@ -1357,7 +1400,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         </div>
 
                         <div className="form-group">
-                          <label>Gradient B</label>
+                          <label>{t('appearance.gradientB', 'Gradient B')}</label>
                           <div className="color-input-row">
                             <input type="color" className="color-picker" value={customThemeDraft.gradientB} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientB: e.target.value }))} />
                             <input type="text" className="input" value={customThemeDraft.gradientB} onChange={(e) => setCustomThemeDraft(p => ({ ...p, gradientB: e.target.value }))} />
@@ -1371,7 +1414,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                   <div className="custom-theme-actions">
                     <button className="btn btn-primary" type="button" onClick={handleCreateCustomTheme}>
-                      Save Custom Theme
+                      {t('appearance.saveCustomTheme')}
                     </button>
                     <button
                       className="btn btn-secondary"
@@ -1383,7 +1426,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       }}
                       disabled={!customThemes.length}
                     >
-                      Apply Latest Custom
+                      {t('appearance.applyLatestCustom')}
                     </button>
                   </div>
                 </div>
@@ -1396,9 +1439,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'federation' && (
               <div className="settings-section">
-                <h2>Federation</h2>
+                <h2>{t('federation.title')}</h2>
                 <p className="settings-description">
-                  Connect with other VoltChat mainlines to share invites and communicate across instances.
+                  {t('federation.description')}
                 </p>
                 <FederationPanel />
               </div>
@@ -1406,9 +1449,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'bots' && (
               <div className="settings-section">
-                <h2>Bots</h2>
+                <h2>{t('bots.title')}</h2>
                 <p className="settings-description">
-                  Create and manage custom bots that can respond to messages, run commands, and automate your servers.
+                  {t('bots.description')}
                 </p>
                 <BotPanel />
               </div>
@@ -1416,32 +1459,31 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
             {activeTab === 'serverconfig' && (
               <div className="settings-section">
-                <h2>Server Configuration</h2>
+                <h2>{t('settings.serverconfig')}</h2>
                 <p className="settings-description">
-                  Configure server settings like URL, authentication, features, and more.
+                  {t('settings.serverConfigDescription')}
                 </p>
                 <button 
                   className="btn btn-primary" 
                   onClick={() => setShowAdminConfig(true)}
                 >
-                  <Settings size={16} /> Open Server Config
+                  <Settings size={16} /> {t('settings.openServerConfig')}
                 </button>
               </div>
             )}
 
             {activeTab === 'about' && (
               <div className="settings-section">
-                <h2>About VoltChat</h2>
+                <h2>{t('about.title')}</h2>
                 <div className="about-info">
                   <div className="about-logo">⚡</div>
                   <h3>VoltChat</h3>
-                  <p>Version 1.0.0</p>
+                  <p>{t('about.version')} 1.0.0</p>
                   <p className="about-description">
-                    A powerful real-time chat application built with React and Node.js.
-                    Featuring voice channels, direct messages, and OAuth 2.0 authentication.
+                    {t('about.description')}
                   </p>
                   <div className="about-tech">
-                    <h4>Technologies</h4>
+                    <h4>{t('about.technologies')}</h4>
                     <ul>
                       <li>React 18 + Vite</li>
                       <li>Node.js + Express</li>

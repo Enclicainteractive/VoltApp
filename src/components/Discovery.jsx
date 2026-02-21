@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Search, Plus, Globe, Users, ArrowRight, Filter, Star, X, Hash, Gamepad2, Music, Palette, FlaskConical, GraduationCap, Film, Trophy, Briefcase, Calendar, Shield, Info, ChevronRight } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import { useNavigate } from 'react-router-dom'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
@@ -20,6 +21,7 @@ const CATEGORY_ICONS = {
 }
 
 const Discovery = ({ onJoinServer, onSubmitServer }) => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [servers, setServers] = useState([])
   const [categories, setCategories] = useState([])
@@ -180,9 +182,9 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
       <div className="discovery-header">
         <div className="discovery-title">
           <Globe size={28} />
-          <h1>Server Discovery</h1>
+          <h1>{t('discovery.title')}</h1>
         </div>
-        <p>Find new servers to join and connect with communities</p>
+        <p>{t('discovery.description')}</p>
       </div>
 
       <div className="discovery-controls">
@@ -190,7 +192,7 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
           <Search size={18} className="search-icon" />
           <input
             type="text"
-            placeholder="Search servers..."
+            placeholder={t('discovery.search')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="input"
@@ -201,7 +203,7 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
           onClick={() => { setSubmitCategory(''); setShowSubmitModal(true) }}
         >
           <Plus size={18} />
-          Submit Server
+          {t('discovery.submitServer')}
         </button>
       </div>
 
@@ -236,7 +238,7 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
         ) : filteredServers.length === 0 ? (
           <div className="discovery-empty">
             <Globe size={48} />
-            <h3>No servers found</h3>
+            <h3>{t('discovery.noResults')}</h3>
             <p>Try a different search or category</p>
           </div>
         ) : (

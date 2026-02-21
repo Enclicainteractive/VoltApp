@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { UserPlus, MessageSquare, Check, X, MoreVertical, UserMinus, Ban, Copy } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import { apiService } from '../services/apiService'
 import { getStoredServer } from '../services/serverConfig'
 import { useSocket } from '../contexts/SocketContext'
@@ -8,6 +9,7 @@ import ContextMenu from './ContextMenu'
 import '../assets/styles/FriendsPage.css'
 
 const FriendsPage = ({ onStartDM }) => {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('online')
   const [friends, setFriends] = useState([])
   const [requests, setRequests] = useState({ incoming: [], outgoing: [] })
@@ -95,17 +97,17 @@ const FriendsPage = ({ onStartDM }) => {
     setAddSuccess('')
     
     if (!addUsername.trim()) {
-      setAddError('Please enter a username')
+      setAddError(t('friends.enterUsername', 'Please enter a username'))
       return
     }
 
     try {
       await apiService.sendFriendRequest(addUsername.trim())
-      setAddSuccess(`Friend request sent to ${addUsername}!`)
+      setAddSuccess(t('friends.requestSentTo', 'Friend request sent to {{username}}!', { username: addUsername }))
       setAddUsername('')
       loadRequests()
     } catch (error) {
-      setAddError(error.response?.data?.error || 'Failed to send friend request')
+      setAddError(error.response?.data?.error || t('friends.sendRequestFailed', 'Failed to send friend request'))
     }
   }
 
@@ -138,7 +140,7 @@ const FriendsPage = ({ onStartDM }) => {
   }
 
   const handleRemoveFriend = async (friendId) => {
-    if (!confirm('Are you sure you want to remove this friend?')) return
+    if (!confirm(t('friends.removeConfirm', 'Are you sure you want to remove this friend?'))) return
     try {
       await apiService.removeFriend(friendId)
       loadFriends()
@@ -148,7 +150,7 @@ const FriendsPage = ({ onStartDM }) => {
   }
 
   const handleBlockFriend = async (friendId) => {
-    if (!confirm('Are you sure you want to block this user? They will be removed from your friends and blocked.')) return
+    if (!confirm(t('friends.blockConfirmLong', 'Are you sure you want to block this user? They will be removed from your friends and blocked.'))) return
     try {
       await apiService.blockUser(friendId)
       await apiService.removeFriend(friendId)
@@ -190,31 +192,31 @@ const FriendsPage = ({ onStartDM }) => {
             className={`tab ${activeTab === 'online' ? 'active' : ''}`}
             onClick={() => setActiveTab('online')}
           >
-            Online
+            {t('friends.online')}
           </button>
           <button 
             className={`tab ${activeTab === 'all' ? 'active' : ''}`}
             onClick={() => setActiveTab('all')}
           >
-            All
+            {t('friends.all')}
           </button>
           <button 
             className={`tab ${activeTab === 'pending' ? 'active' : ''}`}
             onClick={() => setActiveTab('pending')}
           >
-            Pending {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
+            {t('friends.pending')} {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
           </button>
           <button 
             className={`tab add-friend-tab ${activeTab === 'add' ? 'active' : ''}`}
             onClick={() => setActiveTab('add')}
           >
-            Add Friend
+            {t('friends.addFriend')}
           </button>
           <button 
             className={`tab ${activeTab === 'blocked' ? 'active' : ''}`}
             onClick={() => { setActiveTab('blocked'); loadBlocked(); }}
           >
-            Blocked {blocked.length > 0 && <span className="badge">{blocked.length}</span>}
+            {t('friends.blocked')} {blocked.length > 0 && <span className="badge">{blocked.length}</span>}
           </button>
         </div>
       </div>
@@ -222,14 +224,14 @@ const FriendsPage = ({ onStartDM }) => {
       <div className="friends-content">
         {activeTab === 'add' && (
           <div className="add-friend-section">
-            <h3>Add Friend</h3>
-            <p>You can add friends with their VoltChat username.</p>
+            <h3>{t('friends.addFriend')}</h3>
+            <p>{t('friends.addFriendsHint')}</p>
             <form className="add-friend-form" onSubmit={handleSendRequest}>
               <div className="add-friend-input-wrapper">
                 <input
                   type="text"
                   className="input"
-                  placeholder="Enter a username"
+                  placeholder={t('friends.enterUsername') || 'Enter a username'}
                   value={addUsername}
                   onChange={(e) => setAddUsername(e.target.value)}
                 />
@@ -238,7 +240,7 @@ const FriendsPage = ({ onStartDM }) => {
                   className="btn btn-primary"
                   disabled={!addUsername.trim()}
                 >
-                  Send Friend Request
+                  {t('friends.sendRequest')}
                 </button>
               </div>
               {addError && <p className="error-text">{addError}</p>}
@@ -251,7 +253,7 @@ const FriendsPage = ({ onStartDM }) => {
           <div className="pending-section">
             {requests.incoming?.length > 0 && (
               <>
-                <h4 className="section-title">INCOMING — {requests.incoming?.length || 0}</h4>
+                <h4 className="section-title">{t('friends.incomingRequests').toUpperCase()} — {requests.incoming?.length || 0}</h4>
                 <div className="friends-list">
                   {(requests.incoming || []).map(request => (
                     <div 
@@ -262,19 +264,19 @@ const FriendsPage = ({ onStartDM }) => {
                         const items = [
                           {
                             icon: <Check size={16} />,
-                            label: 'Accept',
+                            label: t('friends.accept'),
                             onClick: () => handleAcceptRequest(request.id)
                           },
                           {
                             icon: <X size={16} />,
-                            label: 'Reject',
+                            label: t('friends.decline'),
                             onClick: () => handleRejectRequest(request.id),
                             danger: true
                           },
                           { type: 'separator' },
                           {
                             icon: <Copy size={16} />,
-                            label: 'Copy User ID',
+                            label: t('account.userId'),
                             onClick: () => navigator.clipboard.writeText(request.from)
                           },
                         ]
@@ -288,20 +290,20 @@ const FriendsPage = ({ onStartDM }) => {
                       />
                       <div className="friend-info">
                         <span className="friend-name">{request.fromUsername}</span>
-                        <span className="friend-status">Incoming Friend Request</span>
+                        <span className="friend-status">{t('friends.friendRequest')}</span>
                       </div>
                       <div className="friend-actions">
                         <button 
                           className="icon-btn accept"
                           onClick={() => handleAcceptRequest(request.id)}
-                          title="Accept"
+                          title={t('friends.accept')}
                         >
                           <Check size={20} />
                         </button>
                         <button 
                           className="icon-btn reject"
                           onClick={() => handleRejectRequest(request.id)}
-                          title="Reject"
+                          title={t('friends.decline')}
                         >
                           <X size={20} />
                         </button>
@@ -314,7 +316,7 @@ const FriendsPage = ({ onStartDM }) => {
 
             {requests.outgoing?.length > 0 && (
               <>
-                <h4 className="section-title">OUTGOING — {requests.outgoing?.length || 0}</h4>
+                <h4 className="section-title">{t('friends.outgoingRequests').toUpperCase()} — {requests.outgoing?.length || 0}</h4>
                 <div className="friends-list">
                   {(requests.outgoing || []).map(request => (
                     <div 
@@ -325,14 +327,14 @@ const FriendsPage = ({ onStartDM }) => {
                         const items = [
                           {
                             icon: <X size={16} />,
-                            label: 'Cancel Request',
+                            label: t('friends.cancel'),
                             onClick: () => handleCancelRequest(request.id),
                             danger: true
                           },
                           { type: 'separator' },
                           {
                             icon: <Copy size={16} />,
-                            label: 'Copy User ID',
+                            label: t('account.userId'),
                             onClick: () => navigator.clipboard.writeText(request.to)
                           },
                         ]
@@ -345,14 +347,14 @@ const FriendsPage = ({ onStartDM }) => {
                         size={40}
                       />
                       <div className="friend-info">
-                        <span className="friend-name">{request.toUsername || 'User'}</span>
-                        <span className="friend-status">Outgoing Friend Request</span>
+                        <span className="friend-name">{request.toUsername || t('common.user', 'User')}</span>
+                        <span className="friend-status">{t('friends.yourRequest')}</span>
                       </div>
                       <div className="friend-actions">
                         <button 
                           className="icon-btn reject"
                           onClick={() => handleCancelRequest(request.id)}
-                          title="Cancel"
+                          title={t('friends.cancel')}
                         >
                           <X size={20} />
                         </button>
@@ -365,7 +367,7 @@ const FriendsPage = ({ onStartDM }) => {
 
             {(!requests.incoming?.length) && (!requests.outgoing?.length) && (
               <div className="empty-state-inline">
-                <p>No pending friend requests</p>
+                <p>{t('friends.noPending', 'No pending friend requests')}</p>
               </div>
             )}
           </div>
@@ -373,12 +375,12 @@ const FriendsPage = ({ onStartDM }) => {
 
         {activeTab === 'blocked' && (
           <div className="blocked-section">
-            <h3>Blocked Users</h3>
-            <p>Blocked users cannot message you or see your online status.</p>
+            <h3>{t('friends.blocked')}</h3>
+            <p>{t('friends.blockedHint') || 'Blocked users cannot message you or see your online status.'}</p>
             
             {blocked.length === 0 ? (
               <div className="empty-state-inline">
-                <p>You haven't blocked anyone</p>
+                <p>{t('friends.noBlocked') || "You haven't blocked anyone"}</p>
               </div>
             ) : (
               <div className="friends-list">
@@ -391,13 +393,13 @@ const FriendsPage = ({ onStartDM }) => {
                       const items = [
                         {
                           icon: <X size={16} />,
-                          label: 'Unblock',
+                          label: t('friends.unblock'),
                           onClick: () => handleUnblock(user.id)
                         },
                         { type: 'separator' },
                         {
                           icon: <Copy size={16} />,
-                          label: 'Copy User ID',
+                          label: t('account.userId'),
                           onClick: () => navigator.clipboard.writeText(user.id)
                         },
                       ]
@@ -411,13 +413,13 @@ const FriendsPage = ({ onStartDM }) => {
                     />
                     <div className="friend-info">
                       <span className="friend-name">{user.username}</span>
-                      <span className="friend-status">Blocked</span>
+                      <span className="friend-status">{t('friends.blocked')}</span>
                     </div>
                     <div className="friend-actions">
                       <button 
                         className="icon-btn"
                         onClick={() => handleUnblock(user.id)}
-                        title="Unblock"
+                        title={t('friends.unblock', 'Unblock')}
                       >
                         <X size={20} />
                       </button>
@@ -432,14 +434,14 @@ const FriendsPage = ({ onStartDM }) => {
         {(activeTab === 'online' || activeTab === 'all') && (
           <div className="friends-section">
             <h4 className="section-title">
-              {activeTab === 'online' ? 'ONLINE' : 'ALL FRIENDS'} — {activeTab === 'online' ? onlineFriends.length : (friends || []).length}
+              {activeTab === 'online' ? t('friends.online').toUpperCase() : t('friends.all').toUpperCase()} — {activeTab === 'online' ? onlineFriends.length : (friends || []).length}
             </h4>
             
             {loading ? (
-              <div className="loading-inline">Loading...</div>
+              <div className="loading-inline">{t('common.loading', 'Loading...')}</div>
             ) : (activeTab === 'online' ? onlineFriends : (friends || [])).length === 0 ? (
               <div className="empty-state-inline">
-                <p>{activeTab === 'online' ? 'No friends are online right now' : 'You have no friends yet. Add some!'}</p>
+                <p>{activeTab === 'online' ? t('friends.noFriendsOnlineNow', 'No friends are online right now') : t('friends.noFriendsYetAdd', 'You have no friends yet. Add some!')}</p>
               </div>
             ) : (
               <div className="friends-list">
@@ -450,30 +452,30 @@ const FriendsPage = ({ onStartDM }) => {
                     onContextMenu={(e) => {
                       e.preventDefault()
                       const items = [
-                        {
-                          icon: <MessageSquare size={16} />,
-                          label: 'Message',
-                          shortcut: 'M',
-                          onClick: () => handleMessageFriend(friend.id)
-                        },
-                        {
-                          icon: <Ban size={16} />,
-                          label: 'Block',
-                          onClick: () => handleBlockFriend(friend.id),
-                          danger: true
-                        },
-                        {
-                          icon: <UserMinus size={16} />,
-                          label: 'Remove Friend',
-                          onClick: () => handleUnfriend(friend.id),
-                          danger: true
-                        },
-                        { type: 'separator' },
-                        {
-                          icon: <Copy size={16} />,
-                          label: 'Copy User ID',
-                          onClick: () => navigator.clipboard.writeText(friend.id)
-                        },
+                          {
+                            icon: <MessageSquare size={16} />,
+                            label: t('member.message', 'Message'),
+                            shortcut: 'M',
+                            onClick: () => handleMessageFriend(friend.id)
+                          },
+                          {
+                            icon: <Ban size={16} />,
+                            label: t('friends.block', 'Block'),
+                            onClick: () => handleBlockFriend(friend.id),
+                            danger: true
+                          },
+                          {
+                            icon: <UserMinus size={16} />,
+                            label: t('friends.unfriend', 'Remove Friend'),
+                            onClick: () => handleRemoveFriend(friend.id),
+                            danger: true
+                          },
+                          { type: 'separator' },
+                          {
+                            icon: <Copy size={16} />,
+                            label: t('account.userId', 'Copy User ID'),
+                            onClick: () => navigator.clipboard.writeText(friend.id)
+                          },
                       ]
                       setContextMenu({ x: e.clientX, y: e.clientY, items })
                     }}
@@ -492,28 +494,28 @@ const FriendsPage = ({ onStartDM }) => {
                     <div className="friend-info">
                       <span className="friend-name">{friend.displayName || friend.username}</span>
                       <span className="friend-status">
-                        {friend.customStatus || friend.status || 'Offline'}
+                        {friend.customStatus || t(`status.${friend.status || 'offline'}`, t('status.offline', 'Offline'))}
                       </span>
                     </div>
                     <div className="friend-actions">
                       <button 
                         className="icon-btn"
                         onClick={() => handleMessageFriend(friend.id)}
-                        title="Message"
+                        title={t('member.message', 'Message')}
                       >
                         <MessageSquare size={20} />
                       </button>
                       <button 
                         className="icon-btn danger"
                         onClick={() => handleBlockFriend(friend.id)}
-                        title="Block User"
+                        title={t('friends.block', 'Block User')}
                       >
                         <Ban size={20} />
                       </button>
                       <button 
                         className="icon-btn danger"
                         onClick={() => handleRemoveFriend(friend.id)}
-                        title="Remove Friend"
+                        title={t('friends.unfriend', 'Remove Friend')}
                       >
                         <UserMinus size={20} />
                       </button>

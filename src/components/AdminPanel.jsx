@@ -6,9 +6,11 @@ import {
 } from 'lucide-react'
 import { apiService } from '../services/apiService'
 import Avatar from './Avatar'
+import useTranslation from '../hooks/useTranslation'
 import '../assets/styles/AdminPanel.css'
 
 const AdminPanel = ({ onClose }) => {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('overview')
   const [stats, setStats] = useState(null)
   const [users, setUsers] = useState([])
@@ -65,7 +67,7 @@ const AdminPanel = ({ onClose }) => {
   }
 
   const handleDeleteSelfVolt = async (voltId) => {
-    if (!confirm('Are you sure you want to delete this Self-Volt?')) return
+    if (!confirm(t('admin.adminPanel.confirms.deleteSelfVolt'))) return
     setActionLoading(true)
     try {
       await apiService.deleteSelfVoltAdmin(voltId)
@@ -122,9 +124,9 @@ const AdminPanel = ({ onClose }) => {
   }
 
   const handleRemoveFromDiscovery = async (serverId) => {
-    if (!confirm('Remove this server from discovery?')) return
+    if (!confirm(t('admin.adminPanel.confirms.removeFromDiscovery'))) return
     try {
-      await apiService.removeFromDiscovery(serverId)
+      await apiService.removeFromDiscoveryAdmin(serverId)
       loadDiscoveryData()
     } catch (err) {
       console.error('Failed to remove:', err)
@@ -148,9 +150,9 @@ const AdminPanel = ({ onClose }) => {
       if (hasErrors) {
         const firstError = results.find(r => r.status === 'rejected')?.reason
         if (firstError?.response?.status === 403) {
-          setError('Access denied. Admin permissions required.')
+          setError(t('admin.adminPanel.errors.accessDeniedPermissions'))
         } else {
-          setError('Failed to load some data. Showing partial results.')
+          setError(t('admin.adminPanel.errors.partialData'))
         }
       }
       
@@ -162,7 +164,7 @@ const AdminPanel = ({ onClose }) => {
       if (results[5].status === 'fulfilled') setLogs(Array.isArray(results[5].value.data) ? results[5].value.data : [])
     } catch (err) {
       console.error('Failed to load admin data:', err)
-      setError('Failed to load admin panel data.')
+      setError(t('admin.adminPanel.errors.failedLoadAdminPanel'))
     } finally {
       setLoading(false)
     }
@@ -211,7 +213,7 @@ const AdminPanel = ({ onClose }) => {
     setActionLoading(true)
     try {
       const res = await apiService.resetUserPassword(userId)
-      alert(`Password reset token: ${res.data.token}`)
+      alert(t('admin.adminPanel.alerts.passwordResetToken', { token: res.data.token }))
     } catch (err) {
       console.error('Failed to reset password:', err)
     } finally {
@@ -220,7 +222,7 @@ const AdminPanel = ({ onClose }) => {
   }
 
   const handleDeleteUser = async (userId) => {
-    if (!confirm('Are you sure you want to permanently delete this user?')) return
+    if (!confirm(t('admin.adminPanel.confirms.deleteUserPermanently'))) return
     setActionLoading(true)
     try {
       await apiService.deleteUser(userId)
@@ -242,7 +244,7 @@ const AdminPanel = ({ onClose }) => {
         age: category === 'adult' ? 18 : 13
       })
       await loadData()
-      alert(`User verified as ${category}`)
+      alert(t('admin.adminPanel.alerts.userVerifiedAs', { category: t(`admin.adminPanel.age.categories.${category}`) }))
     } catch (err) {
       console.error('Failed to verify age:', err)
     } finally {
@@ -251,7 +253,7 @@ const AdminPanel = ({ onClose }) => {
   }
 
   const handleRemoveAgeVerification = async (userId) => {
-    if (!confirm('Remove age verification from this user?')) return
+    if (!confirm(t('admin.adminPanel.confirms.removeAgeVerification'))) return
     setActionLoading(true)
     try {
       await apiService.removeUserAgeVerification(userId)
@@ -309,22 +311,25 @@ const AdminPanel = ({ onClose }) => {
     : servers
 
   const tabs = [
-    { id: 'overview', label: 'Overview', icon: BarChart3 },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'servers', label: 'Servers', icon: Server },
-    { id: 'selfvolts', label: 'Self-Volts', icon: Zap },
-    { id: 'discovery', label: 'Discovery', icon: Globe },
-    { id: 'platform', label: 'Platform', icon: Activity },
-    { id: 'bans', label: 'Bans', icon: Ban },
-    { id: 'logs', label: 'Logs', icon: History }
+    { id: 'overview', labelKey: 'admin.adminPanel.tabs.overview', icon: BarChart3 },
+    { id: 'users', labelKey: 'admin.adminPanel.tabs.users', icon: Users },
+    { id: 'servers', labelKey: 'admin.adminPanel.tabs.servers', icon: Server },
+    { id: 'selfvolts', labelKey: 'admin.adminPanel.tabs.selfvolts', icon: Zap },
+    { id: 'discovery', labelKey: 'admin.adminPanel.tabs.discovery', icon: Globe },
+    { id: 'platform', labelKey: 'admin.adminPanel.tabs.platform', icon: Activity },
+    { id: 'bans', labelKey: 'admin.adminPanel.tabs.bans', icon: Ban },
+    { id: 'logs', labelKey: 'admin.adminPanel.tabs.logs', icon: History }
   ]
+
+  const formatRoleLabel = (role) => t(`admin.adminPanel.roles.${role}`, role)
+  const formatStatusLabel = (status) => t(`admin.adminPanel.status.${status}`, status)
 
   return (
     <div className="admin-panel">
       <div className="admin-header">
         <div className="admin-header-title">
           <Shield size={24} />
-          <h1>Admin Panel</h1>
+          <h1>{t('admin.adminPanel.title')}</h1>
         </div>
         <button className="admin-close" onClick={onClose}>
           <X size={24} />
@@ -341,7 +346,7 @@ const AdminPanel = ({ onClose }) => {
               onClick={() => setActiveTab(tab.id)}
             >
               <Icon size={18} />
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           )
         })}
@@ -349,63 +354,63 @@ const AdminPanel = ({ onClose }) => {
 
       <div className="admin-content">
         {loading ? (
-          <div className="admin-loading">
-            <div className="loading-spinner"></div>
-            <p>Loading admin data...</p>
+            <div className="admin-loading">
+              <div className="loading-spinner"></div>
+            <p>{t('admin.adminPanel.loadingData')}</p>
           </div>
         ) : error ? (
           <div className="admin-error">
             <Shield size={48} />
-            <h3>Access Denied</h3>
+            <h3>{t('admin.adminPanel.accessDenied')}</h3>
             <p>{error}</p>
-            <p className="admin-hint">Make sure your account has admin/moderator role set in the database.</p>
+            <p className="admin-hint">{t('admin.adminPanel.accessHint')}</p>
           </div>
         ) : (
           <>
             {activeTab === 'overview' && stats && (
               <div className="admin-overview">
-                <h2>Platform Statistics</h2>
+                <h2>{t('admin.adminPanel.platformStatistics')}</h2>
                 <div className="admin-stats-grid">
                   <div className="admin-stat-card">
                     <Users size={24} />
                     <div className="stat-info">
                       <span className="stat-value">{stats.totalUsers}</span>
-                      <span className="stat-label">Total Users</span>
+                      <span className="stat-label">{t('admin.adminPanel.stats.totalUsers')}</span>
                     </div>
                   </div>
                   <div className="admin-stat-card">
                     <Server size={24} />
                     <div className="stat-info">
                       <span className="stat-value">{stats.totalServers}</span>
-                      <span className="stat-label">Total Servers</span>
+                      <span className="stat-label">{t('admin.adminPanel.stats.totalServers')}</span>
                     </div>
                   </div>
                   <div className="admin-stat-card">
                     <BarChart3 size={24} />
                     <div className="stat-info">
                       <span className="stat-value">{stats.totalChannels}</span>
-                      <span className="stat-label">Total Channels</span>
+                      <span className="stat-label">{t('admin.adminPanel.stats.totalChannels')}</span>
                     </div>
                   </div>
                   <div className="admin-stat-card">
                     <AlertTriangle size={24} />
                     <div className="stat-info">
                       <span className="stat-value">{stats.totalMessages}</span>
-                      <span className="stat-label">Total Messages</span>
+                      <span className="stat-label">{t('admin.adminPanel.stats.totalMessages')}</span>
                     </div>
                   </div>
                   <div className="admin-stat-card">
                     <Users size={24} />
                     <div className="stat-info">
                       <span className="stat-value">{stats.totalMembers}</span>
-                      <span className="stat-label">Total Members</span>
+                      <span className="stat-label">{t('admin.adminPanel.stats.totalMembers')}</span>
                     </div>
                   </div>
                   <div className="admin-stat-card danger">
                     <Ban size={24} />
                     <div className="stat-info">
                       <span className="stat-value">{stats.totalBannedUsers + stats.totalBannedServers}</span>
-                      <span className="stat-label">Total Bans</span>
+                      <span className="stat-label">{t('admin.adminPanel.stats.totalBans')}</span>
                     </div>
                   </div>
                 </div>
@@ -419,13 +424,13 @@ const AdminPanel = ({ onClose }) => {
                     <Search size={18} />
                     <input
                       type="text"
-                      placeholder="Search users..."
+                      placeholder={t('admin.adminPanel.placeholders.searchUsers')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
                   <button className="btn btn-secondary" onClick={loadData}>
-                    <RefreshCw size={16} /> Refresh
+                    <RefreshCw size={16} /> {t('admin.adminPanel.actions.refresh')}
                   </button>
                 </div>
 
@@ -433,12 +438,12 @@ const AdminPanel = ({ onClose }) => {
                   <table>
                     <thead>
                       <tr>
-                        <th>User</th>
-                        <th>Role</th>
-                        <th>Status</th>
-                        <th>Age</th>
-                        <th>Joined</th>
-                        <th>Actions</th>
+                        <th>{t('admin.adminPanel.table.user')}</th>
+                        <th>{t('admin.adminPanel.table.role')}</th>
+                        <th>{t('admin.adminPanel.table.status')}</th>
+                        <th>{t('admin.adminPanel.table.age')}</th>
+                        <th>{t('admin.adminPanel.table.joined')}</th>
+                        <th>{t('admin.adminPanel.table.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -455,29 +460,31 @@ const AdminPanel = ({ onClose }) => {
                           </td>
                           <td>
                             <span className={`role-badge ${user.adminRole || 'user'}`}>
-                              {user.adminRole || 'user'}
+                              {formatRoleLabel(user.adminRole || 'user')}
                             </span>
                           </td>
                           <td>
                             <span className={`status-badge ${user.status || 'offline'}`}>
-                              {user.status || 'offline'}
+                              {formatStatusLabel(user.status || 'offline')}
                             </span>
                           </td>
                           <td>
                             {user.ageVerification?.verified ? (
                               <span className={`status-badge ${user.ageVerification.category === 'adult' ? 'online' : 'offline'}`}>
-                                {user.ageVerification.category === 'adult' ? 'Adult ✓' : 'Child'}
+                                {user.ageVerification.category === 'adult'
+                                  ? t('admin.adminPanel.age.adultBadge')
+                                  : t('admin.adminPanel.age.childBadge')}
                               </span>
                             ) : (
-                              <span className="status-badge offline">Unverified</span>
+                              <span className="status-badge offline">{t('admin.adminPanel.age.unverified')}</span>
                             )}
                           </td>
-                          <td>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</td>
+                          <td>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : t('admin.adminPanel.na')}</td>
                           <td>
                             <div className="action-buttons">
                               <button 
                                 className="icon-btn" 
-                                title="View Details"
+                                title={t('admin.adminPanel.actions.viewDetails')}
                                 onClick={() => setSelectedUser(user)}
                               >
                                 <Settings size={16} />
@@ -499,13 +506,13 @@ const AdminPanel = ({ onClose }) => {
                     <Search size={18} />
                     <input
                       type="text"
-                      placeholder="Search servers..."
+                      placeholder={t('admin.adminPanel.placeholders.searchServers')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
                   <button className="btn btn-secondary" onClick={loadData}>
-                    <RefreshCw size={16} /> Refresh
+                    <RefreshCw size={16} /> {t('admin.adminPanel.actions.refresh')}
                   </button>
                 </div>
 
@@ -513,11 +520,11 @@ const AdminPanel = ({ onClose }) => {
                   <table>
                     <thead>
                       <tr>
-                        <th>Server</th>
-                        <th>Owner</th>
-                        <th>Members</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th>{t('admin.adminPanel.table.server')}</th>
+                        <th>{t('admin.adminPanel.table.owner')}</th>
+                        <th>{t('admin.adminPanel.table.members')}</th>
+                        <th>{t('admin.adminPanel.table.status')}</th>
+                        <th>{t('admin.adminPanel.table.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -539,9 +546,9 @@ const AdminPanel = ({ onClose }) => {
                           <td>{server.members?.length || 0}</td>
                           <td>
                             {server.isBanned ? (
-                              <span className="status-badge banned">Banned</span>
+                              <span className="status-badge banned">{t('admin.adminPanel.status.banned')}</span>
                             ) : (
-                              <span className="status-badge active">Active</span>
+                              <span className="status-badge active">{t('admin.adminPanel.status.active')}</span>
                             )}
                           </td>
                           <td>
@@ -549,7 +556,7 @@ const AdminPanel = ({ onClose }) => {
                               {server.isBanned ? (
                                 <button 
                                   className="icon-btn success" 
-                                  title="Unban Server"
+                                  title={t('admin.adminPanel.actions.unbanServer')}
                                   onClick={() => handleUnbanServer(server.id)}
                                 >
                                   <Unlock size={16} />
@@ -557,9 +564,9 @@ const AdminPanel = ({ onClose }) => {
                               ) : (
                                 <button 
                                   className="icon-btn danger" 
-                                  title="Ban Server"
+                                  title={t('admin.adminPanel.actions.banServer')}
                                   onClick={() => {
-                                    const reason = prompt('Enter ban reason:')
+                                    const reason = prompt(t('admin.adminPanel.prompts.enterBanReason'))
                                     if (reason) handleBanServer(server.id, reason)
                                   }}
                                 >
@@ -579,10 +586,10 @@ const AdminPanel = ({ onClose }) => {
             {activeTab === 'bans' && (
               <div className="admin-bans">
                 <div className="bans-section">
-                  <h3>Banned Users ({bannedUsers.length})</h3>
+                  <h3>{t('admin.adminPanel.sections.bannedUsers', { count: bannedUsers.length })}</h3>
                   <div className="bans-list">
                     {bannedUsers.length === 0 ? (
-                      <p className="no-data">No banned users</p>
+                      <p className="no-data">{t('admin.adminPanel.empty.noBannedUsers')}</p>
                     ) : (
                       bannedUsers.map(ban => (
                         <div key={ban.userId} className="ban-item">
@@ -590,14 +597,17 @@ const AdminPanel = ({ onClose }) => {
                             <span className="ban-user-id">{ban.userId}</span>
                             <span className="ban-reason">{ban.reason}</span>
                             <span className="ban-meta">
-                              Banned by {ban.bannedBy} on {new Date(ban.bannedAt).toLocaleDateString()}
+                              {t('admin.adminPanel.bans.bannedByOn', {
+                                bannedBy: ban.bannedBy,
+                                date: new Date(ban.bannedAt).toLocaleDateString()
+                              })}
                             </span>
                           </div>
                           <button 
                             className="btn btn-sm btn-secondary"
                             onClick={() => handleUnbanUser(ban.userId)}
                           >
-                            <Unlock size={14} /> Unban
+                            <Unlock size={14} /> {t('admin.adminPanel.actions.unban')}
                           </button>
                         </div>
                       ))
@@ -606,10 +616,10 @@ const AdminPanel = ({ onClose }) => {
                 </div>
 
                 <div className="bans-section">
-                  <h3>Banned Servers ({bannedServers.length})</h3>
+                  <h3>{t('admin.adminPanel.sections.bannedServers', { count: bannedServers.length })}</h3>
                   <div className="bans-list">
                     {bannedServers.length === 0 ? (
-                      <p className="no-data">No banned servers</p>
+                      <p className="no-data">{t('admin.adminPanel.empty.noBannedServers')}</p>
                     ) : (
                       bannedServers.map(ban => (
                         <div key={ban.serverId} className="ban-item">
@@ -617,14 +627,17 @@ const AdminPanel = ({ onClose }) => {
                             <span className="ban-server-name">{ban.serverName}</span>
                             <span className="ban-reason">{ban.reason}</span>
                             <span className="ban-meta">
-                              {ban.bannedMembers?.length || 0} members banned | By {ban.bannedBy}
+                              {t('admin.adminPanel.bans.membersBannedBy', {
+                                count: ban.bannedMembers?.length || 0,
+                                bannedBy: ban.bannedBy
+                              })}
                             </span>
                           </div>
                           <button 
                             className="btn btn-sm btn-secondary"
                             onClick={() => handleUnbanServer(ban.serverId)}
                           >
-                            <Unlock size={14} /> Unban
+                            <Unlock size={14} /> {t('admin.adminPanel.actions.unban')}
                           </button>
                         </div>
                       ))
@@ -637,10 +650,10 @@ const AdminPanel = ({ onClose }) => {
             {activeTab === 'discovery' && (
               <div className="admin-discovery">
                 <div className="discovery-section">
-                  <h3>Pending Submissions ({pendingSubmissions.length})</h3>
+                  <h3>{t('admin.adminPanel.sections.pendingSubmissions', { count: pendingSubmissions.length })}</h3>
                   <div className="discovery-list">
                     {pendingSubmissions.length === 0 ? (
-                      <p className="no-data">No pending submissions</p>
+                      <p className="no-data">{t('admin.adminPanel.empty.noPendingSubmissions')}</p>
                     ) : (
                       pendingSubmissions.map(sub => (
                         <div key={sub.id} className="discovery-item">
@@ -649,7 +662,10 @@ const AdminPanel = ({ onClose }) => {
                             <div>
                               <span className="discovery-name">{sub.name}</span>
                               <span className="discovery-meta">
-                                Category: {sub.category} | Submitted: {new Date(sub.submittedAt).toLocaleDateString()}
+                                {t('admin.adminPanel.discovery.categorySubmitted', {
+                                  category: sub.category,
+                                  submittedAt: new Date(sub.submittedAt).toLocaleDateString()
+                                })}
                               </span>
                               {sub.description && (
                                 <span className="discovery-desc">{sub.description}</span>
@@ -661,13 +677,13 @@ const AdminPanel = ({ onClose }) => {
                               className="btn btn-sm btn-primary"
                               onClick={() => handleApproveDiscovery(sub.id)}
                             >
-                              <CheckCircle size={14} /> Approve
+                              <CheckCircle size={14} /> {t('admin.adminPanel.actions.approve')}
                             </button>
                             <button 
                               className="btn btn-sm btn-danger"
                               onClick={() => handleRejectDiscovery(sub.id)}
                             >
-                              <XCircle size={14} /> Reject
+                              <XCircle size={14} /> {t('admin.adminPanel.actions.reject')}
                             </button>
                           </div>
                         </div>
@@ -677,10 +693,10 @@ const AdminPanel = ({ onClose }) => {
                 </div>
 
                 <div className="discovery-section">
-                  <h3>Approved Servers ({approvedDiscovery.length})</h3>
+                  <h3>{t('admin.adminPanel.sections.approvedServers', { count: approvedDiscovery.length })}</h3>
                   <div className="discovery-list">
                     {approvedDiscovery.length === 0 ? (
-                      <p className="no-data">No approved servers</p>
+                      <p className="no-data">{t('admin.adminPanel.empty.noApprovedServers')}</p>
                     ) : (
                       approvedDiscovery.map(server => (
                         <div key={server.id} className="discovery-item">
@@ -689,7 +705,10 @@ const AdminPanel = ({ onClose }) => {
                             <div>
                               <span className="discovery-name">{server.name}</span>
                               <span className="discovery-meta">
-                                Category: {server.category} | Members: {server.memberCount}
+                                {t('admin.adminPanel.discovery.categoryMembers', {
+                                  category: server.category,
+                                  memberCount: server.memberCount
+                                })}
                               </span>
                             </div>
                           </div>
@@ -698,7 +717,7 @@ const AdminPanel = ({ onClose }) => {
                               className="btn btn-sm btn-danger"
                               onClick={() => handleRemoveFromDiscovery(server.serverId)}
                             >
-                              <XCircle size={14} /> Remove
+                              <XCircle size={14} /> {t('admin.adminPanel.actions.remove')}
                             </button>
                           </div>
                         </div>
@@ -712,14 +731,14 @@ const AdminPanel = ({ onClose }) => {
             {activeTab === 'selfvolts' && (
               <div className="admin-selfvolts">
                 <div className="admin-toolbar">
-                  <h2>Self-Volt Servers</h2>
+                  <h2>{t('admin.adminPanel.selfvolts.title')}</h2>
                   <button className="btn btn-secondary" onClick={loadSelfVoltsData}>
-                    <RefreshCw size={16} /> Refresh
+                    <RefreshCw size={16} /> {t('admin.adminPanel.actions.refresh')}
                   </button>
                 </div>
 
                 {selfVolts.length === 0 ? (
-                  <div className="no-data">No Self-Volt servers registered</div>
+                  <div className="no-data">{t('admin.adminPanel.empty.noSelfVolts')}</div>
                 ) : (
                   <div className="selfvolts-grid">
                     {selfVolts.map(volt => (
@@ -748,9 +767,9 @@ const AdminPanel = ({ onClose }) => {
                         )}
                         
                         <div className="selfvolt-meta">
-                          <span>Owner: {volt.ownerUsername || volt.ownerId}</span>
-                          <span>Added: {new Date(volt.createdAt).toLocaleDateString()}</span>
-                          {volt.lastTest && <span>Last test: {new Date(volt.lastTest).toLocaleString()}</span>}
+                          <span>{t('admin.adminPanel.selfvolts.owner', { owner: volt.ownerUsername || volt.ownerId })}</span>
+                          <span>{t('admin.adminPanel.selfvolts.added', { date: new Date(volt.createdAt).toLocaleDateString() })}</span>
+                          {volt.lastTest && <span>{t('admin.adminPanel.selfvolts.lastTest', { date: new Date(volt.lastTest).toLocaleString() })}</span>}
                         </div>
                         
                         <div className="selfvolt-actions">
@@ -759,14 +778,14 @@ const AdminPanel = ({ onClose }) => {
                             onClick={() => handleTestSelfVolt(volt.id)}
                             disabled={actionLoading}
                           >
-                            <Activity size={14} /> Test
+                            <Activity size={14} /> {t('admin.adminPanel.actions.test')}
                           </button>
                           <button 
                             className="btn btn-sm btn-danger"
                             onClick={() => handleDeleteSelfVolt(volt.id)}
                             disabled={actionLoading}
                           >
-                            <Trash2 size={14} /> Delete
+                            <Trash2 size={14} /> {t('admin.adminPanel.actions.delete')}
                           </button>
                         </div>
                       </div>
@@ -778,38 +797,38 @@ const AdminPanel = ({ onClose }) => {
 
             {activeTab === 'platform' && (
               <div className="admin-platform">
-                <h2>Self-Volt Platform Monitor</h2>
+                <h2>{t('admin.adminPanel.platform.monitorTitle')}</h2>
                 
                 {platformHealth && (
                   <div className="platform-section">
-                    <h3>Server Health</h3>
+                    <h3>{t('admin.adminPanel.platform.serverHealth')}</h3>
                     <div className="platform-stats-grid">
                       <div className="platform-stat-card">
                         <Activity size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{platformHealth.uptime.formatted}</span>
-                          <span className="stat-label">Uptime</span>
+                          <span className="stat-label">{t('admin.adminPanel.platform.uptime')}</span>
                         </div>
                       </div>
                       <div className="platform-stat-card">
                         <Clock size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{new Date(platformHealth.uptime.startTime).toLocaleDateString()}</span>
-                          <span className="stat-label">Started</span>
+                          <span className="stat-label">{t('admin.adminPanel.platform.started')}</span>
                         </div>
                       </div>
                       <div className="platform-stat-card">
                         <Globe size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{platformHealth.discovery.approvedServers}</span>
-                          <span className="stat-label">Discovery Servers</span>
+                          <span className="stat-label">{t('admin.adminPanel.platform.discoveryServers')}</span>
                         </div>
                       </div>
                       <div className="platform-stat-card">
                         <Clock size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{platformHealth.discovery.pendingSubmissions}</span>
-                          <span className="stat-label">Pending Submissions</span>
+                          <span className="stat-label">{t('admin.adminPanel.platform.pendingSubmissions')}</span>
                         </div>
                       </div>
                     </div>
@@ -818,34 +837,34 @@ const AdminPanel = ({ onClose }) => {
 
                 {platformActivity && (
                   <div className="platform-section">
-                    <h3>Platform Activity</h3>
+                    <h3>{t('admin.adminPanel.platform.activityTitle')}</h3>
                     <div className="platform-stats-grid">
                       <div className="platform-stat-card">
                         <Users size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{platformActivity.totalUsers}</span>
-                          <span className="stat-label">Total Users</span>
+                          <span className="stat-label">{t('admin.adminPanel.stats.totalUsers')}</span>
                         </div>
                       </div>
                       <div className="platform-stat-card">
                         <Server size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{platformActivity.totalServers}</span>
-                          <span className="stat-label">Total Servers</span>
+                          <span className="stat-label">{t('admin.adminPanel.stats.totalServers')}</span>
                         </div>
                       </div>
                       <div className="platform-stat-card">
                         <BarChart3 size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{platformActivity.totalMessages}</span>
-                          <span className="stat-label">Server Messages</span>
+                          <span className="stat-label">{t('admin.adminPanel.platform.serverMessages')}</span>
                         </div>
                       </div>
                       <div className="platform-stat-card">
                         <MessageSquare size={24} />
                         <div className="stat-info">
                           <span className="stat-value">{platformActivity.totalDMMessages}</span>
-                          <span className="stat-label">DM Messages</span>
+                          <span className="stat-label">{t('admin.adminPanel.platform.dmMessages')}</span>
                         </div>
                       </div>
                     </div>
@@ -857,14 +876,14 @@ const AdminPanel = ({ onClose }) => {
             {activeTab === 'logs' && (
               <div className="admin-logs">
                 <div className="admin-toolbar">
-                  <h3>Admin Action Logs</h3>
+                  <h3>{t('admin.adminPanel.logs.title')}</h3>
                   <button className="btn btn-secondary" onClick={loadData}>
-                    <RefreshCw size={16} /> Refresh
+                    <RefreshCw size={16} /> {t('admin.adminPanel.actions.refresh')}
                   </button>
                 </div>
                 <div className="logs-list">
                   {logs.length === 0 ? (
-                    <p className="no-data">No logs yet</p>
+                    <p className="no-data">{t('admin.adminPanel.empty.noLogs')}</p>
                   ) : (
                     logs.map(log => (
                       <div key={log.id} className="log-item">
@@ -873,7 +892,7 @@ const AdminPanel = ({ onClose }) => {
                         </div>
                         <div className="log-content">
                           <span className="log-action">{log.action}</span>
-                          <span className="log-target">Target: {log.targetId}</span>
+                          <span className="log-target">{t('admin.adminPanel.logs.target', { targetId: log.targetId })}</span>
                           {log.details && (
                             <span className="log-details">{JSON.stringify(log.details)}</span>
                           )}
@@ -895,7 +914,7 @@ const AdminPanel = ({ onClose }) => {
         <div className="modal-overlay" onClick={() => setSelectedUser(null)}>
           <div className="modal admin-user-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>User Actions</h2>
+              <h2>{t('admin.adminPanel.userActions.title')}</h2>
               <button onClick={() => setSelectedUser(null)}><X size={20} /></button>
             </div>
             <div className="modal-content">
@@ -906,7 +925,7 @@ const AdminPanel = ({ onClose }) => {
               </div>
               
               <div className="user-actions-section">
-                <h4>Set Role</h4>
+                <h4>{t('admin.adminPanel.userActions.setRole')}</h4>
                 <div className="role-buttons">
                   {['user', 'moderator', 'admin', 'owner'].map(role => (
                     <button
@@ -915,14 +934,14 @@ const AdminPanel = ({ onClose }) => {
                       onClick={() => handleSetRole(selectedUser.id, role)}
                       disabled={actionLoading}
                     >
-                      {role}
+                      {formatRoleLabel(role)}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="user-actions-section">
-                <h4>Set Status</h4>
+                <h4>{t('admin.adminPanel.userActions.setStatus')}</h4>
                 <div className="role-buttons">
                   {['online', 'idle', 'dnd', 'offline'].map(status => (
                     <button
@@ -931,73 +950,73 @@ const AdminPanel = ({ onClose }) => {
                       onClick={() => handleSetUserStatus(selectedUser.id, status)}
                       disabled={actionLoading}
                     >
-                      {status}
+                      {formatStatusLabel(status)}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="user-actions-section">
-                <h4>Age Verification</h4>
+                <h4>{t('admin.adminPanel.userActions.ageVerification')}</h4>
                 <div className="role-buttons">
                   <button
                     className={`btn btn-sm ${selectedUser.ageVerification?.category === 'adult' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => handleVerifyAge(selectedUser.id, 'adult')}
                     disabled={actionLoading}
                   >
-                    ✓ Adult (18+)
+                    {t('admin.adminPanel.age.adultOption')}
                   </button>
                   <button
                     className={`btn btn-sm ${selectedUser.ageVerification?.category === 'child' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => handleVerifyAge(selectedUser.id, 'child')}
                     disabled={actionLoading}
                   >
-                    ✓ Child (Under 18)
+                    {t('admin.adminPanel.age.childOption')}
                   </button>
                   <button
                     className="btn btn-sm btn-danger"
                     onClick={() => handleRemoveAgeVerification(selectedUser.id)}
                     disabled={actionLoading}
                   >
-                    ✗ Remove
+                    {t('admin.adminPanel.actions.remove')}
                   </button>
                 </div>
                 {selectedUser.ageVerification && (
                   <div className="user-verification-info">
-                    <span>Verified: {selectedUser.ageVerification.verified ? 'Yes' : 'No'}</span>
-                    <span>Category: {selectedUser.ageVerification.category}</span>
-                    <span>Method: {selectedUser.ageVerification.method}</span>
+                    <span>{t('admin.adminPanel.age.verified', { value: selectedUser.ageVerification.verified ? t('admin.adminPanel.common.yes') : t('admin.adminPanel.common.no') })}</span>
+                    <span>{t('admin.adminPanel.age.category', { category: t(`admin.adminPanel.age.categories.${selectedUser.ageVerification.category}`, selectedUser.ageVerification.category) })}</span>
+                    <span>{t('admin.adminPanel.age.method', { method: selectedUser.ageVerification.method })}</span>
                   </div>
                 )}
               </div>
 
               <div className="user-actions-section">
-                <h4>Account Actions</h4>
+                <h4>{t('admin.adminPanel.userActions.accountActions')}</h4>
                 <div className="action-buttons-group">
                   <button 
                     className="btn btn-secondary"
                     onClick={() => handleResetPassword(selectedUser.id)}
                     disabled={actionLoading}
                   >
-                    <Key size={16} /> Reset Password
+                    <Key size={16} /> {t('admin.adminPanel.actions.resetPassword')}
                   </button>
                   <button 
                     className="btn btn-danger"
                     onClick={() => handleDeleteUser(selectedUser.id)}
                     disabled={actionLoading}
                   >
-                    <Trash2 size={16} /> Delete User
+                    <Trash2 size={16} /> {t('admin.adminPanel.actions.deleteUser')}
                   </button>
                 </div>
               </div>
 
               <div className="user-actions-section">
-                <h4>Ban User</h4>
+                <h4>{t('admin.adminPanel.userActions.banUser')}</h4>
                 <div className="ban-form">
                   <input
                     type="text"
                     className="input"
-                    placeholder="Enter ban reason..."
+                    placeholder={t('admin.adminPanel.placeholders.enterBanReason')}
                     id="banReason"
                   />
                   <button 
@@ -1008,7 +1027,7 @@ const AdminPanel = ({ onClose }) => {
                     }}
                     disabled={actionLoading}
                   >
-                    <Ban size={16} /> Ban User
+                    <Ban size={16} /> {t('admin.adminPanel.actions.banUser')}
                   </button>
                 </div>
               </div>

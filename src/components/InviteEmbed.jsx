@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { Users, Loader2, X, Globe } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
 import { getStoredServer } from '../services/serverConfig'
 import '../assets/styles/InviteEmbed.css'
 
 const InviteEmbed = ({ inviteCode, inviteUrl }) => {
+  const { t } = useTranslation()
   const [invite, setInvite] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -64,7 +66,7 @@ const InviteEmbed = ({ inviteCode, inviteUrl }) => {
     return (
       <div className="invite-embed loading">
         <Loader2 size={18} className="invite-embed-spinner" />
-        <span>Loading invite...</span>
+        <span>{t('invitePage.loading', 'Loading invite...')}</span>
       </div>
     )
   }
@@ -76,8 +78,8 @@ const InviteEmbed = ({ inviteCode, inviteUrl }) => {
           <X size={24} />
         </div>
         <div className="invite-embed-info">
-          <div className="invite-embed-label">Invalid Invite</div>
-          <div className="invite-embed-desc">This invite may be expired or you might not have permission to join.</div>
+          <div className="invite-embed-label">{t('invitePage.invalidInvite', 'Invalid Invite')}</div>
+          <div className="invite-embed-desc">{t('invitePage.invalidInviteDesc', 'This invite may be expired or you might not have permission to join.')}</div>
         </div>
       </div>
     )
@@ -96,7 +98,7 @@ const InviteEmbed = ({ inviteCode, inviteUrl }) => {
     <div className="invite-embed">
       <div className="invite-embed-header">
         {isExternal && <Globe size={12} />}
-        <span>You've been invited to join a server</span>
+        <span>{t('invitePage.invitedToJoinServer', "You've been invited to join a server")}</span>
       </div>
       <div className="invite-embed-body">
         <div className="invite-embed-server-icon">
@@ -112,13 +114,13 @@ const InviteEmbed = ({ inviteCode, inviteUrl }) => {
             {onlineCount > 0 && (
               <span className="invite-embed-stat">
                 <span className="invite-embed-dot online" />
-                {onlineCount} Online
+                {onlineCount} {t('status.online', 'Online')}
               </span>
             )}
             <span className="invite-embed-stat">
               <span className="invite-embed-dot members" />
               <Users size={12} />
-              {memberCount} Members
+              {memberCount} {t('chat.members', 'Members')}
             </span>
           </div>
         </div>
@@ -127,7 +129,7 @@ const InviteEmbed = ({ inviteCode, inviteUrl }) => {
           onClick={handleJoin}
           disabled={joining || joined}
         >
-          {joined ? 'Joined' : joining ? '...' : 'Join'}
+          {joined ? t('invitePage.joined', 'Joined') : joining ? '...' : t('servers.join', 'Join')}
         </button>
       </div>
     </div>

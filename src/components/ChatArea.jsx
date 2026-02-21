@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useE2e } from '../contexts/E2eContext'
 import { useE2eTrue } from '../contexts/E2eTrueContext'
 import { apiService } from '../services/apiService'
+import { useTranslation } from '../hooks/useTranslation'
 import { soundService } from '../services/soundService'
 import { getStoredServer } from '../services/serverConfig'
 import { preloadHostMetadata } from '../services/hostMetadataService'
@@ -18,6 +19,7 @@ import '../assets/styles/ChatInput.css'
 const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAgeGateTriggered, onLoadMoreMessages, onToggleMembers, onSaveScrollPosition, scrollPosition, onShowProfile }) => {
   const { socket, connected } = useSocket()
   const { user } = useAuth()
+  const { t } = useTranslation()
   const { 
     isEncryptionEnabled, 
     hasDecryptedKey,
@@ -161,10 +163,10 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
     const handleMessageError = (payload) => {
       if (payload?.channelId === channelId) {
         if (payload.code === 'AGE_VERIFICATION_REQUIRED') {
-          setSendError('Age verification is required before chatting in this channel.')
+          setSendError(t('ageVerification.channelAccess', 'Access to #{{channel}} requires age verification.', { channel: currentChannel?.name || t('chat.channelName', 'this channel') }))
           onAgeGateTriggered?.()
         } else if (payload.code === 'SLOWMODE') {
-          setSendError(payload.error || 'Slowmode is active. Please wait before sending another message.')
+          setSendError(payload.error || t('chat.slowmodeActive', 'Slowmode is active. Please wait before sending another message.'))
         }
       }
     }
@@ -175,7 +177,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
       socket.off('user:typing', handleTyping)
       socket.off('message:error', handleMessageError)
     }
-  }, [socket, connected, channelId, user, onAgeGateTriggered])
+  }, [socket, connected, channelId, user, onAgeGateTriggered, t, currentChannel?.name])
 
   useEffect(() => {
     setSendError('')
@@ -365,17 +367,26 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
   }
 
   const handleEmojiSelect = (emoji) => {
+    const insertAtCaret = (textToInsert) => {
+      const editor = inputRef.current
+      const editorText = editor?.getEditor?.()?.innerText ?? inputValue
+      const caret = editor?.getCaretPosition?.() ?? editorText.length
+      const next = `${editorText.slice(0, caret)}${textToInsert}${editorText.slice(caret)}`
+      editor?.setValueAndCaret?.(next, caret + textToInsert.length)
+      setInputValue(next)
+    }
+
     if (typeof emoji === 'string') {
-      setInputValue(prev => prev + emoji)
+      insertAtCaret(emoji)
     } else if (emoji.type === 'gif') {
-      setInputValue(prev => prev + `[GIF: ${emoji.url}]`)
+      insertAtCaret(`[GIF: ${emoji.url}]`)
     } else if (emoji.type === 'custom') {
       // Insert global emoji format: :host|serverId|emojiId|name:
       // This ensures the emoji displays correctly everywhere (DMs, other servers, etc.)
       const emojiFormat = emoji.host && emoji.serverId && emoji.id
         ? `:${emoji.host}|${emoji.serverId}|${emoji.id}|${emoji.name}:`
         : `:${emoji.name}:`
-      setInputValue(prev => prev + emojiFormat)
+      insertAtCaret(emojiFormat)
     }
     // inputRef is now a forwarded ref object with a .focus() helper
     requestAnimationFrame(() => inputRef.current?.focus?.())
@@ -439,7 +450,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
       previews.forEach(p => { if (p.localUrl) URL.revokeObjectURL(p.localUrl) })
       setPendingPreviews(prev => prev.filter(p => !previews.includes(p)))
       setUploadProgress(null)
-      setSendError('Failed to upload file(s)')
+      setSendError(t('dm.uploadError', 'Failed to upload file(s)'))
     }
   }
 
@@ -603,7 +614,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
         <div className="drop-overlay">
           <div className="drop-message">
             <FileText size={48} />
-            <span>Drop files to upload</span>
+            <span>{t('chat.dropFilesUpload', 'Drop files to upload')}</span>
           </div>
         </div>
       )}
@@ -614,14 +625,14 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
           <span className="channel-title">{currentChannel?.name || 'channel'}</span>
         </div>
         <div className="chat-actions">
-          <button className="icon-btn" title="Show Members" onClick={onToggleMembers}>
+          <button className="icon-btn" title={t('misc.showMembers', 'Show Members')} onClick={onToggleMembers}>
             <Users size={20} />
           </button>
           <div className="divider-vertical"></div>
-          <button className="icon-btn" title="Pinned Messages" onClick={() => { handleLoadPinned(); setShowPinnedModal(true) }}>
+          <button className="icon-btn" title={t('misc.pinnedMessages', 'Pinned Messages')} onClick={() => { handleLoadPinned(); setShowPinnedModal(true) }}>
             <Pin size={20} />
           </button>
-          <button className="icon-btn" title="Search" onClick={() => setShowSearchModal(true)}>
+          <button className="icon-btn" title={t('common.search', 'Search')} onClick={() => setShowSearchModal(true)}>
             <Search size={20} />
           </button>
         </div>
@@ -763,7 +774,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
           {showMentionSuggestions && mentionSuggestions.length > 0 && (
             <div ref={mentionPanelRef} className="mention-suggestions-panel">
               <div className="mention-suggestions-header">
-                Members &amp; Mentions — {mentionQuery ? `"@${mentionQuery}"` : 'type to filter'}
+                {t('chat.membersAndMentions', 'Members & Mentions')} {mentionQuery ? `"@${mentionQuery}"` : t('chat.typeToFilter', 'type to filter')}
               </div>
               <div className="mention-suggestions-list">
                 {mentionSuggestions.map((mention, index) => (
@@ -819,11 +830,12 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
             ref={inputRef}
             value={inputValue}
             onChange={handleInputChange}
-            placeholder={`Message #${currentChannel?.name || 'channel'}`}
+            placeholder={t('chat.messageChannel', { channel: currentChannel?.name || 'channel' })}
             onSubmit={handleSendMessage}
             onKeyDown={handleKeyDown}
             onAttachClick={handlePlusClick}
             onEmojiClick={toggleEmojiPicker}
+            customEmojis={serverEmojis}
           />
           
           {showEmojiPicker && (
@@ -842,7 +854,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
         <div className="modal-overlay" onClick={() => setShowSearchModal(false)}>
           <div className="modal-content search-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Search Messages</h3>
+              <h3>{t('search.searchMessagesTitle', 'Search Messages')}</h3>
               <button className="modal-close" onClick={() => setShowSearchModal(false)}>
                 <X size={20} />
               </button>
@@ -850,7 +862,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
             <form onSubmit={handleSearch} className="search-form">
               <input
                 type="text"
-                placeholder="Search messages..."
+                placeholder={t('search.searchMessages', 'Search messages...')}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 autoFocus
@@ -861,7 +873,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
             </form>
             <div className="search-results">
               {isSearching ? (
-                <div className="search-loading">Searching...</div>
+                <div className="search-loading">{t('search.searching', 'Searching...')}</div>
               ) : searchResults.length > 0 ? (
                 searchResults.map(msg => (
                   <div 
@@ -884,9 +896,9 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
                   </div>
                 ))
               ) : searchQuery && !isSearching ? (
-                <div className="search-empty">No results found</div>
+                <div className="search-empty">{t('common.noResults', 'No results found')}</div>
               ) : (
-                <div className="search-empty">Enter a search term to find messages</div>
+                <div className="search-empty">{t('search.enterSearchTerm', 'Enter a search term to find messages')}</div>
               )}
             </div>
           </div>
@@ -897,14 +909,14 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
         <div className="modal-overlay" onClick={() => setShowPinnedModal(false)}>
           <div className="modal-content pinned-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Pinned Messages</h3>
+              <h3>{t('misc.pinnedMessages', 'Pinned Messages')}</h3>
               <button className="modal-close" onClick={() => setShowPinnedModal(false)}>
                 <X size={20} />
               </button>
             </div>
             <div className="pinned-messages-list">
               {isLoadingPins ? (
-                <div className="pinned-loading">Loading...</div>
+                <div className="pinned-loading">{t('common.loading', 'Loading...')}</div>
               ) : pinnedMessages.length > 0 ? (
                 pinnedMessages.map(msg => (
                   <div key={msg.id} className="pinned-message-item">
@@ -919,12 +931,12 @@ const ChatArea = ({ channelId, serverId, channels, messages, onMessageSent, onAg
                       className="pinned-unpin-btn"
                       onClick={() => handleUnpinMessage(msg.id)}
                     >
-                      Unpin
+                      {t('chat.unpin', 'Unpin')}
                     </button>
                   </div>
                 ))
               ) : (
-                <div className="pinned-empty">No pinned messages</div>
+                <div className="pinned-empty">{t('chat.noPinnedMessages', 'No pinned messages')}</div>
               )}
             </div>
           </div>

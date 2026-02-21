@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { MessageSquare, Lock, Menu, ChevronLeft, Users, Maximize2, Minimize2 } from 'lucide-react'
+import { MessageSquare, Lock, Menu, ChevronLeft, Users, Maximize2, Minimize2, PhoneCall, Search, X } from 'lucide-react'
 import ServerSidebar from '../components/ServerSidebar'
 import ChannelSidebar from '../components/ChannelSidebar'
 import ChatArea from '../components/ChatArea'
@@ -22,15 +22,19 @@ import AdminPanel from '../components/AdminPanel'
 import NotificationToast from '../components/NotificationToast'
 import VoiceInfoModal from '../components/VoiceInfoModal'
 import MobileNav from '../components/MobileNav'
+import Avatar from '../components/Avatar'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useE2e } from '../contexts/E2eContext'
 import { useE2eTrue } from '../contexts/E2eTrueContext'
+import { useTranslation } from '../hooks/useTranslation'
 import { apiService } from '../services/apiService'
 import { useAppStore } from '../store/useAppStore'
 import { soundService } from '../services/soundService'
 import { settingsService } from '../services/settingsService'
 import '../assets/styles/ChatPage.css'
+
+
 
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
@@ -52,6 +56,7 @@ const ChatPage = () => {
   const { socket, connected, serverUpdates, clearServerUpdate } = useSocket()
   const { user, refreshUser, isAuthenticated } = useAuth()
   const { setGlobalEmojis, addGlobalEmoji, removeGlobalEmoji } = useAppStore()
+  const { t } = useTranslation()
   const { 
     decryptMessageFromServer, 
     isEncryptionEnabled, 
@@ -59,6 +64,8 @@ const ChatPage = () => {
   } = useE2e()
   const e2eTrue = useE2eTrue()
   const isMobile = useIsMobile()
+
+
   
   const [servers, setServers] = useState([])
   const [currentServer, setCurrentServer] = useState(null)
@@ -103,6 +110,8 @@ const ChatPage = () => {
   
   const [mobileTab, setMobileTab] = useState('home')
   const [showChannelDrawer, setShowChannelDrawer] = useState(false)
+  const [showMobileServerSelector, setShowMobileServerSelector] = useState(false)
+  const [mobileServerSearch, setMobileServerSearch] = useState('')
   const [mobileBack, setMobileBack] = useState(null)
   const [isVideoOn, setIsVideoOn] = useState(false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
@@ -263,7 +272,7 @@ const ChatPage = () => {
       const target = channels.find(c => c.id === channelId)
       if (target?.nsfw && !ageVerified && user !== null) {
         if (user?.ageVerification?.category === 'child') {
-          setAgeGateNotice('This channel is 18+. Your account is marked under 18, so access is blocked.')
+          setAgeGateNotice(t('chatPage.ageBlockedNotice', 'This channel is 18+. Your account is marked under 18, so access is blocked.'))
           setPendingAgeChannel(target)
           return
         }
@@ -272,7 +281,7 @@ const ChatPage = () => {
         return
       }
       if (blockedAgeChannels.has(channelId)) {
-        setAgeGateNotice('This channel is age-restricted. Please complete age verification to view messages.')
+        setAgeGateNotice(t('chatPage.ageRestrictedNotice', 'This channel is age-restricted. Please complete age verification to view messages.'))
         setPendingAgeChannel(target)
         return
       }
@@ -290,7 +299,7 @@ const ChatPage = () => {
       setAgeGateNotice('')
       setPendingAgeChannel(null)
     }
-  }, [channelId, channels, ageVerified, blockedAgeChannels, user])
+  }, [channelId, channels, ageVerified, blockedAgeChannels, user, t])
 
   // Save current channel state before switching
   const saveCurrentChannelState = useCallback((scrollTop) => {
@@ -640,7 +649,7 @@ const ChatPage = () => {
       if (error?.response?.status === 451) {
         const blocked = channels.find(c => c.id === cId)
         setPendingAgeChannel(blocked || { id: cId })
-        setAgeGateNotice('This channel is age-restricted. Please complete age verification to view messages.')
+        setAgeGateNotice(t('chatPage.ageRestrictedNotice', 'This channel is age-restricted. Please complete age verification to view messages.'))
         setBlockedAgeChannels(prev => new Set(prev).add(cId))
       }
       if (loadingChannelId === channelId) {
@@ -678,7 +687,7 @@ const ChatPage = () => {
       const targetChannel = channels.find(c => c.id === id)
       if (!isVoice && targetChannel?.nsfw && !ageVerified) {
         if (user?.ageVerification?.category === 'child') {
-          setAgeGateNotice('This channel is 18+. Your account is marked under 18, so access is blocked.')
+          setAgeGateNotice(t('chatPage.ageBlockedNotice', 'This channel is 18+. Your account is marked under 18, so access is blocked.'))
           setPendingAgeChannel(targetChannel)
           return
         }
@@ -687,7 +696,7 @@ const ChatPage = () => {
         return
       }
       if (!isVoice && blockedAgeChannels.has(id)) {
-        setAgeGateNotice('This channel is age-restricted. Please complete age verification to view messages.')
+        setAgeGateNotice(t('chatPage.ageRestrictedNotice', 'This channel is age-restricted. Please complete age verification to view messages.'))
         setPendingAgeChannel(targetChannel)
         return
       }
@@ -733,7 +742,7 @@ const ChatPage = () => {
         loadMessages(nextChannel.id)
       }
     } else {
-      setAgeGateNotice('This channel is 18+. Your account is marked under 18, so access is blocked.')
+      setAgeGateNotice(t('chatPage.ageBlockedNotice', 'This channel is 18+. Your account is marked under 18, so access is blocked.'))
       if (nextChannel?.id) {
         setBlockedAgeChannels(prev => new Set(prev).add(nextChannel.id))
       }
@@ -852,6 +861,23 @@ const ChatPage = () => {
     }
   }
 
+  const openSystemInbox = useCallback(() => {
+    setViewMode('system')
+    navigate('/chat/dms')
+  }, [navigate])
+
+  const openDMList = useCallback(() => {
+    setSelectedDM(null)
+    setViewMode('dms')
+    navigate('/chat/dms')
+  }, [navigate])
+
+  const openDMConversation = useCallback((conv) => {
+    setSelectedDM(conv)
+    setViewMode('dms')
+    navigate('/chat/dms')
+  }, [navigate])
+
   useEffect(() => {
     if (currentServer) {
       const accent = currentServer.themeColor || '#1fb6ff'
@@ -903,23 +929,40 @@ const ChatPage = () => {
     }
   }, [serverUpdates, currentServer?.id])
 
+  useEffect(() => {
+    if (!isMobile) {
+      setShowChannelDrawer(false)
+      setShowMobileServerSelector(false)
+      return
+    }
+    if (viewMode !== 'server') {
+      setShowChannelDrawer(false)
+      setShowMembers(false)
+    }
+  }, [isMobile, viewMode])
+
   if (loading) {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
-        <p>Loading VoltChat...</p>
+        <p>{t('chatPage.loading', 'Loading VoltChat...')}</p>
       </div>
     )
   }
 
   const handleMobileTabChange = (tab) => {
     setMobileTab(tab)
+    setShowChannelDrawer(false)
+    if (tab !== 'servers') {
+      setShowMobileServerSelector(false)
+      setMobileServerSearch('')
+    }
     if (tab === 'home') {
       handleServerChange('home')
     } else if (tab === 'servers') {
-      handleServerChange(servers[0]?.id || 'home')
+      setShowMobileServerSelector(true)
     } else if (tab === 'dms') {
-      handleServerChange('dms')
+      openDMList()
     } else if (tab === 'friends') {
       handleServerChange('friends')
     } else if (tab === 'discovery') {
@@ -928,6 +971,7 @@ const ChatPage = () => {
   }
 
   const getCurrentMobileTab = () => {
+    if (showMobileServerSelector) return 'servers'
     if (serverId === 'friends' || viewMode === 'friends') return 'friends'
     if (serverId === 'dms' || viewMode === 'dms' || viewMode === 'system') return 'dms'
     if (serverId === 'discovery' || viewMode === 'discovery') return 'discovery'
@@ -971,51 +1015,183 @@ const ChatPage = () => {
         />
       )}
       
-      {viewMode === 'friends' ? (
-        <>
-          <DMList type="friends"
-            onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
-            onClose={() => {}}
-            onOpenSystemInbox={() => setViewMode('system')}
-          />
-          <FriendsPage onStartDM={(conv) => {
-            setSelectedDM(conv)
-            setViewMode('dms')
-            navigate('/chat/dms')
-          }} />
-        </>
-      ) : viewMode === 'system' ? (
-        <>
-          <DMList
-            type="dms"
-            onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
-            selectedConversation={null}
-            onClose={(convId) => {}}
-            onOpenSystemInbox={() => setViewMode('system')}
-          />
-          <SystemMessagePanel onClose={() => setViewMode('dms')} />
-        </>
-      ) : viewMode === 'dms' ? (
-        <>
-          <DMList 
-            type="dms" 
-            onSelectConversation={setSelectedDM}
-            selectedConversation={selectedDM}
-            onClose={(convId) => {
-              if (selectedDM?.id === convId) setSelectedDM(null)
-            }}
-            onOpenSystemInbox={() => setViewMode('system')}
-          />
-          {selectedDM ? (
-            <DMChat conversation={selectedDM} onShowProfile={(userId) => setShowUserProfile(userId)} />
-          ) : (
-            <div className="empty-state">
-              <MessageSquare size={48} className="empty-state-icon" />
-              <h2>Select a DM</h2>
-              <p>Choose a conversation from the sidebar</p>
+      {isMobile && showMobileServerSelector ? (
+        <div className="mobile-mode-shell mobile-server-selector-shell">
+          <div className="mobile-pane-header mobile-server-selector-header">
+            <div className="mobile-header-btn" />
+            <div className="mobile-header-title">
+              <span className="mobile-server-name">{t('servers.title', 'Servers')}</span>
+              <span className="mobile-channel-name">{servers.length} {t('servers.joined', 'joined')}</span>
             </div>
-          )}
-        </>
+            <button
+              className="mobile-header-btn"
+              onClick={() => {
+                setShowMobileServerSelector(false)
+                setMobileServerSearch('')
+              }}
+              aria-label={t('common.close', 'Close')}
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="mobile-server-selector-controls">
+            <label className="mobile-server-search">
+              <Search size={16} />
+              <input
+                type="text"
+                value={mobileServerSearch}
+                onChange={(e) => setMobileServerSearch(e.target.value)}
+                placeholder={t('servers.search', 'Search servers')}
+              />
+            </label>
+            <div className="mobile-server-selector-actions">
+              <button className="btn btn-secondary" onClick={() => setShowJoinServer(true)}>
+                {t('app.joinServer', 'Join Server')}
+              </button>
+              <button className="btn btn-primary" onClick={() => setShowCreateServer(true)}>
+                {t('app.createServer', 'Create Server')}
+              </button>
+            </div>
+          </div>
+
+          <div className="mobile-server-selector-list">
+            {servers
+              .filter(s => !mobileServerSearch.trim() || s.name?.toLowerCase().includes(mobileServerSearch.trim().toLowerCase()))
+              .map((server) => {
+                const unread = serverUnreadCounts[server.id] || 0
+                const isActive = currentServer?.id === server.id || serverId === server.id
+                return (
+                  <button
+                    key={server.id}
+                    className={`mobile-server-selector-item ${isActive ? 'active' : ''}`}
+                    onClick={() => {
+                      setShowMobileServerSelector(false)
+                      setMobileServerSearch('')
+                      handleServerChange(server.id)
+                    }}
+                  >
+                    <Avatar
+                      src={server.icon}
+                      fallback={server.name}
+                      size={40}
+                    />
+                    <span className="mobile-server-selector-name">{server.name}</span>
+                    {unread > 0 && (
+                      <span className="mobile-server-selector-badge">{unread > 99 ? '99+' : unread}</span>
+                    )}
+                  </button>
+                )
+              })}
+            {servers.filter(s => !mobileServerSearch.trim() || s.name?.toLowerCase().includes(mobileServerSearch.trim().toLowerCase())).length === 0 && (
+              <div className="mobile-server-selector-empty">
+                {t('servers.none', 'No servers found')}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : viewMode === 'friends' ? (
+        isMobile ? (
+          <div className="mobile-mode-shell">
+            <FriendsPage onStartDM={(conv) => {
+              openDMConversation(conv)
+            }} />
+          </div>
+        ) : (
+          <>
+            <DMList type="friends"
+              onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
+              onClose={() => {}}
+              onOpenSystemInbox={openSystemInbox}
+            />
+            <FriendsPage onStartDM={(conv) => {
+              openDMConversation(conv)
+            }} />
+          </>
+        )
+      ) : viewMode === 'system' ? (
+        isMobile ? (
+          <div className="mobile-mode-shell">
+            <div className="mobile-pane-header">
+              <div className="mobile-header-btn" />
+              <div className="mobile-header-title">
+                <span className="mobile-server-name">{t('system.systemInbox', 'System Inbox')}</span>
+              </div>
+              <button className="mobile-header-btn" onClick={openDMList}>
+                <ChevronLeft size={20} />
+              </button>
+            </div>
+            <SystemMessagePanel onClose={openDMList} />
+          </div>
+        ) : (
+          <>
+            <DMList
+              type="dms"
+              onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
+              selectedConversation={null}
+              onClose={(convId) => {}}
+              onOpenSystemInbox={openSystemInbox}
+            />
+            <SystemMessagePanel onClose={openDMList} />
+          </>
+        )
+      ) : viewMode === 'dms' ? (
+        isMobile ? (
+          <div className="mobile-mode-shell">
+            {selectedDM ? (
+              <>
+                <div className="mobile-pane-header">
+                  <button className="mobile-header-btn" onClick={openDMList}>
+                    <ChevronLeft size={20} />
+                  </button>
+                  <div className="mobile-header-title">
+                    <span className="mobile-server-name">
+                      {selectedDM?.recipient?.displayName || selectedDM?.recipient?.username || t('dm.title', 'Direct Messages')}
+                    </span>
+                    {selectedDM?.recipient?.status && (
+                      <span className="mobile-channel-name">{selectedDM.recipient.status}</span>
+                    )}
+                  </div>
+                  <button className="mobile-header-btn" onClick={openSystemInbox}>
+                    <MessageSquare size={18} />
+                  </button>
+                </div>
+                <DMChat conversation={selectedDM} onShowProfile={(userId) => setShowUserProfile(userId)} />
+              </>
+            ) : (
+              <DMList
+                type="dms"
+                onSelectConversation={openDMConversation}
+                selectedConversation={selectedDM}
+                onClose={(convId) => {
+                  if (selectedDM?.id === convId) setSelectedDM(null)
+                }}
+                onOpenSystemInbox={openSystemInbox}
+              />
+            )}
+          </div>
+        ) : (
+          <>
+            <DMList 
+              type="dms" 
+              onSelectConversation={setSelectedDM}
+              selectedConversation={selectedDM}
+              onClose={(convId) => {
+                if (selectedDM?.id === convId) setSelectedDM(null)
+              }}
+              onOpenSystemInbox={openSystemInbox}
+            />
+            {selectedDM ? (
+              <DMChat conversation={selectedDM} onShowProfile={(userId) => setShowUserProfile(userId)} />
+            ) : (
+              <div className="empty-state">
+                <MessageSquare size={48} className="empty-state-icon" />
+                <h2>{t('dm.selectDm')}</h2>
+                <p>{t('dm.chooseConversation')}</p>
+              </div>
+            )}
+          </>
+        )
       ) : viewMode === 'discovery' ? (
         <>
           <Discovery 
@@ -1028,14 +1204,14 @@ const ChatPage = () => {
         <>
           <div className="empty-state full hero simple-home">
             <div className="simple-welcome">
-              <h2>Welcome to VoltChat</h2>
-              <p>Create or join a server to get started</p>
+              <h2>{t('app.welcome')}</h2>
+              <p>{t('app.createOrJoin')}</p>
               <div className="simple-actions">
                 <button className="btn btn-primary btn-lg" onClick={() => setShowCreateServer(true)}>
-                  Create Server
+                  {t('app.createServer', 'Create Server')}
                 </button>
                 <button className="btn btn-secondary btn-lg" onClick={() => setShowJoinServer(true)}>
-                  Join Server
+                  {t('app.joinServer', 'Join Server')}
                 </button>
               </div>
             </div>
@@ -1059,6 +1235,15 @@ const ChatPage = () => {
               <button className="mobile-header-btn" onClick={() => setShowMembers(prev => !prev)}>
                 <Users size={20} />
               </button>
+              {activeVoiceChannel && !selectedVoiceChannelId && (
+                <button
+                  className="mobile-header-btn"
+                  onClick={handleReturnToVoice}
+                  title={t('voicePreview.returnToVoice', 'Return to voice')}
+                >
+                  <PhoneCall size={18} />
+                </button>
+              )}
             </div>
           )}
           
@@ -1068,14 +1253,9 @@ const ChatPage = () => {
                 className="channel-sidebar-overlay visible" 
                 onClick={() => setShowChannelDrawer(false)}
               />
-              <div className="channel-sidebar open">
-                <div className="mobile-drawer-header">
-                  <button onClick={() => setShowChannelDrawer(false)}>
-                    <ChevronLeft size={20} />
-                  </button>
-                  <span>{currentServer.name}</span>
-                </div>
+              <div className="mobile-channel-drawer">
                 <ChannelSidebar 
+                  className="open"
                   server={currentServer}
                   channels={channels}
                   categories={categories}
@@ -1138,21 +1318,21 @@ const ChatPage = () => {
               {ageGateNotice ? (
                 <div className="empty-state">
                   <Lock size={48} className="empty-state-icon" />
-                  <h2>Age restricted</h2>
+                  <h2>{t('chatPage.ageRestrictedTitle', 'Age restricted')}</h2>
                   <p>{ageGateNotice}</p>
                   {pendingAgeChannel && (
                     <button className="btn btn-primary" onClick={() => setPendingAgeChannel(pendingAgeChannel)}>
-                      Retry verification
+                      {t('chatPage.retryVerification', 'Retry verification')}
                     </button>
                   )}
                 </div>
               ) : pendingAgeChannel?.id === channelId ? (
                 <div className="empty-state">
                   <Lock size={48} className="empty-state-icon" />
-                  <h2>Age verification required</h2>
-                  <p>This channel is age-restricted. Complete verification to continue.</p>
+                  <h2>{t('chatPage.ageVerificationRequiredTitle', 'Age verification required')}</h2>
+                  <p>{t('chatPage.ageVerificationRequiredBody', 'This channel is age-restricted. Complete verification to continue.')}</p>
                   <button className="btn btn-primary" onClick={() => setPendingAgeChannel(pendingAgeChannel)}>
-                    Start verification
+                    {t('chatPage.startVerification', 'Start verification')}
                   </button>
                 </div>
               ) : (
@@ -1181,7 +1361,7 @@ const ChatPage = () => {
                       const target = channels.find(c => c.id === channelId)
                       if (target?.nsfw && !ageVerified) {
                         if (user?.ageVerification?.category === 'child') {
-                          setAgeGateNotice('This channel is 18+. Your account is marked under 18, so access is blocked.')
+                          setAgeGateNotice(t('chatPage.ageBlockedNotice', 'This channel is 18+. Your account is marked under 18, so access is blocked.'))
                           setPendingAgeChannel(null)
                           return
                         }
@@ -1191,24 +1371,40 @@ const ChatPage = () => {
                     onToggleMembers={() => setShowMembers(prev => !prev)}
                   />
                   )}
-                  {!contentCollapsed && (
-                  <MemberSidebar 
-                    members={members} 
-                    server={currentServer}
-                    visible={showMembers}
-                    onMemberClick={(userId) => setShowUserProfile(userId)}
-                    onStartDM={handleStartDM}
-                    onKick={handleMemberKick}
-                    onBan={handleMemberBan}
-                    onAddFriend={handleAddFriend}
-                  />
+                  {!contentCollapsed && !isMobile && (
+                    <MemberSidebar 
+                      members={members} 
+                      server={currentServer}
+                      visible={showMembers}
+                      onMemberClick={(userId) => setShowUserProfile(userId)}
+                      onStartDM={handleStartDM}
+                      onKick={handleMemberKick}
+                      onBan={handleMemberBan}
+                      onAddFriend={handleAddFriend}
+                    />
+                  )}
+                  {isMobile && showMembers && (
+                    <>
+                      <div className="member-sidebar-overlay" onClick={() => setShowMembers(false)} />
+                      <MemberSidebar 
+                        members={members} 
+                        server={currentServer}
+                        visible={showMembers}
+                        isMobile
+                        onMemberClick={(userId) => setShowUserProfile(userId)}
+                        onStartDM={handleStartDM}
+                        onKick={handleMemberKick}
+                        onBan={handleMemberBan}
+                        onAddFriend={handleAddFriend}
+                      />
+                    </>
                   )}
                 </>
               )}
             </>
           ) : (
             <div className="empty-state simple">
-              <p>no channels are visible for you :(</p>
+              <p>{t('chatPage.noVisibleChannels', 'no channels are visible for you :(')}</p>
             </div>
           )}
           {voicePreviewChannel && !activeVoiceChannel && (
@@ -1224,14 +1420,14 @@ const ChatPage = () => {
       ) : (
         <div className="empty-state full hero simple-home">
           <div className="simple-welcome">
-            <h2>Welcome to VoltChat</h2>
-            <p>Create or join a server to get started</p>
+            <h2>{t('app.welcome')}</h2>
+            <p>{t('app.createOrJoin')}</p>
             <div className="simple-actions">
               <button className="btn btn-primary btn-lg" onClick={() => setShowCreateServer(true)}>
-                Create Server
+                {t('app.createServer', 'Create Server')}
               </button>
               <button className="btn btn-secondary btn-lg" onClick={() => setShowJoinServer(true)}>
-                Join Server
+                {t('app.joinServer', 'Join Server')}
               </button>
             </div>
           </div>
@@ -1246,7 +1442,7 @@ const ChatPage = () => {
           <div className="voice-container-header">
             <span>{activeVoiceChannel.name}</span>
             <div className="voice-view-controls">
-              <button onClick={toggleVoiceViewMode} title={selectedVoiceChannelId ? 'Minimize' : 'Maximize'}>
+              <button onClick={toggleVoiceViewMode} title={selectedVoiceChannelId ? t('chatPage.minimizeVoice', 'Minimize') : t('chatPage.maximizeVoice', 'Maximize')}>
                 {selectedVoiceChannelId ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               </button>
             </div>

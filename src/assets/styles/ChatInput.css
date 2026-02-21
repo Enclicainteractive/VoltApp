@@ -58,13 +58,33 @@
   resize: none;
 }
 
+.chat-input-emoji-token {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35em;
+  height: 1.35em;
+  margin: 0 1px;
+  vertical-align: -0.22em;
+  border-radius: 4px;
+  user-select: all;
+  cursor: text;
+}
+
+.chat-input-emoji-token img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
 .chat-input-editor:empty::before {
   content: attr(placeholder);
   color: var(--volt-text-muted, #949ba4);
   pointer-events: none;
 }
 
-.chat-input-editor:empty::after {
+.chat-input-editor:focus:empty::before {
   content: '';
 }
 
@@ -118,4 +138,15 @@
 
 .context-menu-label {
   flex: 1;
+}
+
+@media (max-width: 768px) {
+  .chat-input-container {
+    gap: 10px;
+  }
+
+  .chat-input-action-btn {
+    width: 40px;
+    height: 40px;
+  }
 }

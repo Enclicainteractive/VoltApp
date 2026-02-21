@@ -209,13 +209,16 @@
     position: fixed;
     left: 0;
     top: 0;
-    bottom: 0;
+    bottom: var(--mobile-nav-safe-height, var(--mobile-nav-height));
     width: 280px;
-    height: 100dvh;
-    z-index: 1001;
+    height: auto;
+    min-height: 0;
+    z-index: 1301;
     transform: translateX(-100%);
     transition: transform 0.3s ease;
     border-right: 1px solid var(--volt-border);
+    padding-top: var(--mobile-safe-top, 0px);
+    overscroll-behavior: contain;
   }
 
   .channel-sidebar.open {
@@ -226,7 +229,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
+    z-index: 1300;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -245,7 +248,7 @@
 
   .user-panel {
     position: absolute;
-    bottom: calc(var(--mobile-nav-height, 64px) + 8px);
+    bottom: calc(var(--mobile-nav-safe-height, var(--mobile-nav-height, 64px)) + 8px);
     left: 0;
     right: 0;
   }

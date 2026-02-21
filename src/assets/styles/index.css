@@ -125,6 +125,11 @@
 
 :root {
   --mobile-nav-height: 64px;
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-safe-left: env(safe-area-inset-left, 0px);
+  --mobile-safe-right: env(safe-area-inset-right, 0px);
+  --mobile-nav-safe-height: calc(var(--mobile-nav-height) + var(--mobile-safe-bottom));
   --sidebar-width: 240px;
   --server-sidebar-width: 72px;
   --member-sidebar-width: 240px;

@@ -744,3 +744,27 @@
     background: transparent;
   }
 }
+
+@media (max-width: 768px) {
+  .dm-chat {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .dm-messages {
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-bottom: 8px;
+  }
+
+  .dm-input-container {
+    padding: 12px;
+    padding-bottom: calc(12px + var(--mobile-safe-bottom, 0px));
+  }
+
+  .dm-header-actions .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+}

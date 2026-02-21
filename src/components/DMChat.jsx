@@ -4,6 +4,7 @@ import { formatDistance } from 'date-fns'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useCall } from '../contexts/CallContext'
+import { useTranslation } from '../hooks/useTranslation'
 import { apiService } from '../services/apiService'
 import { soundService } from '../services/soundService'
 import Avatar from './Avatar'
@@ -18,11 +19,13 @@ import '../assets/styles/ChatInput.css'
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥']
 
 const DMChat = ({ conversation, onClose, onShowProfile }) => {
+  const { t } = useTranslation()
   const { socket, connected } = useSocket()
   const { user } = useAuth()
   const { 
     activeCall, 
     callStatus, 
+    callDuration,
     initiateCall, 
     endCall, 
     formatDuration 
@@ -51,6 +54,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [highlightedMessageId, setHighlightedMessageId] = useState(null)
+  const [showCallView, setShowCallView] = useState(true)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -63,6 +67,17 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   const prevMessageCountRef = useRef(0)
 
   const recipient = conversation?.recipient
+  const isGroupConversation = !!conversation?.isGroup || (Array.isArray(conversation?.participants) && conversation.participants.length > 2)
+  const conversationTitle = isGroupConversation
+    ? (conversation?.groupName || conversation?.title || conversation?.recipients?.map(r => r.displayName || r.username).slice(0, 3).join(', ') || t('dm.title', 'Direct Messages'))
+    : (recipient?.displayName || recipient?.customUsername || recipient?.username)
+  const groupParticipantIds = (conversation?.recipients || []).map(r => r.id).filter(Boolean)
+
+  useEffect(() => {
+    if (activeCall && activeCall.conversationId === conversation?.id) {
+      setShowCallView(true)
+    }
+  }, [activeCall, conversation?.id])
 
   // ─── Load messages ────────────────────────────────────────────────────────
 
@@ -245,7 +260,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
       soundService.success()
     } catch (err) {
       console.error('[DMChat] Upload failed:', err)
-      setSendError('Failed to upload file(s)')
+      setSendError(t('dm.uploadError', 'Failed to upload file(s)'))
     }
   }, [])
 
@@ -282,17 +297,26 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   // ─── Emoji ────────────────────────────────────────────────────────────────
 
   const handleEmojiSelect = (emoji) => {
+    const insertAtCaret = (textToInsert) => {
+      const editor = inputRef.current
+      const editorText = editor?.getEditor?.()?.innerText ?? inputValue
+      const caret = editor?.getCaretPosition?.() ?? editorText.length
+      const next = `${editorText.slice(0, caret)}${textToInsert}${editorText.slice(caret)}`
+      editor?.setValueAndCaret?.(next, caret + textToInsert.length)
+      setInputValue(next)
+    }
+
     if (typeof emoji === 'string') {
-      setInputValue(prev => prev + emoji)
+      insertAtCaret(emoji)
     } else if (emoji.type === 'gif') {
-      setInputValue(prev => prev + `[GIF: ${emoji.url}]`)
+      insertAtCaret(`[GIF: ${emoji.url}]`)
     } else if (emoji.type === 'custom') {
       // Insert global emoji format: :host|serverId|emojiId|name:
       // This ensures the emoji displays correctly everywhere (DMs, other servers, etc.)
       const emojiFormat = emoji.host && emoji.serverId && emoji.id
         ? `:${emoji.host}|${emoji.serverId}|${emoji.id}|${emoji.name}:`
         : `:${emoji.name}:`
-      setInputValue(prev => prev + emojiFormat)
+      insertAtCaret(emojiFormat)
     }
     setShowEmojiPicker(false)
     requestAnimationFrame(() => inputRef.current?.focus?.())
@@ -366,7 +390,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   }
 
   const handleDeleteMessage = async (messageId) => {
-    if (!confirm('Delete this message?')) return
+    if (!confirm(t('chat.deleteConfirm', 'Delete this message?'))) return
     try {
       await apiService.deleteDMMessage(conversation.id, messageId)
       setMessages(prev => prev.filter(m => m.id !== messageId))
@@ -435,15 +459,15 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
     
     switch (callLog.status) {
       case 'missed':
-        statusText = 'Missed call'
+        statusText = t('call.missed', 'Missed call')
         statusClass = 'missed'
         break
       case 'declined':
-        statusText = 'Call declined'
+        statusText = t('call.declined', 'Call declined')
         statusClass = 'declined'
         break
       case 'cancelled':
-        statusText = 'Call cancelled'
+        statusText = t('call.cancelled', 'Call cancelled')
         statusClass = 'cancelled'
         break
       default:
@@ -484,8 +508,8 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
       )}
 
       {/* Active Call View */}
-      {activeCall && activeCall.conversationId === conversation?.id && (
-        <DMCallView />
+      {activeCall && activeCall.conversationId === conversation?.id && showCallView && (
+        <DMCallView onClose={() => setShowCallView(false)} />
       )}
 
       {/* Header */}
@@ -493,17 +517,22 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
         <Avatar src={recipient?.avatar} fallback={recipient?.username} size={32} />
         <div className="dm-recipient-info">
           <span className="dm-recipient-name">
-            {recipient?.displayName || recipient?.customUsername || recipient?.username}
+            {conversationTitle}
           </span>
           <span className={`dm-recipient-status ${recipient?.status || 'offline'}`}>
-            {recipient?.status || 'Offline'}
+            {t(`status.${recipient?.status}`, t('status.offline', 'Offline'))}
           </span>
         </div>
         <div className="dm-header-actions">
           {activeCall && activeCall.conversationId === conversation?.id ? (
             <>
+              {!showCallView && (
+                <button className="icon-btn" title="Return to call" onClick={() => setShowCallView(true)}>
+                  <Phone size={20} />
+                </button>
+              )}
               <span className="dm-call-indicator">
-                {callStatus === 'active' ? formatDuration(activeCall.duration || 0) : callStatus}
+                {callStatus === 'active' ? formatDuration(callDuration || 0) : callStatus}
               </span>
               <button className="icon-btn active-call" title="End Call" onClick={endCall}>
                 <PhoneOff size={20} />
@@ -514,16 +543,28 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
               <button 
                 className="icon-btn" 
                 title="Voice Call" 
-                onClick={() => initiateCall(recipient?.id || conversation.recipientId, conversation.id, 'audio')}
-                disabled={!recipient?.status || recipient.status === 'offline'}
+                onClick={() => initiateCall(
+                  recipient?.id || conversation.recipientId || groupParticipantIds[0],
+                  conversation.id,
+                  'audio',
+                  recipient,
+                  isGroupConversation ? groupParticipantIds : null
+                )}
+                disabled={isGroupConversation ? groupParticipantIds.length === 0 : (!recipient?.status || recipient.status === 'offline')}
               >
                 <Phone size={20} />
               </button>
               <button 
                 className="icon-btn" 
                 title="Video Call" 
-                onClick={() => initiateCall(recipient?.id || conversation.recipientId, conversation.id, 'video')}
-                disabled={!recipient?.status || recipient.status === 'offline'}
+                onClick={() => initiateCall(
+                  recipient?.id || conversation.recipientId || groupParticipantIds[0],
+                  conversation.id,
+                  'video',
+                  recipient,
+                  isGroupConversation ? groupParticipantIds : null
+                )}
+                disabled={isGroupConversation ? groupParticipantIds.length === 0 : (!recipient?.status || recipient.status === 'offline')}
               >
                 <Video size={20} />
               </button>

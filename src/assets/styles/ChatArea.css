@@ -618,8 +618,17 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
-    padding-bottom: calc(var(--mobile-nav-height) + 16px);
+    padding-bottom: calc(var(--mobile-nav-safe-height, var(--mobile-nav-height)) + 12px);
     overflow: hidden;
+  }
+
+  .chat-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    min-height: 48px;
+    padding-left: max(12px, var(--mobile-safe-left, 0px));
+    padding-right: max(12px, var(--mobile-safe-right, 0px));
   }
 
   .chat-area-main {
@@ -655,6 +664,8 @@
   .message-input-container {
     flex-shrink: 0;
     padding: 12px;
+    padding-left: max(12px, var(--mobile-safe-left, 0px));
+    padding-right: max(12px, var(--mobile-safe-right, 0px));
     background: var(--volt-bg-secondary);
     border-top: 1px solid var(--volt-border);
   }
@@ -685,9 +696,9 @@
   }
 
   .input-action-btn {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
   }
 
   .send-btn {

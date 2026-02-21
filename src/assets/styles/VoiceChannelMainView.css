@@ -484,7 +484,7 @@
 .vc-fullscreen-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0,0,0,0.95);
   z-index: 10000;
   display: flex;
   align-items: center;
@@ -493,8 +493,10 @@
 
 .vc-fullscreen-inner {
   position: relative;
-  max-width: 90vw;
-  max-height: 90vh;
+  width: 95vw;
+  height: 95vh;
+  max-width: 95vw;
+  max-height: 95vh;
   background: #000;
   border-radius: 12px;
   overflow: hidden;
@@ -503,12 +505,13 @@
 }
 
 .vc-fullscreen-video {
-  max-width: 90vw;
-  max-height: calc(90vh - 40px);
-  width: auto;
-  height: auto;
+  width: 95vw;
+  height: calc(95vh - 40px);
+  max-width: 95vw;
+  max-height: calc(95vh - 40px);
   display: block;
   object-fit: contain;
+  background: #000;
 }
 
 .vc-fullscreen-close {

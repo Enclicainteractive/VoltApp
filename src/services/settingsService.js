@@ -18,7 +18,11 @@ const defaultSettings = {
   autoGainControl: true,
   serverMutes: {},
   soundpack: 'default',
-  soundpackVolume: 100
+  soundpackVolume: 100,
+  // Voice state persistence
+  voiceMuted: false,
+  voiceDeafened: false,
+  rememberVoiceState: true
 }
 
 // Simple event emitter so components can react to live settings changes

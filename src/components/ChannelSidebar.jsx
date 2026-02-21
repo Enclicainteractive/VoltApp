@@ -5,6 +5,7 @@ import { useSocket } from '../contexts/SocketContext'
 import { soundService } from '../services/soundService'
 import { apiService } from '../services/apiService'
 import { useAppStore } from '../store/useAppStore'
+import { useTranslation } from '../hooks/useTranslation'
 import CreateChannelModal from './modals/CreateChannelModal'
 import CreateCategoryModal from './modals/CreateCategoryModal'
 import ChannelSettingsModal from './modals/ChannelSettingsModal'
@@ -15,6 +16,7 @@ import Avatar from './Avatar'
 import '../assets/styles/ChannelSidebar.css'
 
 const ChannelSidebar = ({ 
+  className = '',
   server, 
   channels, 
   categories: categoriesProp, 
@@ -41,6 +43,7 @@ const ChannelSidebar = ({
   const { user } = useAuth()
   const { socket, connected, serverUpdates } = useSocket()
   const { setCategories: setStoreCategories } = useAppStore()
+  const { t } = useTranslation()
   
   // Combine categories from props with real-time updates
   const categories = React.useMemo(() => {
@@ -424,7 +427,7 @@ const ChannelSidebar = ({
             <Volume2 size={20} />
             <span className="channel-name">{channel.name}</span>
             {isConnected && (
-              <span className="voice-connected-badge">Connected</span>
+              <span className="voice-connected-badge" title={t('chat.voiceConnected', 'Voice Connected')}>{t('chat.connected', 'Connected')}</span>
             )}
             {!isConnected && participants.length > 0 && (
               <span className="voice-count-badge">{participants.length}</span>
@@ -444,8 +447,9 @@ const ChannelSidebar = ({
             <button 
               className="voice-join-btn"
               onClick={(e) => handleJoinVoice(channel, e)}
+              title={t('chat.joinChannel', 'Join Channel')}
             >
-              Join
+              {t('chat.joinChannel', 'Join')}
             </button>
           )}
           {participants.length > 0 && (
@@ -455,14 +459,14 @@ const ChannelSidebar = ({
                   <div className="voice-participant-avatar-wrap">
                     <Avatar src={p.avatar} fallback={p.username} size={20} />
                     {(p.muted) && (
-                      <span className="voice-participant-muted-dot" title="Muted">
+                      <span className="voice-participant-muted-dot" title={t('chat.muted', 'Muted')}>
                         <MicOff size={8} />
                       </span>
                     )}
                   </div>
                   <span className={`voice-participant-name ${p.muted ? 'muted' : ''}`}>
                     {p.username}
-                    {p.id === user?.id ? ' (You)' : ''}
+                    {p.id === user?.id ? ` (${t('common.you', 'You')})` : ''}
                   </span>
                 </div>
               ))}
@@ -528,7 +532,7 @@ const ChannelSidebar = ({
 
   return (
     <>
-      <div className="channel-sidebar" style={backgroundUrl ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}>
+      <div className={`channel-sidebar ${className}`.trim()} style={backgroundUrl ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}>
         <div 
           className="server-header" 
           style={{ 
@@ -538,8 +542,8 @@ const ChannelSidebar = ({
           }} 
           onClick={() => setShowServerMenu(!showServerMenu)}
         >
-          <h2 className="server-name">{server?.name || 'Server'}</h2>
-          <button className="server-menu-btn" title="Server Settings">
+          <h2 className="server-name">{server?.name || t('servers.title', 'Server')}</h2>
+          <button className="server-menu-btn" title={t('serverSettings.serverSettings', 'Server Settings')}>
             <ChevronDown size={20} style={{ transform: showServerMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
           </button>
         </div>
@@ -547,16 +551,16 @@ const ChannelSidebar = ({
         {showServerMenu && (
           <div className="server-dropdown" onClick={e => e.stopPropagation()}>
             <button onClick={() => { onOpenServerSettings?.(); setShowServerMenu(false) }}>
-              <Settings size={16} /> Server Settings
+              <Settings size={16} /> {t('serverSettings.serverSettings', 'Server Settings')}
             </button>
             <button onClick={() => { setShowCreateModal(true); setShowServerMenu(false) }}>
-              <Plus size={16} /> Create Channel
+              <Plus size={16} /> {t('channel.createChannel', 'Create Channel')}
             </button>
             <button onClick={() => { setShowCreateCategoryModal(true); setShowServerMenu(false) }}>
-              <Folder size={16} /> Create Category
+              <Folder size={16} /> {t('channel.createCategory', 'Create Category')}
             </button>
             <button onClick={() => { onInvite?.(); setShowServerMenu(false) }}>
-              <UserPlus size={16} /> Invite People
+              <UserPlus size={16} /> {t('serverSettings.invitePeople', 'Invite People')}
             </button>
           </div>
         )}
@@ -597,7 +601,7 @@ const ChannelSidebar = ({
                           e.stopPropagation()
                           setShowCreateModal(true)
                         }}
-                        title="Create Channel"
+                        title={t('channel.createChannel', 'Create Channel')}
                       >
                         <Plus size={16} />
                       </button>
@@ -633,7 +637,7 @@ const ChannelSidebar = ({
                         e.stopPropagation()
                         setShowCreateModal(true)
                       }}
-                      title="Create Channel"
+                      title={t('channel.createChannel', 'Create Channel')}
                     >
                       <Plus size={16} />
                     </button>
@@ -645,7 +649,7 @@ const ChannelSidebar = ({
                     {catChannels.length > 0 ? (
                       catChannels.map(channel => renderChannel(channel))
                     ) : (
-                      <div className="no-channels">No channels</div>
+                      <div className="no-channels">{t('chat.noChannels', 'No channels')}</div>
                     )}
                   </div>
                 )}
@@ -662,7 +666,7 @@ const ChannelSidebar = ({
                 <div className="voice-panel-details">
                   <div className="voice-panel-channel">{activeVoiceChannel.name}</div>
                   <div className="voice-panel-count">
-                    {(voiceParticipantsByChannel[activeVoiceChannel.id] || []).length} connected
+                    {(voiceParticipantsByChannel[activeVoiceChannel.id] || []).length} {t('chat.connected', 'connected')}
                   </div>
                 </div>
               </div>
@@ -670,16 +674,16 @@ const ChannelSidebar = ({
                 <button 
                   className="voice-panel-btn return"
                   onClick={() => onReturnToVoice?.()}
-                  title="Return to voice"
+                  title={t('misc.returnToVoice', 'Return to voice')}
                 >
-                  Return
+                  {t('common.return', 'Return')}
                 </button>
                 <button 
                   className="voice-panel-btn leave"
                   onClick={() => onLeaveVoice?.()}
-                  title="Leave voice"
+                  title={t('misc.leaveVoice', 'Leave voice')}
                 >
-                  Leave
+                  {t('common.leave', 'Leave')}
                 </button>
               </div>
             </div>
@@ -706,7 +710,7 @@ const ChannelSidebar = ({
               />
             </div>
             <div className="user-details">
-              <div className="user-name">{user?.username || user?.email || 'User'}</div>
+              <div className="user-name">{user?.username || user?.email || t('common.user', 'User')}</div>
               <StatusSelector 
                 currentStatus={userStatus.status}
                 customStatus={userStatus.customStatus}
@@ -717,19 +721,19 @@ const ChannelSidebar = ({
           <div className="user-controls">
             <button 
               className={`icon-btn ${isMuted ? 'active-danger' : ''}`} 
-              title={isMuted ? "Unmute" : "Mute"}
+              title={isMuted ? t('chat.unmute', 'Unmute') : t('chat.mute', 'Mute')}
               onClick={handleToggleMute}
             >
               {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
             <button 
               className={`icon-btn ${isDeafened ? 'active-danger' : ''}`} 
-              title={isDeafened ? "Undeafen" : "Deafen"}
+              title={isDeafened ? t('chat.undeafen', 'Undeafen') : t('chat.deafen', 'Deafen')}
               onClick={handleToggleDeafen}
             >
               <Headphones size={18} />
             </button>
-            <button className="icon-btn" title="User Settings" onClick={() => onOpenSettings?.()}>
+            <button className="icon-btn" title={t('misc.userSettings', 'User Settings')} onClick={() => onOpenSettings?.()}>
               <Settings size={18} />
             </button>
           </div>

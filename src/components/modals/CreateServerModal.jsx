@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import { apiService } from '../../services/apiService'
+import { useTranslation } from '../../hooks/useTranslation'
 import './Modal.css'
 
 const CreateServerModal = ({ onClose, onSuccess }) => {
+  const { t } = useTranslation()
   const [serverName, setServerName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -12,7 +14,7 @@ const CreateServerModal = ({ onClose, onSuccess }) => {
     e.preventDefault()
     
     if (!serverName.trim()) {
-      setError('Server name is required')
+      setError(t('modals.serverNameRequired'))
       return
     }
 
@@ -23,7 +25,7 @@ const CreateServerModal = ({ onClose, onSuccess }) => {
       await apiService.createServer({ name: serverName.trim() })
       onSuccess()
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create server')
+      setError(err.response?.data?.error || t('errors.generic'))
     } finally {
       setLoading(false)
     }
@@ -33,7 +35,7 @@ const CreateServerModal = ({ onClose, onSuccess }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Create Server</h2>
+          <h2>{t('modals.createServer')}</h2>
           <button className="modal-close" onClick={onClose}>
             <X size={24} />
           </button>
@@ -46,11 +48,11 @@ const CreateServerModal = ({ onClose, onSuccess }) => {
             </p>
 
             <div className="form-group">
-              <label>Server Name</label>
+              <label>{t('modals.serverName')}</label>
               <input
                 type="text"
                 className="input"
-                placeholder="My Awesome Server"
+                placeholder={t('modals.serverNamePlaceholder')}
                 value={serverName}
                 onChange={e => setServerName(e.target.value)}
                 autoFocus
@@ -65,10 +67,10 @@ const CreateServerModal = ({ onClose, onSuccess }) => {
 
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn btn-primary" disabled={loading || !serverName.trim()}>
-              {loading ? 'Creating...' : 'Create Server'}
+              {loading ? t('modals.creatingServer') : t('modals.createServer')}
             </button>
           </div>
         </form>

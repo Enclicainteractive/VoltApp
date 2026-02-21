@@ -129,7 +129,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
+    z-index: 1300;
     animation: fadeIn 0.2s ease;
   }
 
@@ -137,14 +137,18 @@
     position: fixed;
     right: 0;
     top: 0;
-    bottom: 0;
+    bottom: var(--mobile-nav-safe-height, var(--mobile-nav-height));
     width: 85%;
     max-width: 320px;
-    height: 100dvh;
-    z-index: 1001;
+    height: auto;
+    min-height: 0;
+    z-index: 1301;
     transform: translateX(100%);
     transition: transform 0.3s ease;
     border-left: 1px solid var(--volt-border);
+    padding-top: var(--mobile-safe-top, 0px);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 
   .member-sidebar.visible {

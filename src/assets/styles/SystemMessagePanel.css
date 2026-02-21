@@ -4,7 +4,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--volt-bg-primary);
+  background:
+    radial-gradient(1200px 420px at 10% -20%, color-mix(in srgb, var(--volt-primary, #5865f2) 12%, transparent), transparent 65%),
+    var(--volt-bg-primary);
   color: var(--volt-text-primary);
   font-size: 14px;
 }
@@ -14,9 +16,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px 10px;
+  padding: 14px 16px 12px;
   border-bottom: 1px solid var(--volt-border);
   flex-shrink: 0;
+  background: color-mix(in srgb, var(--volt-bg-secondary) 78%, transparent);
+  backdrop-filter: blur(4px);
 }
 
 .sysmsg-panel-title {
@@ -140,11 +144,15 @@
 /* ── Message card ───────────────────────────────────────────────────────── */
 
 .sysmsg-card {
-  background: var(--volt-bg-secondary);
+  background: color-mix(in srgb, var(--volt-bg-secondary) 92%, black);
   border: 1px solid var(--volt-border);
   border-radius: 8px;
   overflow: hidden;
-  transition: border-color 0.12s;
+  transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s;
+}
+.sysmsg-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 .sysmsg-card.unread {
   border-left: 3px solid var(--volt-primary, #5865f2);

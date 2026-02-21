@@ -3,6 +3,7 @@ import InviteEmbed from './InviteEmbed'
 import LinkEmbed, { extractEmbedUrls, AGE_RESTRICTED_EMBEDS } from './LinkEmbed'
 import { useAuth } from '../contexts/AuthContext'
 import { useAppStore } from '../store/useAppStore'
+import { useTranslation } from '../hooks/useTranslation'
 import '../assets/styles/MarkdownMessage.css'
 
 // ─── Language map for syntax highlighting labels ───────────────────────────
@@ -67,6 +68,7 @@ const InlineCode = ({ code }) => (
 
 // ─── Code block component ──────────────────────────────────────────────────
 const CodeBlock = ({ code, language }) => {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const langLabel = language !== 'plaintext' ? language : ''
 
@@ -80,8 +82,8 @@ const CodeBlock = ({ code, language }) => {
   return (
     <div className={`code-block-wrapper${langLabel ? ' has-lang' : ''}`}>
       {langLabel && <div className="code-block-header"><span className="code-lang-label">{langLabel}</span></div>}
-      <button className="code-copy-btn" onClick={handleCopy} title="Copy code">
-        {copied ? '✓ Copied' : 'Copy'}
+      <button className="code-copy-btn" onClick={handleCopy} title={t('common.copy', 'Copy')}>
+        {copied ? '✓ ' + t('common.copied', 'Copied') : t('common.copy', 'Copy')}
       </button>
       <pre className={`code-block language-${language}`} data-language={language}>
         <code>{code}</code>
@@ -118,7 +120,7 @@ function parseInline(text, key = 0, mentionProps = {}) {
     // spoiler ||text||
     { re: /\|\|(.+?)\|\|/, type: 'spoiler' },
     // @mention — supports @username:host (federated) and @username (local/special)
-    { re: /@(?:everyone|here|[a-zA-Z0-9_.:-]+)/, type: 'mention' },
+    { re: /@(everyone|here|[a-zA-Z0-9_.:-]+)/, type: 'mention' },
     // URL
     { re: /(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])/, type: 'url' },
   ]
@@ -247,8 +249,9 @@ function parseBlocks(content, mentionProps = {}) {
   if (!content) return []
 
   const nodes = []
+  const normalizedContent = content.replace(/^\n+(?=```)/, '')
   // Split into lines preserving \n
-  const lines = content.split('\n')
+  const lines = normalizedContent.split('\n')
   let i = 0
   let blockKey = 0
 
@@ -477,6 +480,7 @@ function renderCustomEmojis(text, serverEmojis) {
 }
 
 const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionClick, serverEmojis }) => {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const globalEmojis = useAppStore(state => state.globalEmojis)
   const isAgeVerified = user?.ageVerification?.verified && user?.ageVerification?.category === 'adult'
@@ -552,14 +556,10 @@ function replaceInReactTree(nodes, serverEmojis) {
     }
   })
   const emojiNames = Object.keys(emojiMap)
-  if (emojiNames.length === 0) return nodes
+  if (emojiNames.length === 0 && Object.keys(emojiIdMap).length === 0) return nodes
   
-  // Build a regex that matches any known server emoji name OR global format
-  // Global format: :host|serverId|emojiId|name:
-  const escapedNames = emojiNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  // Match either local emoji names OR global format (host|serverId|emojiId|name)
-  const globalEmojiPattern = '([^|]+)\\|([^|]+)\\|([^|]+)\\|([^:]+)'
-  const re = new RegExp(`:(?:${escapedNames.join('|')}|${globalEmojiPattern}):`, 'g')
+  // Match either local emoji names or global format :host|serverId|emojiId|name:
+  const re = /:([a-zA-Z0-9_]{1,32}|[^|:\s]+\|[^|:\s]+\|[^|:\s]+\|[^:\s]+):/g
   
   let keyCounter = 0
   
@@ -572,8 +572,7 @@ function replaceInReactTree(nodes, serverEmojis) {
       let last = 0
       let m
       while ((m = re.exec(node)) !== null) {
-        // Check if it's global format (has pipe separators)
-        const matchContent = m[0].slice(1, -1) // Remove colons
+        const matchContent = m[1]
         let url = null
         let name = matchContent
         let tooltip = `:${matchContent}:`

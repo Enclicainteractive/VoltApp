@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useTranslation } from '../hooks/useTranslation'
 import { Loader2 } from 'lucide-react'
 
 const CallbackPage = () => {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { handleCallback } = useAuth()
@@ -15,12 +17,12 @@ const CallbackPage = () => {
       const verifier = sessionStorage.getItem('pkce_verifier')
 
       if (!code) {
-        setError('No authorization code received')
+        setError(t('callback.noAuthCode', 'No authorization code received'))
         return
       }
 
       if (!verifier) {
-        setError('No PKCE verifier found')
+        setError(t('callback.noPkceVerifier', 'No PKCE verifier found'))
         return
       }
 
@@ -28,12 +30,12 @@ const CallbackPage = () => {
         await handleCallback(code, verifier)
         navigate('/chat')
       } catch (err) {
-        setError(err.message || 'Authentication failed')
+        setError(err.message || t('callback.authFailed', 'Authentication failed'))
       }
     }
 
     processCallback()
-  }, [])
+  }, [handleCallback, navigate, searchParams, t])
 
   return (
     <div style={{
@@ -54,13 +56,13 @@ const CallbackPage = () => {
             className="btn btn-primary"
             onClick={() => navigate('/login')}
           >
-            Back to Login
+            {t('callback.backToLogin', 'Back to Login')}
           </button>
         </>
       ) : (
         <>
           <Loader2 size={48} className="pulse" />
-          <div>Completing authentication...</div>
+          <div>{t('callback.completingAuth', 'Completing authentication...')}</div>
         </>
       )}
     </div>

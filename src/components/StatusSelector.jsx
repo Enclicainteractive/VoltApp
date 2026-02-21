@@ -2,20 +2,22 @@ import React, { useState } from 'react'
 import { ChevronDown, Circle, Moon, MinusCircle, Eye } from 'lucide-react'
 import { useSocket } from '../contexts/SocketContext'
 import { apiService } from '../services/apiService'
+import { useTranslation } from '../hooks/useTranslation'
 import '../assets/styles/StatusSelector.css'
 
-const STATUSES = [
-  { id: 'online', label: 'Online', color: '#22c55e', icon: Circle },
-  { id: 'idle', label: 'Idle', color: '#f59e0b', icon: Moon },
-  { id: 'dnd', label: 'Do Not Disturb', color: '#ef4444', icon: MinusCircle },
-  { id: 'invisible', label: 'Invisible', color: '#6b7280', icon: Eye }
-]
-
 const StatusSelector = ({ currentStatus = 'online', customStatus = '', onStatusChange }) => {
+  const { t } = useTranslation()
   const { socket } = useSocket()
   const [isOpen, setIsOpen] = useState(false)
   const [showCustom, setShowCustom] = useState(false)
   const [customInput, setCustomInput] = useState(customStatus)
+
+  const STATUSES = [
+    { id: 'online', label: t('status.online'), color: '#22c55e', icon: Circle },
+    { id: 'idle', label: t('status.idle'), color: '#f59e0b', icon: Moon },
+    { id: 'dnd', label: t('status.dnd'), color: '#ef4444', icon: MinusCircle },
+    { id: 'invisible', label: t('status.invisible'), color: '#6b7280', icon: Eye }
+  ]
 
   const currentStatusData = STATUSES.find(s => s.id === currentStatus) || STATUSES[0]
 
@@ -94,7 +96,7 @@ const StatusSelector = ({ currentStatus = 'online', customStatus = '', onStatusC
           >
             <span className="status-emoji">✏️</span>
             <span className="status-text">
-              {customStatus ? 'Edit Custom Status' : 'Set Custom Status'}
+              {customStatus ? t('status.editCustomStatus') : t('status.setCustomStatus')}
             </span>
           </button>
           
@@ -104,7 +106,7 @@ const StatusSelector = ({ currentStatus = 'online', customStatus = '', onStatusC
               onClick={handleClearCustomStatus}
             >
               <span className="status-emoji">🗑️</span>
-              <span className="status-text">Clear Custom Status</span>
+              <span className="status-text">{t('status.clearStatus')}</span>
             </button>
           )}
         </div>
@@ -113,12 +115,12 @@ const StatusSelector = ({ currentStatus = 'online', customStatus = '', onStatusC
       {showCustom && (
         <div className="custom-status-modal">
           <div className="custom-status-content">
-            <h4>Set a custom status</h4>
+            <h4>{t('status.setCustomStatus')}</h4>
             <div className="custom-status-input-group">
               <input
                 type="text"
                 className="input"
-                placeholder="What's happening?"
+                placeholder={t('status.customStatusPlaceholder') || "What's happening?"}
                 value={customInput}
                 onChange={e => setCustomInput(e.target.value)}
                 maxLength={128}
@@ -128,10 +130,10 @@ const StatusSelector = ({ currentStatus = 'online', customStatus = '', onStatusC
             </div>
             <div className="custom-status-actions">
               <button className="btn btn-secondary" onClick={() => setShowCustom(false)}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button className="btn btn-primary" onClick={handleCustomStatusSave}>
-                Save
+                {t('common.save')}
               </button>
             </div>
           </div>

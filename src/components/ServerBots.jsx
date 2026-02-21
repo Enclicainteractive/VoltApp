@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { Bot, Plus, Trash2, Search, Code, Globe } from 'lucide-react'
+import { Bot, Plus, Trash2, Search } from 'lucide-react'
 import { apiService } from '../services/apiService'
+import { useTranslation } from '../hooks/useTranslation'
 
 const ServerBots = ({ serverId, isOwner, canManage }) => {
+  const { t } = useTranslation()
   const hasManageAccess = isOwner || canManage
   const [serverBots, setServerBots] = useState([])
   const [publicBots, setPublicBots] = useState([])
@@ -45,7 +47,7 @@ const ServerBots = ({ serverId, isOwner, canManage }) => {
   }
 
   const handleRemoveBot = async (botId) => {
-    if (!confirm('Remove this bot from the server?')) return
+    if (!window.confirm(t('serverBots.removeConfirm'))) return
     try {
       await apiService.removeBotFromServer(botId, serverId)
       setServerBots(prev => prev.filter(b => b.id !== botId))
@@ -62,14 +64,14 @@ const ServerBots = ({ serverId, isOwner, canManage }) => {
   return (
     <div className="server-bots">
       <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Server Bots</h4>
+        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t('serverBots.title')}</h4>
         {hasManageAccess && (
           <button
             className="btn btn-sm btn-primary"
             onClick={() => { setShowBrowse(!showBrowse); if (!showBrowse) loadPublicBots() }}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 12, borderRadius: 6, border: 'none', cursor: 'pointer' }}
           >
-            <Plus size={14} /> Add Bot
+            <Plus size={14} /> {t('serverBots.addBot')}
           </button>
         )}
       </div>
@@ -79,7 +81,7 @@ const ServerBots = ({ serverId, isOwner, canManage }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <Search size={14} style={{ color: 'var(--volt-text-muted)' }} />
             <input
-              placeholder="Search public bots..."
+              placeholder={t('serverBots.searchPublicBots')}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--volt-border, #2a2f3e)', background: 'var(--volt-bg-secondary)', color: 'var(--volt-text-primary)', fontSize: 13 }}
@@ -87,7 +89,7 @@ const ServerBots = ({ serverId, isOwner, canManage }) => {
           </div>
           {filteredPublic.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--volt-text-muted)', fontSize: 13, padding: 10 }}>
-              No public bots available
+              {t('serverBots.noPublicBotsAvailable')}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -95,13 +97,13 @@ const ServerBots = ({ serverId, isOwner, canManage }) => {
                 <div key={bot.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'var(--volt-bg-secondary)', borderRadius: 6 }}>
                   <div>
                     <div style={{ fontWeight: 500, fontSize: 13, color: 'var(--volt-text-primary)' }}>{bot.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--volt-text-muted)' }}>{bot.description || 'No description'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--volt-text-muted)' }}>{bot.description || t('serverBots.noDescription')}</div>
                   </div>
                   <button
                     onClick={() => handleAddBot(bot.id)}
                     style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: 'none', cursor: 'pointer', background: 'var(--volt-primary, #1fb6ff)', color: '#fff' }}
                   >
-                    Add
+                    {t('serverBots.add')}
                   </button>
                 </div>
               ))}
@@ -111,11 +113,11 @@ const ServerBots = ({ serverId, isOwner, canManage }) => {
       )}
 
       {loading ? (
-        <div style={{ textAlign: 'center', color: 'var(--volt-text-muted)', padding: 20, fontSize: 13 }}>Loading...</div>
+        <div style={{ textAlign: 'center', color: 'var(--volt-text-muted)', padding: 20, fontSize: 13 }}>{t('common.loading', 'Loading...')}</div>
       ) : serverBots.length === 0 ? (
         <div style={{ textAlign: 'center', color: 'var(--volt-text-muted)', padding: 20, fontSize: 13 }}>
           <Bot size={28} style={{ marginBottom: 8, opacity: 0.5 }} />
-          <p>No bots in this server yet.</p>
+          <p>{t('serverBots.noBotsInServer')}</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

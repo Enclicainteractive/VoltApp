@@ -4,6 +4,7 @@ import { apiService } from '../../services/apiService'
 import { getStoredServer } from '../../services/serverConfig'
 import { useAuth } from '../../contexts/AuthContext'
 import { useE2e } from '../../contexts/E2eContext'
+import { useTranslation } from '../../hooks/useTranslation'
 import Avatar from '../Avatar'
 import BioEditor from '../BioEditor'
 import ServerBots from '../ServerBots'
@@ -25,6 +26,7 @@ const CATEGORY_ICONS = {
 }
 
 const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab = 'overview' }) => {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const { 
     isEncryptionEnabled, 
@@ -271,7 +273,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleDeleteEmoji = async (emojiId) => {
-    if (!confirm('Delete this emoji?')) return
+    if (!confirm(t('serverSettings.deleteEmojiConfirm', 'Delete this emoji?'))) return
     try {
       await apiService.deleteServerEmoji(server.id, emojiId)
       setServerEmojis(prev => prev.filter(e => e.id !== emojiId))
@@ -331,8 +333,16 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     }
   }
 
+  const inviteOrigin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://volt.voltagechat.app'
+  const inviteHost = inviteOrigin.replace(/^https?:\/\//, '')
+  const buildInviteUrl = (code) => `${inviteOrigin}/invite/${code}`
+  const buildInviteDisplayUrl = (code) =>
+    t('serverSettings.inviteUrlDisplay', '{{host}}/invite/{{code}}', { host: inviteHost, code })
+
   const handleCopyInvite = (code) => {
-    navigator.clipboard.writeText(`https://volt.voltagechat.app/invite/${code}`)
+    navigator.clipboard.writeText(buildInviteUrl(code))
   }
 
   const handleDeleteInvite = async (code) => {
@@ -345,7 +355,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleKickMember = async (memberId) => {
-    if (!confirm('Are you sure you want to kick this member?')) return
+    if (!confirm(t('serverSettings.kickMemberConfirm', 'Are you sure you want to kick this member?'))) return
     try {
       await apiService.kickMember(server.id, memberId)
       setMembers(prev => prev.filter(m => m.id !== memberId))
@@ -355,7 +365,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleBanMember = async (memberId) => {
-    if (!confirm('Are you sure you want to ban this member?')) return
+    if (!confirm(t('serverSettings.banMemberConfirm', 'Are you sure you want to ban this member?'))) return
     try {
       await apiService.banMember(server.id, memberId)
       setMembers(prev => prev.filter(m => m.id !== memberId))
@@ -387,20 +397,20 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
   const handleMemberAction = async (member, action) => {
     if (action === 'kick') {
-      if (!confirm(`Kick ${member.username} from the server?`)) return
+      if (!confirm(t('serverSettings.kickMemberByNameConfirm', 'Kick {{username}} from the server?', { username: member.username }))) return
       await handleKickMember(member.id)
     } else if (action === 'ban') {
-      if (!confirm(`Ban ${member.username} from the server?`)) return
+      if (!confirm(t('serverSettings.banMemberByNameConfirm', 'Ban {{username}} from the server?', { username: member.username }))) return
       await handleBanMember(member.id)
     } else if (action === 'transfer') {
-      if (!confirm(`Transfer server ownership to ${member.username}? You will no longer be the owner.`)) return
+      if (!confirm(t('serverSettings.transferOwnershipConfirm', 'Transfer server ownership to {{username}}? You will no longer be the owner.', { username: member.username }))) return
       try {
         await apiService.transferServer(server.id, member.id)
         onUpdate?.({ ...server, ownerId: member.id })
-        alert('Server transferred successfully!')
+        alert(t('serverSettings.transferSuccess', 'Server transferred successfully!'))
       } catch (err) {
         console.error('Failed to transfer server:', err)
-        alert('Failed to transfer server: ' + (err.response?.data?.error || err.message))
+        alert(t('serverSettings.transferFailed', 'Failed to transfer server: {{error}}', { error: err.response?.data?.error || err.message }))
       }
     }
     setMemberActions(null)
@@ -419,7 +429,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleDeleteChannel = async (channelId) => {
-    if (!confirm('Are you sure you want to delete this channel?')) return
+    if (!confirm(t('serverSettings.deleteChannelConfirm', 'Are you sure you want to delete this channel?'))) return
     try {
       await apiService.deleteChannel(channelId)
       setChannels(prev => prev.filter(c => c.id !== channelId))
@@ -531,7 +541,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleDeleteCategory = async (categoryId) => {
-    if (!confirm('Delete this category? Channels will be moved to "No Category". This cannot be undone.')) return
+    if (!confirm(t('serverSettings.deleteCategoryConfirm', 'Are you sure you want to delete this category?'))) return
     try {
       await apiService.deleteCategory(categoryId)
       setCategories(categories.filter(c => c.id !== categoryId))
@@ -618,41 +628,41 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const availablePermissions = [
-    { id: 'admin', name: 'Administrator', desc: 'Bypass all checks and manage everything', category: 'admin' },
-    { id: 'manage_server', name: 'Manage Server', desc: 'Edit server settings and details', category: 'admin' },
-    { id: 'manage_roles', name: 'Manage Roles', desc: 'Create, edit, delete, and assign roles', category: 'admin' },
-    { id: 'manage_channels', name: 'Manage Channels', desc: 'Create, edit, delete channels', category: 'admin' },
-    { id: 'manage_messages', name: 'Manage Messages', desc: 'Delete or pin messages', category: 'moderation' },
-    { id: 'manage_emojis', name: 'Manage Emojis & Stickers', desc: 'Add or remove emojis and stickers', category: 'general' },
-    { id: 'manage_events', name: 'Manage Events', desc: 'Create and edit events', category: 'general' },
-    { id: 'manage_webhooks', name: 'Manage Webhooks', desc: 'Create, edit, or delete webhooks', category: 'general' },
-    { id: 'manage_threads', name: 'Manage Threads', desc: 'Manage and moderate threads', category: 'moderation' },
-    { id: 'create_invites', name: 'Create Invites', desc: 'Generate invite links', category: 'general' },
-    { id: 'kick_members', name: 'Kick Members', desc: 'Remove members from the server', category: 'moderation' },
-    { id: 'ban_members', name: 'Ban Members', desc: 'Ban and unban members', category: 'moderation' },
-    { id: 'mute_members', name: 'Mute Members', desc: 'Mute members in voice', category: 'moderation' },
-    { id: 'deafen_members', name: 'Deafen Members', desc: 'Deafen members in voice', category: 'moderation' },
-    { id: 'move_members', name: 'Move Members', desc: 'Move members between voice channels', category: 'moderation' },
-    { id: 'priority_speaker', name: 'Priority Speaker', desc: 'Gain priority voice quality', category: 'voice' },
-    { id: 'view_channels', name: 'View Channels', desc: 'See channels the role applies to', category: 'general' },
-    { id: 'send_messages', name: 'Send Messages', desc: 'Post messages in text channels', category: 'text' },
-    { id: 'send_embeds', name: 'Send Embeds', desc: 'Embed links and rich content', category: 'text' },
-    { id: 'attach_files', name: 'Attach Files', desc: 'Upload files and media', category: 'text' },
-    { id: 'add_reactions', name: 'Add Reactions', desc: 'Add reactions to messages', category: 'text' },
-    { id: 'mention_everyone', name: 'Mention Everyone', desc: 'Use @everyone and @here', category: 'text' },
-    { id: 'connect', name: 'Connect', desc: 'Join voice channels', category: 'voice' },
-    { id: 'speak', name: 'Speak', desc: 'Talk in voice channels', category: 'voice' },
-    { id: 'video', name: 'Video', desc: 'Turn on camera', category: 'voice' },
-    { id: 'share_screen', name: 'Share Screen', desc: 'Start screen share', category: 'voice' },
-    { id: 'use_voice_activity', name: 'Voice Activity', desc: 'Use voice activity detection', category: 'voice' }
+    { id: 'admin', name: t('serverSettings.permissions.admin.name', 'Administrator'), desc: t('serverSettings.permissions.admin.desc', 'Bypass all checks and manage everything'), category: 'admin' },
+    { id: 'manage_server', name: t('serverSettings.permissions.manage_server.name', 'Manage Server'), desc: t('serverSettings.permissions.manage_server.desc', 'Edit server settings and details'), category: 'admin' },
+    { id: 'manage_roles', name: t('serverSettings.permissions.manage_roles.name', 'Manage Roles'), desc: t('serverSettings.permissions.manage_roles.desc', 'Create, edit, delete, and assign roles'), category: 'admin' },
+    { id: 'manage_channels', name: t('serverSettings.permissions.manage_channels.name', 'Manage Channels'), desc: t('serverSettings.permissions.manage_channels.desc', 'Create, edit, delete channels'), category: 'admin' },
+    { id: 'manage_messages', name: t('serverSettings.permissions.manage_messages.name', 'Manage Messages'), desc: t('serverSettings.permissions.manage_messages.desc', 'Delete or pin messages'), category: 'moderation' },
+    { id: 'manage_emojis', name: t('serverSettings.permissions.manage_emojis.name', 'Manage Emojis & Stickers'), desc: t('serverSettings.permissions.manage_emojis.desc', 'Add or remove emojis and stickers'), category: 'general' },
+    { id: 'manage_events', name: t('serverSettings.permissions.manage_events.name', 'Manage Events'), desc: t('serverSettings.permissions.manage_events.desc', 'Create and edit events'), category: 'general' },
+    { id: 'manage_webhooks', name: t('serverSettings.permissions.manage_webhooks.name', 'Manage Webhooks'), desc: t('serverSettings.permissions.manage_webhooks.desc', 'Create, edit, or delete webhooks'), category: 'general' },
+    { id: 'manage_threads', name: t('serverSettings.permissions.manage_threads.name', 'Manage Threads'), desc: t('serverSettings.permissions.manage_threads.desc', 'Manage and moderate threads'), category: 'moderation' },
+    { id: 'create_invites', name: t('serverSettings.permissions.create_invites.name', 'Create Invites'), desc: t('serverSettings.permissions.create_invites.desc', 'Generate invite links'), category: 'general' },
+    { id: 'kick_members', name: t('serverSettings.permissions.kick_members.name', 'Kick Members'), desc: t('serverSettings.permissions.kick_members.desc', 'Remove members from the server'), category: 'moderation' },
+    { id: 'ban_members', name: t('serverSettings.permissions.ban_members.name', 'Ban Members'), desc: t('serverSettings.permissions.ban_members.desc', 'Ban and unban members'), category: 'moderation' },
+    { id: 'mute_members', name: t('serverSettings.permissions.mute_members.name', 'Mute Members'), desc: t('serverSettings.permissions.mute_members.desc', 'Mute members in voice'), category: 'moderation' },
+    { id: 'deafen_members', name: t('serverSettings.permissions.deafen_members.name', 'Deafen Members'), desc: t('serverSettings.permissions.deafen_members.desc', 'Deafen members in voice'), category: 'moderation' },
+    { id: 'move_members', name: t('serverSettings.permissions.move_members.name', 'Move Members'), desc: t('serverSettings.permissions.move_members.desc', 'Move members between voice channels'), category: 'moderation' },
+    { id: 'priority_speaker', name: t('serverSettings.permissions.priority_speaker.name', 'Priority Speaker'), desc: t('serverSettings.permissions.priority_speaker.desc', 'Gain priority voice quality'), category: 'voice' },
+    { id: 'view_channels', name: t('serverSettings.permissions.view_channels.name', 'View Channels'), desc: t('serverSettings.permissions.view_channels.desc', 'See channels the role applies to'), category: 'general' },
+    { id: 'send_messages', name: t('serverSettings.permissions.send_messages.name', 'Send Messages'), desc: t('serverSettings.permissions.send_messages.desc', 'Post messages in text channels'), category: 'text' },
+    { id: 'send_embeds', name: t('serverSettings.permissions.send_embeds.name', 'Send Embeds'), desc: t('serverSettings.permissions.send_embeds.desc', 'Embed links and rich content'), category: 'text' },
+    { id: 'attach_files', name: t('serverSettings.permissions.attach_files.name', 'Attach Files'), desc: t('serverSettings.permissions.attach_files.desc', 'Upload files and media'), category: 'text' },
+    { id: 'add_reactions', name: t('serverSettings.permissions.add_reactions.name', 'Add Reactions'), desc: t('serverSettings.permissions.add_reactions.desc', 'Add reactions to messages'), category: 'text' },
+    { id: 'mention_everyone', name: t('serverSettings.permissions.mention_everyone.name', 'Mention Everyone'), desc: t('serverSettings.permissions.mention_everyone.desc', 'Use @everyone and @here'), category: 'text' },
+    { id: 'connect', name: t('serverSettings.permissions.connect.name', 'Connect'), desc: t('serverSettings.permissions.connect.desc', 'Join voice channels'), category: 'voice' },
+    { id: 'speak', name: t('serverSettings.permissions.speak.name', 'Speak'), desc: t('serverSettings.permissions.speak.desc', 'Talk in voice channels'), category: 'voice' },
+    { id: 'video', name: t('serverSettings.permissions.video.name', 'Video'), desc: t('serverSettings.permissions.video.desc', 'Turn on camera'), category: 'voice' },
+    { id: 'share_screen', name: t('serverSettings.permissions.share_screen.name', 'Share Screen'), desc: t('serverSettings.permissions.share_screen.desc', 'Start screen share'), category: 'voice' },
+    { id: 'use_voice_activity', name: t('serverSettings.permissions.use_voice_activity.name', 'Voice Activity'), desc: t('serverSettings.permissions.use_voice_activity.desc', 'Use voice activity detection'), category: 'voice' }
   ]
 
   const permissionCategories = [
-    { id: 'general', label: 'General', icon: Settings },
-    { id: 'admin', label: 'Administration', icon: Crown },
-    { id: 'moderation', label: 'Moderation', icon: Shield },
-    { id: 'text', label: 'Text & Messages', icon: Hash },
-    { id: 'voice', label: 'Voice & Video', icon: Volume2 }
+    { id: 'general', label: t('serverSettings.permissionCategories.general', 'General'), icon: Settings },
+    { id: 'admin', label: t('serverSettings.permissionCategories.admin', 'Administration'), icon: Crown },
+    { id: 'moderation', label: t('serverSettings.permissionCategories.moderation', 'Moderation'), icon: Shield },
+    { id: 'text', label: t('serverSettings.permissionCategories.text', 'Text & Messages'), icon: Hash },
+    { id: 'voice', label: t('serverSettings.permissionCategories.voice', 'Voice & Video'), icon: Volume2 }
   ]
 
   const handleCreateRole = async () => {
@@ -683,7 +693,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleDeleteRole = async (roleId) => {
-    if (!confirm('Are you sure you want to delete this role?')) return
+    if (!confirm(t('serverSettings.deleteRoleConfirm', 'Are you sure you want to delete this role?'))) return
     setRoles(prev => prev.filter(r => r.id !== roleId))
     try {
       await apiService.deleteRole(server.id, roleId)
@@ -706,17 +716,17 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const tabs = [
-    { id: 'overview', label: 'Overview', icon: Server },
-    { id: 'theme', label: 'Theme', icon: Palette },
-    { id: 'channels', label: 'Channels', icon: Hash },
-    { id: 'roles', label: 'Roles', icon: Shield },
-    { id: 'members', label: 'Members', icon: Users },
-    { id: 'invites', label: 'Invites', icon: Link },
-    { id: 'discovery', label: 'Discovery', icon: Globe },
-    { id: 'emojis', label: 'Emojis', icon: Smile },
-    { id: 'bots', label: 'Bots', icon: Bot },
-    { id: 'security', label: 'Security', icon: Lock },
-    ...(isOwner ? [{ id: 'danger', label: 'Danger Zone', icon: Trash2 }] : [])
+    { id: 'overview', label: t('serverSettings.overview'), icon: Server },
+    { id: 'theme', label: t('appearance.theme', 'Theme'), icon: Palette },
+    { id: 'channels', label: t('serverSettings.channels'), icon: Hash },
+    { id: 'roles', label: t('serverSettings.roles'), icon: Shield },
+    { id: 'members', label: t('chat.members'), icon: Users },
+    { id: 'invites', label: t('serverSettings.invites'), icon: Link },
+    { id: 'discovery', label: t('discovery.title', 'Discovery'), icon: Globe },
+    { id: 'emojis', label: t('serverSettings.emojis'), icon: Smile },
+    { id: 'bots', label: t('bots.title', 'Bots'), icon: Bot },
+    { id: 'security', label: t('serverSettings.moderation', 'Security'), icon: Lock },
+    ...(isOwner ? [{ id: 'danger', label: t('appearance.danger', 'Danger Zone'), icon: Trash2 }] : [])
   ]
 
   return (
@@ -758,7 +768,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'overview' && (
               <div className="settings-section">
-                <h2>Server Overview</h2>
+                <h2>{t('serverSettings.serverOverview', 'Server Overview')}</h2>
                 
                 <div className="server-icon-section">
                   <div className="server-icon-large">
@@ -780,18 +790,18 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       }}
                     />
                     <button className="btn btn-secondary" onClick={() => iconInputRef.current?.click()} disabled={!isAdmin || uploadingBanner}>
-                      {uploadingBanner ? 'Uploading...' : 'Upload Icon'}
+                      {uploadingBanner ? t('common.uploading', 'Uploading...') : t('serverSettings.uploadIcon', 'Upload Icon')}
                     </button>
                     {serverData.icon && (
                       <button className="btn btn-text" onClick={() => setServerData(p => ({ ...p, icon: '' }))}>
-                        Remove
+                        {t('common.remove', 'Remove')}
                       </button>
                     )}
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label>Server Name</label>
+                  <label>{t('serverSettings.serverName', 'Server Name')}</label>
                   <input
                     type="text"
                     className="input"
@@ -802,11 +812,11 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                 </div>
 
                 <div className="form-group">
-                  <label>Server Description</label>
+                  <label>{t('serverSettings.serverDescription', 'Server Description')}</label>
                   <BioEditor
                     value={serverData.description}
                     onChange={(text) => setServerData(p => ({ ...p, description: text }))}
-                    placeholder="Tell people about your server..."
+                    placeholder={t('serverSettings.serverDescriptionPlaceholder', 'Tell people about your server...')}
                     maxLength={2000}
                   />
                 </div>
@@ -817,7 +827,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     onClick={handleSaveOverview}
                     disabled={saving}
                   >
-                    {saving ? 'Saving...' : 'Save Changes'}
+                    {saving ? t('common.saving', 'Saving...') : t('serverSettings.saveChanges', 'Save Changes')}
                   </button>
                 )}
               </div>
@@ -825,21 +835,21 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'theme' && (
               <div className="settings-section">
-                <h2>Server Theme</h2>
-                <p className="section-desc">Customize colors and banner to brand your server.</p>
+                <h2>{t('serverSettings.serverTheme', 'Server Theme')}</h2>
+                <p className="section-desc">{t('serverSettings.serverThemeDesc', 'Customize colors and banner to brand your server.')}</p>
 
                 <div className="theme-preview" style={{
                   background: serverData.bannerUrl 
                     ? `linear-gradient(160deg, ${serverData.themeColor}bb, #0b1220dd), url(${serverData.bannerUrl}) ${serverData.bannerPosition || 'center'}/cover`
                     : `linear-gradient(135deg, ${serverData.themeColor}, #0f1828)`
                 }}>
-                  <div className="theme-badge">Preview</div>
+                  <div className="theme-badge">{t('account.preview', 'Preview')}</div>
                   <div className="theme-title">{serverData.name || server?.name}</div>
                 </div>
 
                 <div className="form-grid">
                   <div className="form-group">
-                    <label>Accent Color</label>
+                    <label>{t('serverSettings.accentColor', 'Accent Color')}</label>
                     <div className="color-row">
                       <input
                         type="color"
@@ -859,28 +869,28 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                   </div>
 
                   <div className="form-group">
-                    <label>Banner Position</label>
+                    <label>{t('serverSettings.bannerPosition', 'Banner Position')}</label>
                     <select
                       className="input"
                       value={serverData.bannerPosition}
                       onChange={e => setServerData(p => ({ ...p, bannerPosition: e.target.value }))}
                       disabled={!isAdmin}
                     >
-                      <option value="cover">Cover</option>
-                      <option value="center">Center</option>
-                      <option value="repeat">Tiled</option>
-                      <option value="contain">Contain</option>
+                      <option value="cover">{t('serverSettings.bannerPositionCover', 'Cover')}</option>
+                      <option value="center">{t('serverSettings.bannerPositionCenter', 'Center')}</option>
+                      <option value="repeat">{t('serverSettings.bannerPositionTiled', 'Tiled')}</option>
+                      <option value="contain">{t('serverSettings.bannerPositionContain', 'Contain')}</option>
                     </select>
                   </div>
 
                   <div className="form-group">
-                    <label>Banner Image URL</label>
+                    <label>{t('serverSettings.bannerImageUrl', 'Banner Image URL')}</label>
                     <input
                       type="text"
                       className="input"
                       value={serverData.bannerUrl}
                       onChange={e => setServerData(p => ({ ...p, bannerUrl: e.target.value }))}
-                      placeholder="https://.../banner.png"
+                      placeholder={t('serverSettings.bannerImagePlaceholder', 'https://.../banner.png')}
                       disabled={!isAdmin}
                     />
                     <div className="upload-row">
@@ -900,25 +910,25 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                         onClick={() => bannerInputRef.current?.click()}
                         type="button"
                       >
-                        {uploadingBanner ? 'Uploading...' : 'Upload image'}
+                        {uploadingBanner ? t('common.uploading', 'Uploading...') : t('serverSettings.uploadImage', 'Upload image')}
                       </button>
                       {serverData.bannerUrl && (
                         <button className="btn btn-ghost" type="button" onClick={() => setServerData(p => ({ ...p, bannerUrl: '' }))}>
-                          Clear
+                          {t('common.clear', 'Clear')}
                         </button>
                       )}
                     </div>
-                    <p className="field-hint">Wide image for server header (e.g. 1600x600)</p>
+                    <p className="field-hint">{t('serverSettings.bannerHint', 'Wide image for server header (e.g. 1600x600)')}</p>
                   </div>
 
                   <div className="form-group">
-                    <label>Chat Background</label>
+                    <label>{t('serverSettings.chatBackground', 'Chat Background')}</label>
                     <input
                       type="text"
                       className="input"
                       value={serverData.backgroundUrl}
                       onChange={e => setServerData(p => ({ ...p, backgroundUrl: e.target.value }))}
-                      placeholder="https://.../background.png"
+                      placeholder={t('serverSettings.chatBackgroundPlaceholder', 'https://.../background.png')}
                       disabled={!isAdmin}
                     />
                     <div className="upload-row">
@@ -938,17 +948,17 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                         onClick={() => backgroundInputRef.current?.click()}
                         type="button"
                       >
-                        {uploadingBackground ? 'Uploading...' : 'Upload image'}
+                        {uploadingBackground ? t('common.uploading', 'Uploading...') : t('serverSettings.uploadImage', 'Upload image')}
                       </button>
                       {serverData.backgroundUrl ? (
                         <button className="btn btn-ghost" type="button" onClick={() => {
                           setServerData(p => ({ ...p, backgroundUrl: '' }))
                         }}>
-                          Clear
+                          {t('common.clear', 'Clear')}
                         </button>
                       ) : null}
                     </div>
-                    <p className="field-hint">Optional background for sidebar</p>
+                    <p className="field-hint">{t('serverSettings.chatBackgroundHint', 'Optional background for sidebar')}</p>
                   </div>
                 </div>
 
@@ -958,7 +968,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     onClick={handleSaveOverview}
                     disabled={saving}
                   >
-                    {saving ? 'Saving...' : 'Save Theme'}
+                    {saving ? t('common.saving', 'Saving...') : t('serverSettings.saveTheme', 'Save Theme')}
                   </button>
                 )}
               </div>
@@ -966,19 +976,19 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'channels' && (
               <div className="settings-section">
-                <h2>Channels & Categories</h2>
-                <p className="section-desc">Manage your server's channels and categories. Drag to reorder.</p>
+                <h2>{t('serverSettings.channelsAndCategories', 'Channels & Categories')}</h2>
+                <p className="section-desc">{t('serverSettings.channelsAndCategoriesDesc', "Manage your server's channels and categories. Drag to reorder.")}</p>
 
                 {/* Categories Section */}
                 <div className="categories-section">
                   <div className="section-header-with-action">
-                    <h4>Categories</h4>
+                    <h4>{t('serverSettings.categories', 'Categories')}</h4>
                     {isAdmin && (
                       <div className="create-category-inline">
                         <input
                           type="text"
                           className="input small"
-                          placeholder="New category name"
+                          placeholder={t('modals.categoryNamePlaceholder')}
                           value={newCategoryName}
                           onChange={e => setNewCategoryName(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && handleCreateCategory()}
@@ -988,7 +998,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           onClick={handleCreateCategory}
                           disabled={!newCategoryName.trim()}
                         >
-                          <Plus size={14} /> Add
+                          <Plus size={14} /> {t('serverSettings.add', 'Add')}
                         </button>
                       </div>
                     )}
@@ -1022,7 +1032,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           <span className="category-manage-name">{category.name}</span>
                         )}
                         <span className="category-channel-count">
-                          {channels.filter(c => c.categoryId === category.id).length} channels
+                          {channels.filter(c => c.categoryId === category.id).length} {t('chat.channels', 'Channels')}
                         </span>
                         {isAdmin && (
                           <div className="category-manage-actions">
@@ -1043,20 +1053,20 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       </div>
                     ))}
                     {categories.length === 0 && (
-                      <div className="no-items-message">No categories yet. Create one above!</div>
+                      <div className="no-items-message">{t('serverSettings.noCategoriesYet', 'No categories yet. Create one above!')}</div>
                     )}
                   </div>
                 </div>
 
                 {/* Channels by Category */}
                 <div className="channels-by-category-section">
-                  <h4>Channels</h4>
+                  <h4>{t('chat.channels', 'Channels')}</h4>
                   
                   {/* Uncategorized channels */}
                   <div className="channel-category-group">
                     <div className="category-group-header">
                       <Folder size={16} />
-                      <span>No Category</span>
+                      <span>{t('modals.noCategory', 'No Category')}</span>
                       <span className="channel-count">{channels.filter(c => !c.categoryId).length}</span>
                     </div>
                     {channels.filter(c => !c.categoryId).map(channel => (
@@ -1091,7 +1101,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                               value={channel.categoryId || ''}
                               onChange={e => handleMoveChannelToCategory(channel.id, e.target.value || null)}
                             >
-                              <option value="">No Category</option>
+                              <option value="">{t('modals.noCategory', 'No Category')}</option>
                               {categories.map(cat => (
                                 <option key={cat.id} value={cat.id}>{cat.name}</option>
                               ))}
@@ -1160,7 +1170,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                                   value={channel.categoryId || ''}
                                   onChange={e => handleMoveChannelToCategory(channel.id, e.target.value || null)}
                                 >
-                                  <option value="">No Category</option>
+                                  <option value="">{t('modals.noCategory', 'No Category')}</option>
                                   {categories.map(cat => (
                                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                                   ))}
@@ -1192,8 +1202,8 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'roles' && (
               <div className="settings-section">
-                <h2>Roles</h2>
-                <p className="section-desc">Manage roles and permissions for your server</p>
+                <h2>{t('serverSettings.roles', 'Roles')}</h2>
+                <p className="section-desc">{t('roles.manageDesc', 'Manage roles and permissions for your server')}</p>
 
                 {!editingRole ? (
                   <>
@@ -1204,7 +1214,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           <div className="role-info">
                             <span className="role-name">{role.name}</span>
                             <span className="role-perms">
-                              {role.permissions.includes('all') ? 'All permissions' : `${role.permissions.length} permissions`}
+                              {role.permissions.includes('all') ? t('serverSettings.allPermissions', 'All permissions') : t('serverSettings.permissionsCount', '{{count}} permissions', { count: role.permissions.length })}
                             </span>
                           </div>
 {role.id !== 'owner' && role.id !== 'member' && isAdmin && (
@@ -1230,12 +1240,12 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
                     {isOwner && (
                       <div className="create-role-section">
-                        <h4>Create New Role</h4>
+                        <h4>{t('roles.createRole', 'Create New Role')}</h4>
                         <div className="create-role-form">
                           <input
                             type="text"
                             className="input"
-                            placeholder="Role name"
+                            placeholder={t('roles.roleNamePlaceholder', 'Role name')}
                             value={newRole.name}
                             onChange={e => setNewRole(p => ({ ...p, name: e.target.value }))}
                           />
@@ -1246,7 +1256,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                             onChange={e => setNewRole(p => ({ ...p, color: e.target.value }))}
                           />
                           <button className="btn btn-primary" onClick={handleCreateRole} disabled={!newRole.name.trim()}>
-                            <Plus size={16} /> Create
+                            <Plus size={16} /> {t('modals.create', 'Create')}
                           </button>
                         </div>
                       </div>
@@ -1256,7 +1266,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                   <div className="role-editor">
                     <div className="role-editor-header">
                       <button className="btn btn-text" onClick={() => setEditingRole(null)}>
-                        ← Back to Roles
+                        ← {t('serverSettings.backToRoles', 'Back to Roles')}
                       </button>
                       <div className="role-preview-badge" style={{ backgroundColor: editingRole.color }}>
                         {editingRole.name}
@@ -1265,7 +1275,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
                     <div className="role-editor-basic">
                       <div className="form-group">
-                        <label>Role Name</label>
+                        <label>{t('roles.roleName', 'Role Name')}</label>
                         <input
                           type="text"
                           className="input"
@@ -1275,7 +1285,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                         />
                       </div>
                       <div className="form-group">
-                        <label>Role Color</label>
+                        <label>{t('roles.roleColor', 'Role Color')}</label>
                         <div className="color-input-row">
                           <input
                             type="color"
@@ -1345,7 +1355,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
                     <div className="role-editor-actions">
                       <button className="btn btn-secondary" onClick={() => setEditingRole(null)}>
-                        Cancel
+                        {t('common.cancel', 'Cancel')}
                       </button>
                       <button 
                         className="btn btn-primary" 
@@ -1354,7 +1364,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           setEditingRole(null)
                         }}
                       >
-                        Save Changes
+                        {t('serverSettings.saveChanges', 'Save Changes')}
                       </button>
                     </div>
                   </div>
@@ -1366,14 +1376,14 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
               <div className="settings-section">
                 <div className="section-header-row">
                   <div>
-                    <h2>Members</h2>
-                    <p className="section-desc">{members.length} members</p>
+                    <h2>{t('chat.members', 'Members')}</h2>
+                    <p className="section-desc">{members.length} {t('discovery.memberCount', 'members')}</p>
                   </div>
                   <div className="members-toolbar">
                     <input
                       type="text"
                       className="input"
-                      placeholder="Search..."
+                      placeholder={t('common.search')}
                       value={memberSearch}
                       onChange={e => setMemberSearch(e.target.value)}
                     />
@@ -1382,18 +1392,18 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       value={roleFilter}
                       onChange={e => setRoleFilter(e.target.value)}
                     >
-                      <option value="all">All Roles</option>
+                      <option value="all">{t('serverSettings.allRoles', 'All Roles')}</option>
                       {roles.map(role => (
                         <option key={role.id} value={role.id}>{role.name}</option>
                       ))}
-                      <option value="none">No Roles</option>
+                      <option value="none">{t('serverSettings.noRoles', 'No Roles')}</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="members-simple-list">
                   {members.length === 0 && (
-                    <div className="no-members-message">Loading members...</div>
+                    <div className="no-members-message">{t('common.loading', 'Loading...')}</div>
                   )}
                   {members
                     .filter(m => {
@@ -1417,7 +1427,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       <span className="member-simple-name">
                         {member.username}
                         {member.id === server?.ownerId && <Crown size={12} className="owner-crown" />}
-                        {isSelf && <span className="you-badge">you</span>}
+                        {isSelf && <span className="you-badge">{t('common.you', 'you')}</span>}
                       </span>
                       <div className="member-roles-pills">
                         {memberRoleIds.map(rid => {
@@ -1464,7 +1474,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                                 </button>
                               ))}
                               {roles.filter(r => r.id !== 'owner' && !memberRoleIds.includes(r.id)).length === 0 && (
-                                <div className="role-dropdown-empty">No roles to add</div>
+                                <div className="role-dropdown-empty">{t('serverSettings.noRolesToAdd', 'No roles to add')}</div>
                               )}
                             </div>
                           )}
@@ -1475,7 +1485,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           <button 
                             className="member-action-btn transfer" 
                             onClick={() => handleMemberAction(member, 'transfer')}
-                            title="Transfer Ownership"
+                            title={t('serverSettings.transferOwnership')}
                           >
                             <Crown size={14} />
                           </button>
@@ -1483,7 +1493,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                         <button 
                           className={`member-action-btn kick ${!canManage || isSelf || member.id === server?.ownerId ? 'disabled' : ''}`}
                           onClick={() => canManage && !isSelf && member.id !== server?.ownerId && handleMemberAction(member, 'kick')}
-                          title={isSelf || member.id === server?.ownerId ? "Can't kick yourself or owner" : "Kick"}
+                          title={isSelf || member.id === server?.ownerId ? t('serverSettings.cantKickOwner') : t('members.kick')}
                           disabled={!canManage || isSelf || member.id === server?.ownerId}
                         >
                           <UserMinus size={14} />
@@ -1491,7 +1501,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                         <button 
                           className={`member-action-btn ban ${!canManage || isSelf || member.id === server?.ownerId ? 'disabled' : ''}`}
                           onClick={() => canManage && !isSelf && member.id !== server?.ownerId && handleMemberAction(member, 'ban')}
-                          title={isSelf || member.id === server?.ownerId ? "Can't ban yourself or owner" : "Ban"}
+                          title={isSelf || member.id === server?.ownerId ? t('serverSettings.cantBanOwner') : t('members.ban')}
                           disabled={!canManage || isSelf || member.id === server?.ownerId}
                         >
                           <Ban size={14} />
@@ -1505,18 +1515,18 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'invites' && (
               <div className="settings-section">
-                <h2>Server Invites</h2>
-                <p className="section-desc">Create and manage invite links</p>
+                <h2>{t('serverSettings.invites', 'Server Invites')}</h2>
+                <p className="section-desc">{t('serverSettings.invitesDesc', 'Create and manage invite links')}</p>
 
                 <button className="btn btn-primary" onClick={handleCreateInvite}>
-                  <Plus size={16} /> Create Invite Link
+                  <Plus size={16} /> {t('modals.createInvite', 'Create Invite Link')}
                 </button>
 
                 {newInvite && (
                   <div className="new-invite-box">
-                    <span className="invite-code">volt.voltagechat.app/invite/{newInvite.code}</span>
+                    <span className="invite-code">{buildInviteDisplayUrl(newInvite.code)}</span>
                     <button className="btn btn-secondary" onClick={() => handleCopyInvite(newInvite.code)}>
-                      <Copy size={16} /> Copy
+                      <Copy size={16} /> {t('common.copy', 'Copy')}
                     </button>
                   </div>
                 )}
@@ -1526,7 +1536,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     <div key={invite.code} className="invite-item">
                       <div className="invite-info">
                         <span className="invite-code">{invite.code}</span>
-                        <span className="invite-uses">{invite.uses} uses</span>
+                        <span className="invite-uses">{invite.uses} {t('invites.uses', 'uses')}</span>
                       </div>
                       <div className="invite-actions">
                         <button className="icon-btn" onClick={() => handleCopyInvite(invite.code)}>
@@ -1539,7 +1549,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     </div>
                   ))}
                   {invites.length === 0 && (
-                    <div className="no-invites">No active invites</div>
+                    <div className="no-invites">{t('serverSettings.noActiveInvites', 'No active invites')}</div>
                   )}
                 </div>
               </div>
@@ -1547,39 +1557,39 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'discovery' && (
               <div className="settings-section">
-                <h2>Server Discovery</h2>
-                <p className="section-desc">Submit your server to the discovery page to let new users find it</p>
+                <h2>{t('serverSettings.serverDiscovery', 'Server Discovery')}</h2>
+                <p className="section-desc">{t('serverSettings.serverDiscoveryDesc', 'Submit your server to the discovery page to let new users find it')}</p>
 
                 {discoveryStatus?.isInDiscovery ? (
                   <div className="discovery-status-box approved">
                     <div className="discovery-status-header">
                       <CheckCircle size={24} />
-                      <h3>Listed in Discovery</h3>
+                      <h3>{t('serverSettings.listedInDiscovery', 'Listed in Discovery')}</h3>
                     </div>
-                    <p>Your server is visible on the Server Discovery page</p>
+                    <p>{t('serverSettings.serverVisibleInDiscovery', 'Your server is visible on the Server Discovery page')}</p>
                     <button 
                       className="btn btn-secondary danger" 
                       onClick={handleRemoveFromDiscovery}
                       disabled={discoveryLoading}
                     >
-                      {discoveryLoading ? 'Removing...' : 'Remove from Discovery'}
+                      {discoveryLoading ? t('common.removing', 'Removing...') : t('serverSettings.removeFromDiscovery', 'Remove from Discovery')}
                     </button>
                   </div>
                 ) : discoveryStatus?.submission ? (
                   <div className="discovery-status-box pending">
                     <div className="discovery-status-header">
                       <Clock size={24} />
-                      <h3>Pending Approval</h3>
+                      <h3>{t('serverSettings.pendingApproval', 'Pending Approval')}</h3>
                     </div>
-                    <p>Your server is waiting for review</p>
+                    <p>{t('serverSettings.serverWaitingReview', 'Your server is waiting for review')}</p>
                     <span className="discovery-status-info">
-                      Submitted: {new Date(discoveryStatus.submission.submittedAt).toLocaleDateString()}
+                      {t('serverSettings.submittedAt', 'Submitted')}: {new Date(discoveryStatus.submission.submittedAt).toLocaleDateString()}
                     </span>
                   </div>
                 ) : (
                   <div className="discovery-submit-form">
                     <div className="form-group">
-                      <label>Category</label>
+                      <label>{t('modals.category', 'Category')}</label>
                       <div className="category-grid">
                         {discoveryCategories.map(cat => {
                           const IconComponent = CATEGORY_ICONS[cat.id] || Hash
@@ -1599,11 +1609,11 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     </div>
 
                     <div className="form-group">
-                      <label>Description (optional)</label>
+                      <label>{t('serverSettings.descriptionOptional', 'Description (optional)')}</label>
                       <textarea
                         className="input"
                         rows={4}
-                        placeholder="Tell users what your server is about..."
+                        placeholder={t('serverSettings.serverDescriptionPlaceholder', 'Tell users what your server is about...')}
                         value={discoverySubmit.description}
                         onChange={(e) => setDiscoverySubmit(p => ({ ...p, description: e.target.value }))}
                         maxLength={500}
@@ -1616,7 +1626,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       onClick={handleSubmitToDiscovery}
                       disabled={!discoverySubmit.category || discoveryLoading}
                     >
-                      {discoveryLoading ? 'Submitting...' : 'Submit for Review'}
+                      {discoveryLoading ? t('common.submitting', 'Submitting...') : t('serverSettings.submitForReview', 'Submit for Review')}
                     </button>
                   </div>
                 )}
@@ -1625,24 +1635,24 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'emojis' && (
               <div className="settings-section">
-                <h2>Server Emojis</h2>
-                <p className="section-desc">Upload custom emojis for your server. Members can use them in messages with <code>:emoji_name:</code> syntax.</p>
+                <h2>{t('serverSettings.emojis', 'Server Emojis')}</h2>
+                <p className="section-desc">{t('serverSettings.emojisDesc', 'Upload custom emojis for your server. Members can use them in messages with :emoji_name: syntax.')}</p>
 
                 {(isAdmin || hasPermission('manage_emojis')) && (
                   <div className="emoji-upload-section" style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 24, flexWrap: 'wrap' }}>
                     <div className="form-group" style={{ margin: 0, flex: '1 1 200px' }}>
-                      <label>Emoji Name</label>
+                      <label>{t('emoji.emojiName', 'Emoji Name')}</label>
                       <input
                         type="text"
                         className="input"
-                        placeholder="e.g. pepe_happy"
+                        placeholder={t('serverSettings.emojiNamePlaceholder', 'e.g. pepe_happy')}
                         value={newEmojiName}
                         onChange={e => setNewEmojiName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
                         maxLength={32}
                       />
                     </div>
                     <div className="form-group" style={{ margin: 0 }}>
-                      <label>Image</label>
+                      <label>{t('serverSettings.image', 'Image')}</label>
                       <input
                         ref={emojiFileInputRef}
                         type="file"
@@ -1660,7 +1670,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       }}
                       style={{ height: 38 }}
                     >
-                      {uploadingEmoji ? 'Uploading...' : <><Upload size={16} /> Upload Emoji</>}
+                      {uploadingEmoji ? t('common.uploading', 'Uploading...') : <><Upload size={16} /> {t('emoji.uploadEmoji', 'Upload Emoji')}</>}
                     </button>
                   </div>
                 )}
@@ -1680,7 +1690,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                         <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>:{emoji.name}:</div>
                       </div>
                       {(isAdmin || hasPermission('manage_emojis')) && (
-                        <button className="icon-btn danger" onClick={() => handleDeleteEmoji(emoji.id)} title="Delete emoji">
+                        <button className="icon-btn danger" onClick={() => handleDeleteEmoji(emoji.id)} title={t('emoji.deleteEmoji')}>
                           <Trash2 size={14} />
                         </button>
                       )}
@@ -1691,7 +1701,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                 {serverEmojis.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted, #888)', fontSize: 14 }}>
                     <Smile size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
-                    <p>No custom emojis yet. Upload one above!</p>
+                    <p>{t('serverSettings.noCustomEmojis', 'No custom emojis yet. Upload one above!')}</p>
                   </div>
                 )}
               </div>
@@ -1699,9 +1709,9 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'bots' && (
               <div className="settings-section">
-                <h2>Server Bots</h2>
+                <h2>{t('serverSettings.serverBots', 'Server Bots')}</h2>
                 <p className="section-desc">
-                  Manage bots installed in this server. Bots can respond to messages, run commands, and automate tasks.
+                  {t('serverSettings.serverBotsDesc', 'Manage bots installed in this server. Bots can respond to messages, run commands, and automate tasks.')}
                 </p>
                 <ServerBots serverId={server?.id} isOwner={isOwner} canManage={hasPermission('manage_server')} />
               </div>
@@ -1709,9 +1719,9 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'security' && (
               <div className="settings-section">
-                <h2>End-to-End Encryption</h2>
+                <h2>{t('serverSettings.endToEndEncryption', 'End-to-End Encryption')}</h2>
                 <p className="section-desc">
-                  Secure your server messages with end-to-end encryption. When enabled, messages can only be read by server members, not even server admins can read them.
+                  {t('serverSettings.endToEndEncryptionDesc', 'Secure your server messages with end-to-end encryption. When enabled, messages can only be read by server members, not even server admins can read them.')}
                 </p>
 
                 <div className="e2e-status-card">
@@ -1724,11 +1734,11 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       )}
                     </div>
                     <div className="e2e-status-info">
-                      <h3>{isEncryptionEnabled(server?.id) ? 'Encryption Enabled' : 'Encryption Disabled'}</h3>
+                      <h3>{isEncryptionEnabled(server?.id) ? t('serverSettings.encryptionEnabled', 'Encryption Enabled') : t('serverSettings.encryptionDisabled', 'Encryption Disabled')}</h3>
                       <p>
                         {isEncryptionEnabled(server?.id) 
-                          ? 'Messages in this server are end-to-end encrypted'
-                          : 'Messages are not encrypted in this server'}
+                          ? t('serverSettings.messagesEncrypted', 'Messages in this server are end-to-end encrypted')
+                          : t('serverSettings.messagesNotEncrypted', 'Messages are not encrypted in this server')}
                       </p>
                     </div>
                   </div>
@@ -1738,17 +1748,17 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       {hasDecryptedKey(server?.id) ? (
                         <div className="e2e-key-status success">
                           <Key size={16} />
-                          <span>Your device has the decryption key</span>
+                          <span>{t('serverSettings.deviceHasDecryptionKey', 'Your device has the decryption key')}</span>
                         </div>
                       ) : (
                         <div className="e2e-key-status warning">
                           <Key size={16} />
-                          <span>You don't have the decryption key - messages cannot be read</span>
+                          <span>{t('serverSettings.deviceMissingDecryptionKey', "You don't have the decryption key - messages cannot be read")}</span>
                           <button 
                             className="btn btn-primary btn-sm"
                             onClick={() => joinServerEncryption(server?.id)}
                           >
-                            Join Encryption
+                            {t('serverSettings.joinEncryption', 'Join Encryption')}
                           </button>
                         </div>
                       )}
@@ -1761,56 +1771,56 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     {!isEncryptionEnabled(server?.id) ? (
                       <div className="e2e-enable-section">
                         <div className="e2e-warning">
-                          <h4>Enable End-to-End Encryption</h4>
+                          <h4>{t('serverSettings.enableEndToEndEncryption', 'Enable End-to-End Encryption')}</h4>
                           <ul>
-                            <li>All existing messages will remain unencrypted</li>
-                            <li>New messages will be encrypted</li>
-                            <li>Members will need to join encryption to read messages</li>
-                            <li>Members can export their keys for device recovery</li>
+                            <li>{t('serverSettings.encryptionEnableNotice1', 'All existing messages will remain unencrypted')}</li>
+                            <li>{t('serverSettings.encryptionEnableNotice2', 'New messages will be encrypted')}</li>
+                            <li>{t('serverSettings.encryptionEnableNotice3', 'Members will need to join encryption to read messages')}</li>
+                            <li>{t('serverSettings.encryptionEnableNotice4', 'Members can export their keys for device recovery')}</li>
                           </ul>
                         </div>
                         <button 
                           className="btn btn-primary"
                           onClick={async () => {
-                            if (confirm('Enable end-to-end encryption for this server?')) {
+                            if (confirm(t('serverSettings.enableEncryptionConfirm', 'Enable end-to-end encryption for this server?'))) {
                               await enableServerEncryption(server?.id)
                             }
                           }}
                         >
                           <Lock size={16} />
-                          Enable Encryption
+                          {t('serverSettings.enableEncryption', 'Enable Encryption')}
                         </button>
                       </div>
                     ) : (
                       <div className="e2e-manage-section">
                         <div className="e2e-info">
-                          <h4>Manage Encryption</h4>
-                          <p>Current encryption status for this server</p>
+                          <h4>{t('serverSettings.manageEncryption', 'Manage Encryption')}</h4>
+                          <p>{t('serverSettings.currentEncryptionStatus', 'Current encryption status for this server')}</p>
                         </div>
                         
                         <div className="e2e-buttons">
                           <button 
                             className="btn btn-secondary"
                             onClick={async () => {
-                              if (confirm('Rotate encryption keys? All members will need to rejoin encryption.')) {
+                              if (confirm(t('serverSettings.rotateEncryptionConfirm', 'Rotate encryption keys? All members will need to rejoin encryption.'))) {
                                 await rotateServerKeys(server?.id)
                               }
                             }}
                           >
                             <RefreshCw size={16} />
-                            Rotate Keys
+                            {t('selfvolt.rotateKeys', 'Rotate Keys')}
                           </button>
                           
                           <button 
                             className="btn btn-danger"
                             onClick={async () => {
-                              if (confirm('Disable end-to-end encryption? All encrypted messages will become unreadable.')) {
+                              if (confirm(t('serverSettings.disableEncryptionConfirm', 'Disable end-to-end encryption? All encrypted messages will become unreadable.'))) {
                                 await disableServerEncryption(server?.id)
                               }
                             }}
                           >
                             <Lock size={16} />
-                            Disable Encryption
+                            {t('serverSettings.disableEncryption', 'Disable Encryption')}
                           </button>
                         </div>
                       </div>
@@ -1819,21 +1829,21 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                 ) : (
                   <div className="e2e-member-section">
                     {!isEncryptionEnabled(server?.id) ? (
-                      <p>Encryption is not enabled on this server.</p>
+                      <p>{t('serverSettings.encryptionNotEnabled', 'Encryption is not enabled on this server.')}</p>
                     ) : hasDecryptedKey(server?.id) ? (
                       <div className="e2e-joined">
                         <CheckCircle size={20} />
-                        <span>You have joined the encryption - your messages are secure</span>
+                        <span>{t('serverSettings.joinedEncryptionSecure', 'You have joined the encryption - your messages are secure')}</span>
                       </div>
                     ) : (
                       <div className="e2e-join-prompt">
-                        <p>Encryption is enabled on this server. Join to enable reading and sending encrypted messages.</p>
+                        <p>{t('serverSettings.joinEncryptionPrompt', 'Encryption is enabled on this server. Join to enable reading and sending encrypted messages.')}</p>
                         <button 
                           className="btn btn-primary"
                           onClick={() => joinServerEncryption(server?.id)}
                         >
                           <Key size={16} />
-                          Join Encryption
+                          {t('serverSettings.joinEncryption', 'Join Encryption')}
                         </button>
                       </div>
                     )}
@@ -1844,21 +1854,21 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
 
             {activeTab === 'danger' && isOwner && (
               <div className="settings-section danger-zone">
-                <h2>Danger Zone</h2>
-                <p className="section-desc warning">These actions are irreversible. Be careful!</p>
+                <h2>{t('appearance.danger', 'Danger Zone')}</h2>
+                <p className="section-desc warning">{t('serverSettings.dangerWarning', 'These actions are irreversible. Be careful!')}</p>
 
                 <div className="danger-action">
                   <div className="danger-info">
-                    <h4>Delete Server</h4>
-                    <p>Once you delete a server, there is no going back. Please be certain.</p>
+                    <h4>{t('servers.deleteServer', 'Delete Server')}</h4>
+                    <p>{t('serverSettings.deleteServerWarning', 'Once you delete a server, there is no going back. Please be certain.')}</p>
                   </div>
                   {!confirmDelete ? (
                     <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>
-                      Delete Server
+                      {t('servers.deleteServer', 'Delete Server')}
                     </button>
                   ) : (
                     <div className="confirm-delete">
-                      <p>Type <strong>{server.name}</strong> to confirm:</p>
+                      <p>{t('serverSettings.typeServerNameConfirm', 'Type {{name}} to confirm:', { name: server.name })}</p>
                       <input
                         type="text"
                         className="input"
@@ -1868,14 +1878,14 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       />
                       <div className="confirm-buttons">
                         <button className="btn btn-secondary" onClick={() => { setConfirmDelete(false); setDeleteInput('') }}>
-                          Cancel
+                          {t('common.cancel', 'Cancel')}
                         </button>
                         <button 
                           className="btn btn-danger" 
                           onClick={handleDeleteServer}
                           disabled={deleteInput !== server.name}
                         >
-                          Delete Forever
+                          {t('serverSettings.deleteForever', 'Delete Forever')}
                         </button>
                       </div>
                     </div>

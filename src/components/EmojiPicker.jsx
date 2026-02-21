@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, X, Loader, Heart, Star } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
+import { useTranslation } from '../hooks/useTranslation'
 import '../assets/styles/EmojiPicker.css'
 
 const TENOR_API_KEY = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ'
@@ -24,6 +25,7 @@ function saveFavs(favs) {
 }
 
 const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) => {
+  const { t } = useTranslation()
   const globalEmojis = useAppStore(state => state.globalEmojis)
   // Combine server emojis with global emojis - server emojis shown first
   const allEmojis = serverEmojis?.length > 0 
@@ -166,7 +168,7 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
           {showGifs && (
             <>
               <button className={`emoji-tab ${activeTab === 'gif' ? 'active' : ''}`} onClick={() => setActiveTab('gif')}>GIF</button>
-              <button className={`emoji-tab ${activeTab === 'favgif' ? 'active' : ''}`} onClick={() => setActiveTab('favgif')} title="Favourite GIFs">
+              <button className={`emoji-tab ${activeTab === 'favgif' ? 'active' : ''}`} onClick={() => setActiveTab('favgif')} title={t('emoji.favouriteGifs', 'Favourite GIFs')}>
                 <Heart size={14} fill={activeTab === 'favgif' ? 'currentColor' : 'none'} />
               </button>
             </>
@@ -176,7 +178,7 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
           <Search size={14} />
           <input
             type="text"
-            placeholder={activeTab === 'gif' ? 'Search GIFs…' : activeTab === 'favgif' ? 'Search favourites…' : 'Search emoji…'}
+            placeholder={activeTab === 'gif' ? t('emoji.searchGifs', 'Search GIFs…') : activeTab === 'favgif' ? t('emoji.searchFavourites', 'Search favourites…') : t('emoji.searchEmoji', 'Search emoji…')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             autoFocus
@@ -194,7 +196,7 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
           <>
             {!searchQuery && recentEmojis.length > 0 && (
               <div className="emoji-section">
-                <h4>Recent</h4>
+                <h4>{t('emoji.recent', 'Recent')}</h4>
                 <div className="emoji-grid">
                   {recentEmojis.map((emoji, i) => (
                     <button key={i} className="emoji-btn" onClick={() => handleEmojiSelect(emoji)}>{emoji}</button>
@@ -228,14 +230,14 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
         {/* ── Server emoji tab ── */}
         {activeTab === 'server' && (
           <div className="emoji-section">
-            <h4>Server Emojis</h4>
+            <h4>{t('emoji.serverEmojis', 'Server Emojis')}</h4>
             <div className="emoji-grid server-emojis">
               {allEmojis?.map((emoji, i) => (
                 <button key={i} className="emoji-btn server-emoji-btn" onClick={() => handleServerEmojiSelect(emoji)} title={emoji.serverName ? `${emoji.name} (${emoji.serverName})` : emoji.name}>
                   <img src={emoji.url} alt={emoji.name} />
                 </button>
               ))}
-              {(!allEmojis || allEmojis.length === 0) && <div className="no-emoji">No server emojis</div>}
+              {(!allEmojis || allEmojis.length === 0) && <div className="no-emoji">{t('emoji.noServerEmojis', 'No server emojis')}</div>}
             </div>
           </div>
         )}
@@ -256,13 +258,13 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true }) 
                 <div ref={bottomRef} style={{ height: 1 }} />
                 {loadingMore && <div className="gif-loading-more"><Loader className="spin" size={18} /></div>}
                 {!gifNext && gifs.length > 0 && (
-                  <div className="gif-end">No more results</div>
+                  <div className="gif-end">{t('emoji.noMoreResults', 'No more results')}</div>
                 )}
               </>
             ) : searchQuery ? (
-              <div className="gif-placeholder">No GIFs found for "{searchQuery}"</div>
+              <div className="gif-placeholder">{t('emoji.noGifsFound', 'No GIFs found for "{{query}}"', { query: searchQuery })}</div>
             ) : (
-              <div className="gif-placeholder">Search for GIFs…</div>
+              <div className="gif-placeholder">{t('emoji.searchForGifs', 'Search for GIFs…')}</div>
             )}
           </div>
         )}

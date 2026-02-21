@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Plus, Zap, Users, Settings, LogIn, MoreHorizontal, Copy, Shield, LogOut, Compass } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import { useAuth } from '../contexts/AuthContext'
 import CreateServerModal from './modals/CreateServerModal'
 import JoinServerModal from './modals/JoinServerModal'
@@ -10,6 +11,7 @@ import '../assets/styles/ServerSidebar.css'
 
 const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServer, onOpenSettings, onOpenCreate, onOpenJoin, onOpenServerSettings, onLeaveServer, onOpenAdmin, isAdmin, friendRequestCount = 0, dmNotifications = [], serverUnreadCounts = {}, onDMClick }) => {
   const { user } = useAuth()
+  const { t } = useTranslation()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [contextMenu, setContextMenu] = useState(null)
@@ -22,7 +24,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
   const totalNotifications = friendRequestCount + dmNotifications.length
 
   const handleLeaveServer = async (server) => {
-    if (window.confirm(`Are you sure you want to leave ${server.name}?`)) {
+    if (window.confirm(t('servers.leaveConfirm').replace('{name}', server.name))) {
       try {
         await apiService.leaveServer(server.id)
         setContextMenu(null)
@@ -33,7 +35,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
         }
       } catch (err) {
         console.error('Failed to leave server:', err)
-        alert(err.response?.data?.error || 'Failed to leave server')
+        alert(err.response?.data?.error || t('errors.generic'))
       }
     }
   }
@@ -45,7 +47,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           <button 
             className="server-icon home-icon"
             onClick={() => onServerChange('home')}
-            title="Home"
+            title={t('nav.chat')}
           >
             <Zap size={28} />
           </button>
@@ -53,7 +55,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           <button 
             className={`server-icon friends-icon ${currentServerId === 'friends' ? 'active' : ''}`}
             onClick={() => onServerChange('friends')}
-            title="Friends"
+            title={t('nav.friends')}
           >
             <Users size={28} />
             {totalNotifications > 0 && (
@@ -82,7 +84,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           <button 
             className={`server-icon discovery-icon ${currentServerId === 'discovery' ? 'active' : ''}`}
             onClick={() => onServerChange('discovery')}
-            title="Server Discovery"
+            title={t('discovery.title')}
           >
             <Compass size={28} />
           </button>
@@ -90,7 +92,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           <button 
             className="server-icon admin-icon"
             onClick={onOpenAdmin}
-            title="Admin Panel"
+            title={t('misc.adminPanel')}
             style={showAdminPanel ? undefined : { display: 'none' }}
           >
             <Shield size={28} />
@@ -139,12 +141,12 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
                 x: e.clientX,
                 y: e.clientY,
                 items: [
-                  { icon: <Plus size={16} />, label: 'Create Server', onClick: () => onOpenCreate ? onOpenCreate() : setShowCreateModal(true) },
-                  { icon: <LogIn size={16} />, label: 'Join Server', onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
+                  { icon: <Plus size={16} />, label: t('servers.create'), onClick: () => onOpenCreate ? onOpenCreate() : setShowCreateModal(true) },
+                  { icon: <LogIn size={16} />, label: t('servers.join'), onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
                 ]
               })
             }}
-            title="Create Server"
+            title={t('servers.create')}
           >
             <Plus size={24} />
           </button>
@@ -158,12 +160,12 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
                 x: e.clientX,
                 y: e.clientY,
                 items: [
-                  { icon: <Plus size={16} />, label: 'Create Server', onClick: () => onOpenCreate ? onOpenCreate() : setShowCreateModal(true) },
-                  { icon: <LogIn size={16} />, label: 'Join Server', onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
+                  { icon: <Plus size={16} />, label: t('servers.create'), onClick: () => onOpenCreate ? onOpenCreate() : setShowCreateModal(true) },
+                  { icon: <LogIn size={16} />, label: t('servers.join'), onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
                 ]
               })
             }}
-            title="Join Server"
+            title={t('servers.join')}
           >
             <LogIn size={22} />
           </button>
@@ -179,12 +181,12 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
                 x: e.clientX,
                 y: e.clientY,
                 items: [
-                  { icon: <Settings size={16} />, label: 'User Settings', onClick: onOpenSettings },
-                  { icon: <LogIn size={16} />, label: 'Join Server', onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
+                  { icon: <Settings size={16} />, label: t('nav.settings'), onClick: onOpenSettings },
+                  { icon: <LogIn size={16} />, label: t('servers.join'), onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
                 ]
               })
             }}
-            title="Settings"
+            title={t('nav.settings')}
           >
             <Settings size={24} />
           </button>
@@ -196,37 +198,37 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            { label: contextMenu.server.name, type: 'header' },
+          items={contextMenu.items || [
+            { label: contextMenu.server?.name, type: 'header' },
             {
-              label: 'Open',
-              onClick: () => onServerChange(contextMenu.server.id)
+              label: t('common.open'),
+              onClick: () => onServerChange(contextMenu.server?.id)
             },
             {
-              label: 'Server Settings',
+              label: t('servers.serverSettings'),
               icon: <Shield size={14} />,
               onClick: () => {
-                onServerChange(contextMenu.server.id)
+                onServerChange(contextMenu.server?.id)
                 onOpenServerSettings?.()
               },
-              disabled: contextMenu.server.ownerId !== user?.id
+              disabled: contextMenu.server?.ownerId !== user?.id
             },
             {
-              label: 'Copy Server ID',
+              label: t('servers.serverId'),
               icon: <Copy size={14} />,
-              onClick: () => navigator.clipboard.writeText(contextMenu.server.id)
+              onClick: () => navigator.clipboard.writeText(contextMenu.server?.id)
             },
             { type: 'separator' },
             {
-              label: 'Leave Server',
+              label: t('servers.leaveServer'),
               icon: <LogOut size={14} />,
               onClick: () => handleLeaveServer(contextMenu.server),
               danger: true,
-              disabled: contextMenu.server.ownerId === user?.id
+              disabled: contextMenu.server?.ownerId === user?.id
             },
             { type: 'separator' },
             {
-              label: 'Close',
+              label: t('common.close'),
               icon: <MoreHorizontal size={14} />,
               onClick: () => {}
             }

@@ -44,6 +44,33 @@ class SoundService {
     // Ringtone loop state
     this._ringtoneInterval = null  // Interval ID for ringtone loop
     this._ringtonePlaying = false  // Whether ringtone is currently looping
+    
+    // Cache for sounds setting to avoid repeated localStorage reads
+    this._soundsEnabled = null
+    this._soundsEnabledCacheTime = 0
+    this._SOUNDS_CACHE_TTL = 100 // Cache for 100ms to avoid thrashing
+  }
+  
+  // Check if sounds are enabled in settings (notification sounds toggle)
+  _areSoundsEnabled() {
+    const now = Date.now()
+    if (this._soundsEnabled !== null && (now - this._soundsEnabledCacheTime) < this._SOUNDS_CACHE_TTL) {
+      return this._soundsEnabled
+    }
+    
+    try {
+      const saved = localStorage.getItem('voltchat_settings')
+      if (saved) {
+        const settings = JSON.parse(saved)
+        this._soundsEnabled = settings.sounds !== false // Default to true if not set
+        this._soundsEnabledCacheTime = now
+        return this._soundsEnabled
+      }
+    } catch (e) {}
+    
+    this._soundsEnabled = true
+    this._soundsEnabledCacheTime = now
+    return true
   }
 
   setSoundpack(pack) {
@@ -96,6 +123,9 @@ class SoundService {
   }
 
   _tryPlaySoundpack(soundKey) {
+    // Check if sounds are enabled in settings
+    if (!this._areSoundsEnabled()) return true // Return true to prevent fallback
+    
     if (this.soundpack === 'default') return false
     
     const sounds = this._getSoundpackSounds(this.soundpack)
@@ -404,6 +434,9 @@ class SoundService {
     this._stopCurrentSounds()
 
     if (!this.enabled) return
+    
+    // Check if sounds are enabled in settings (notification sounds toggle)
+    if (!this._areSoundsEnabled()) return
 
     // Lazily ensure context + gesture listeners exist
     if (!this._listenerAdded) this._addGestureListeners()

@@ -1,0 +1,67 @@
+{
+  "app": {
+    "welcome": "Welcome to VoltChat",
+    "createOrJoin": "Create or join a server to get started"
+  },
+  "nav": {
+    "chat": "Chat",
+    "settings": "Settings"
+  },
+  "servers": {
+    "create": "Create Server",
+    "join": "Join Server"
+  },
+  "discovery": {
+    "title": "Server Discovery",
+    "search": "Search servers...",
+    "noResults": "No servers found",
+    "submitServer": "Submit Server"
+  },
+  "dm": {
+    "selectDm": "Select a conversation",
+    "chooseConversation": "Choose a conversation to start messaging"
+  },
+  "settings": {
+    "account": "Account",
+    "notifications": "Notifications",
+    "language": "Language",
+    "voice": "Voice & Video",
+    "privacy": "Privacy & Safety",
+    "age": "Age Verification",
+    "selfvolt": "SelfVolt",
+    "federation": "Federation",
+    "bots": "Bots",
+    "serverconfig": "Server Configuration",
+    "appearance": "Appearance",
+    "about": "About"
+  },
+  "notifications": {
+    "pushNotificationsDesc": "Receive notifications when you're offline",
+    "desktopNotificationsDesc": "Show notifications in your browser",
+    "messageNotificationsDesc": "Notify you when you receive new messages",
+    "friendRequestsDesc": "Notify you when you receive friend requests"
+  },
+  "voice": {
+    "outputVolume": "Adjust your output volume",
+    "connectingStatus": "Connecting…",
+    "voiceConnected": "Voice Connected",
+    "connected": "Connected",
+    "connectionIssues": "Connection Issues",
+    "connectionError": "Connection Error",
+    "returnToVoice": "Return to Voice",
+    "leaveVoice": "Leave Voice"
+  },
+  "status": {
+    "online": "Online",
+    "idle": "Idle",
+    "dnd": "Do Not Disturb",
+    "invisible": "Invisible",
+    "offline": "Offline"
+  },
+  "account": {
+    "usernameCannotChange": "Username cannot be changed"
+  },
+  "appearance": {
+    "enableGradient": "Enable background gradient"
+  }
+}

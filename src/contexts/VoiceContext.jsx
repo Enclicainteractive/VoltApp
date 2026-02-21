@@ -4,8 +4,10 @@ import { useAuth } from './AuthContext'
 import { settingsService } from '../services/settingsService'
 import { soundService } from '../services/soundService'
 
-// Default ICE servers
+// Default ICE servers - includes TURN servers for NAT traversal
+// TURN servers are essential for international calls and restrictive NATs
 const DEFAULT_ICE_SERVERS = [
+  // STUN servers for initial connection attempts
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
@@ -13,6 +15,29 @@ const DEFAULT_ICE_SERVERS = [
   { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'stun:global.stun.twilio.com:3478' },
   { urls: 'stun:stun.stunprotocol.org:3478' },
+  
+  // Open Relay Project - Free global TURN servers
+  // Essential for symmetric NAT and international connections
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turns:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
 ]
 
 const buildPeerConfig = (serverIceServers = []) => ({
@@ -20,6 +45,8 @@ const buildPeerConfig = (serverIceServers = []) => ({
   bundlePolicy: 'max-bundle',
   rtcpMuxPolicy: 'require',
   iceCandidatePoolSize: 10,
+  // Enable ICE restart for connection recovery
+  iceRestart: true
 })
 
 const VoiceContext = createContext(null)
@@ -125,6 +152,25 @@ export const VoiceProvider = ({ children }) => {
       timestamp: Date.now()
     })
   }, [socket])
+
+  const applyReceiverLatencyHints = useCallback((pc, peerId = 'unknown') => {
+    if (!pc?.getReceivers) return
+    const receivers = pc.getReceivers()
+    receivers.forEach(receiver => {
+      try {
+        if (!receiver?.track) return
+        const isVideo = receiver.track.kind === 'video'
+        if (typeof receiver.playoutDelayHint !== 'undefined') {
+          receiver.playoutDelayHint = 0
+        }
+        if (typeof receiver.jitterBufferTarget !== 'undefined') {
+          receiver.jitterBufferTarget = isVideo ? 0 : 10
+        }
+      } catch (err) {
+        console.warn(`[WebRTC] Failed to apply latency hints for ${peerId}:`, err.message)
+      }
+    })
+  }, [])
   
   // Create peer connection
   const createPeerConnection = useCallback((targetUserId) => {
@@ -170,7 +216,10 @@ export const VoiceProvider = ({ children }) => {
       reportPeerState(targetUserId, s)
       
       if (s === 'connected') {
+        applyReceiverLatencyHints(pc, targetUserId)
         const receivers = pc.getReceivers()
+        
+        // Handle audio receiver
         const audioReceiver = receivers.find(r => r.track?.kind === 'audio')
         if (audioReceiver) {
           const track = audioReceiver.track
@@ -210,6 +259,55 @@ export const VoiceProvider = ({ children }) => {
           
           track.onunmute = () => tryPlay()
           if (!track.muted) tryPlay()
+        }
+        
+        // Handle video receiver - recover video tracks on reconnection
+        const videoReceiver = receivers.find(r => r.track?.kind === 'video')
+        if (videoReceiver && videoReceiver.track) {
+          const videoTrack = videoReceiver.track
+          console.log(`[WebRTC] Found video track for ${targetUserId} on connect: readyState=${videoTrack.readyState}`)
+          const clearRecoveredVideo = () => {
+            const stream = remoteStreams.current[targetUserId]
+            if (stream) {
+              stream.getVideoTracks().forEach(t => {
+                try { stream.removeTrack(t) } catch {}
+              })
+              if (stream.getTracks().length === 0) {
+                delete remoteStreams.current[targetUserId]
+              }
+            }
+            setParticipants(prev => prev.map(p =>
+              p.id === targetUserId ? { ...p, hasVideo: false, videoStream: null, isScreenSharing: false } : p
+            ))
+          }
+          videoTrack.onended = clearRecoveredVideo
+          videoTrack.onmute = clearRecoveredVideo
+          
+          if (videoTrack.readyState === 'live') {
+            let videoStream = remoteStreams.current[targetUserId]
+            if (!videoStream) {
+              videoStream = new MediaStream([videoTrack])
+              remoteStreams.current[targetUserId] = videoStream
+            } else {
+              // Check if video track already in stream
+              const existingVideo = videoStream.getVideoTracks().find(t => t.id === videoTrack.id)
+              if (!existingVideo) {
+                videoStream.addTrack(videoTrack)
+              }
+            }
+            
+            // Update participants state with video stream
+            setParticipants(prev => {
+              const existing = prev.find(p => p.id === targetUserId)
+              if (existing?.hasVideo && existing?.videoStream?.id === videoStream.id) return prev
+              console.log(`[WebRTC] Recovering video stream for ${targetUserId} on connect`)
+              return prev.map(p => 
+                p.id === targetUserId 
+                  ? { ...p, hasVideo: true, videoStream: videoStream }
+                  : p
+              )
+            })
+          }
         }
       }
       
@@ -257,6 +355,7 @@ export const VoiceProvider = ({ children }) => {
     
     pc.ontrack = (event) => {
       const track = event.track
+      applyReceiverLatencyHints(pc, targetUserId)
       let remoteStream = event.streams[0]
       if (!remoteStream) {
         if (!remoteStreams.current[targetUserId]) {
@@ -294,6 +393,23 @@ export const VoiceProvider = ({ children }) => {
         setParticipants(prev => prev.map(p =>
           p.id === targetUserId ? { ...p, hasVideo: true, videoStream: remoteStream } : p
         ))
+
+        const clearVideo = () => {
+          const stream = remoteStreams.current[targetUserId]
+          if (stream) {
+            stream.getVideoTracks().forEach(t => {
+              try { stream.removeTrack(t) } catch {}
+            })
+            if (stream.getTracks().length === 0) {
+              delete remoteStreams.current[targetUserId]
+            }
+          }
+          setParticipants(prev => prev.map(p =>
+            p.id === targetUserId ? { ...p, hasVideo: false, videoStream: null, isScreenSharing: false } : p
+          ))
+        }
+        track.onended = clearVideo
+        track.onmute = clearVideo
       }
     }
     
@@ -327,7 +443,7 @@ export const VoiceProvider = ({ children }) => {
     
     addTracks()
     return pc
-  }, [socket, user?.id, isPolite])
+  }, [socket, user?.id, isPolite, applyReceiverLatencyHints])
   
   const initiateCall = useCallback((targetUserId) => {
     if (!targetUserId || targetUserId === user?.id) return
@@ -722,6 +838,72 @@ export const VoiceProvider = ({ children }) => {
       }
     })
     
+    // Handle force-reconnect from server (consensus-based reconnection)
+    socket.on('voice:force-reconnect', async (data) => {
+      const { channelId, reason, targetPeer } = data
+      console.log('[WebRTC] Force reconnect received:', reason, 'for peer:', targetPeer)
+      
+      if (channelId !== channelIdRef.current) return
+      
+      // If we're the target peer, reconnect to everyone
+      if (targetPeer === user?.id) {
+        console.log('[WebRTC] We are the target peer, reconnecting to all peers')
+        // Close all connections and re-establish
+        for (const [peerId, pc] of Object.entries(peerConnections.current)) {
+          try { pc.close() } catch {}
+          delete peerConnections.current[peerId]
+        }
+        // Re-join to get fresh participant list
+        if (hasJoinedRef.current && channelIdRef.current) {
+          setTimeout(() => {
+            socket.emit('voice:join', {
+              channelId: channelIdRef.current,
+              peerId: user.id
+            })
+          }, 1000)
+        }
+      } else {
+        // Reconnect to just the target peer
+        const pc = peerConnections.current[targetPeer]
+        if (pc) {
+          console.log('[WebRTC] Closing connection to', targetPeer, 'for reconnection')
+          try { pc.close() } catch {}
+          delete peerConnections.current[targetPeer]
+          
+          // Re-initiate connection after brief delay
+          setTimeout(() => {
+            if (hasJoinedRef.current && channelIdRef.current) {
+              queueConnection(targetPeer)
+            }
+          }, 1500)
+        }
+      }
+    })
+    
+    // Handle user reconnection notification
+    socket.on('voice:user-reconnected', (data) => {
+      const { id: userId, isReconnection } = data
+      console.log('[WebRTC] User reconnected:', userId)
+      
+      // Reset connection state for this peer and re-establish
+      if (peerConnections.current[userId]) {
+        const pc = peerConnections.current[userId]
+        const state = pc.connectionState
+        
+        if (state !== 'connected' && state !== 'connecting') {
+          console.log('[WebRTC] Re-establishing connection to reconnected peer:', userId)
+          try { pc.close() } catch {}
+          delete peerConnections.current[userId]
+          
+          setTimeout(() => {
+            if (hasJoinedRef.current && channelIdRef.current) {
+              queueConnection(userId)
+            }
+          }, 500)
+        }
+      }
+    })
+    
     return () => {
       socket.off('voice:participants')
       socket.off('voice:user-joined')
@@ -729,6 +911,8 @@ export const VoiceProvider = ({ children }) => {
       socket.off('voice:offer')
       socket.off('voice:answer')
       socket.off('voice:ice-candidate')
+      socket.off('voice:force-reconnect')
+      socket.off('voice:user-reconnected')
     }
   }, [socket, connected, user?.id, createPeerConnection, isPolite, queueConnection])
   

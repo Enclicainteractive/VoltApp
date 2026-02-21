@@ -8,6 +8,7 @@ import { E2eTrueProvider } from './contexts/E2eTrueContext'
 import { SelfVoltProvider } from './contexts/SelfVoltContext'
 import { VoiceProvider } from './contexts/VoiceContext'
 import { CallProvider } from './contexts/CallContext'
+import { I18nProvider } from './contexts/I18nContext'
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
 import CallbackPage from './pages/CallbackPage'
@@ -23,53 +24,55 @@ function App() {
 
   return (
     <Router>
-      <AuthProvider>
-        <ThemeProvider>
-          <SocketProvider>
-            <VoiceProvider>
-              <SelfVoltProvider>
-                <E2eProvider>
-                  <E2eTrueProvider>
-                    <CallProvider>
-                      <Routes>
-                        <Route path="/login" element={<LoginPage />} />
-                        <Route path="/callback" element={<CallbackPage />} />
-                        <Route path="/invite/:code" element={<InvitePage />} />
-                        <Route 
-                          path="/chat" 
-                          element={
-                            <ProtectedRoute>
-                              <ChatPage />
-                            </ProtectedRoute>
-                          } 
-                        />
-                        <Route 
-                          path="/chat/:serverId" 
-                          element={
-                            <ProtectedRoute>
-                              <ChatPage />
-                            </ProtectedRoute>
-                          } 
-                        />
-                        <Route 
-                          path="/chat/:serverId/:channelId" 
-                          element={
-                            <ProtectedRoute>
-                              <ChatPage />
-                            </ProtectedRoute>
-                          } 
-                        />
-                        <Route path="/" element={<Navigate to="/chat" replace />} />
-                      </Routes>
-                      <IncomingCallModal />
-                    </CallProvider>
-                  </E2eTrueProvider>
-                </E2eProvider>
-              </SelfVoltProvider>
-            </VoiceProvider>
-          </SocketProvider>
-        </ThemeProvider>
-      </AuthProvider>
+      <I18nProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <SocketProvider>
+              <VoiceProvider>
+                <SelfVoltProvider>
+                  <E2eProvider>
+                    <E2eTrueProvider>
+                      <CallProvider>
+                        <Routes>
+                          <Route path="/login" element={<LoginPage />} />
+                          <Route path="/callback" element={<CallbackPage />} />
+                          <Route path="/invite/:code" element={<InvitePage />} />
+                          <Route 
+                            path="/chat" 
+                            element={
+                              <ProtectedRoute>
+                                <ChatPage />
+                              </ProtectedRoute>
+                            } 
+                          />
+                          <Route 
+                            path="/chat/:serverId" 
+                            element={
+                              <ProtectedRoute>
+                                <ChatPage />
+                              </ProtectedRoute>
+                            } 
+                          />
+                          <Route 
+                            path="/chat/:serverId/:channelId" 
+                            element={
+                              <ProtectedRoute>
+                                <ChatPage />
+                              </ProtectedRoute>
+                            } 
+                          />
+                          <Route path="/" element={<Navigate to="/chat" replace />} />
+                        </Routes>
+                        <IncomingCallModal />
+                      </CallProvider>
+                    </E2eTrueProvider>
+                  </E2eProvider>
+                </SelfVoltProvider>
+              </VoiceProvider>
+            </SocketProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </I18nProvider>
     </Router>
   )
 }

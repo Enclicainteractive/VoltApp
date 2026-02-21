@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, MessageSquare, UserPlus, UserMinus, Ban, MoreVertical, Github, Twitter, Youtube, Twitch, Globe, Edit2, Check, Gamepad2, Music, Camera, XCircle, Shield, Copy, Bot, Terminal } from 'lucide-react'
+import { X, MessageSquare, UserPlus, UserMinus, Ban, MoreVertical, Github, Twitter, Youtube, Twitch, Globe, Edit2, Check, Gamepad2, Music, Camera, XCircle, Shield, Copy, Bot, Terminal, Clock } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSocket } from '../../contexts/SocketContext'
+import { useTranslation } from '../../hooks/useTranslation'
 import { getStoredServer } from '../../services/serverConfig'
 import { getImageBaseForHost } from '../../services/hostMetadataService'
 import Avatar from '../Avatar'
@@ -22,7 +23,21 @@ const SOCIAL_PLATFORMS = [
   { key: 'website', label: 'Website', icon: Globe, prefix: '' },
 ]
 
+const getPlatformLabel = (key, t) => {
+  const labels = {
+    github: 'GitHub',
+    twitter: 'Twitter / X',
+    youtube: 'YouTube',
+    twitch: 'Twitch',
+    steam: 'Steam',
+    spotify: 'Spotify',
+    website: t ? t('profile.website', 'Website') : 'Website'
+  }
+  return labels[key] || key
+}
+
 const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
+  const { t } = useTranslation()
   const { user: currentUser } = useAuth()
   const { socket } = useSocket()
   const [profile, setProfile] = useState(null)
@@ -128,7 +143,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
   }
 
   const handleBlock = async () => {
-    if (!confirm('Are you sure you want to block this user?')) return
+    if (!confirm(t('profile.blockConfirm', 'Are you sure you want to block this user?'))) return
     try {
       await apiService.blockUser(userId)
       setProfile(p => ({ ...p, isBlocked: true, isFriend: false }))
@@ -160,12 +175,12 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
     if (!file) return
     
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file')
+      alert(t('profile.imageFileError', 'Please select an image file'))
       return
     }
     
     if (file.size > 5 * 1024 * 1024) {
-      alert('Image must be less than 5MB')
+      alert(t('profile.imageSizeError', 'Image must be less than 5MB'))
       return
     }
     
@@ -217,11 +232,11 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
   const getStatusText = (status) => {
     switch (status) {
-      case 'online': return 'Online'
-      case 'idle': return 'Idle'
-      case 'dnd': return 'Do Not Disturb'
-      case 'invisible': return 'Offline'
-      default: return 'Offline'
+      case 'online': return t('status.online', 'Online')
+      case 'idle': return t('status.idle', 'Idle')
+      case 'dnd': return t('status.dnd', 'Do Not Disturb')
+      case 'invisible': return t('status.offline', 'Offline')
+      default: return t('status.offline', 'Offline')
     }
   }
 
@@ -231,7 +246,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content user-profile-modal" onClick={e => e.stopPropagation()}>
-          <div className="loading-state">Loading...</div>
+          <div className="loading-state">{t('common.loading', 'Loading...')}</div>
         </div>
       </div>
     )
@@ -241,48 +256,32 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
     e.preventDefault()
     const isSelf = userId === currentUser?.id
     
-    const items = [
+const items = [
       {
         icon: <MessageSquare size={16} />,
-        label: 'Send Message',
+        label: t('profile.sendMessage', 'Send Message'),
         shortcut: 'M',
         onClick: handleSendMessage,
-        disabled: isSelf
       },
-      ...(!isSelf ? [
-        {
-          icon: <UserPlus size={16} />,
-          label: profile?.friendRequestSent ? 'Friend Request Sent' : 'Add Friend',
-          shortcut: 'F',
-          onClick: handleAddFriend,
-          disabled: profile?.friendRequestSent || profile?.isFriend
-        },
-        profile?.isFriend ? {
-          icon: <UserMinus size={16} />,
-          label: 'Remove Friend',
-          onClick: handleRemoveFriend,
-          danger: true
-        } : null,
-        profile?.isBlocked ? {
-          icon: <Ban size={16} />,
-          label: 'Unblock User',
-          onClick: handleUnblock
-        } : {
-          icon: <Ban size={16} />,
-          label: 'Block User',
-          onClick: handleBlock,
-          danger: true
-        },
-      ] : []).filter(Boolean),
-      { type: 'separator' },
+      ...(!isSelf && !isBot ? [{
+        icon: profile?.friendRequestSent ? <Clock size={16} /> : <UserPlus size={16} />,
+        label: profile?.friendRequestSent ? t('profile.friendRequestSent', 'Friend Request Sent') : t('profile.addFriend', 'Add Friend'),
+        onClick: profile?.friendRequestSent ? handleCancelFriendRequest : handleAddFriend,
+      }] : []),
+      ...(!isSelf && !isBot && profile?.isFriend ? [{
+        icon: <UserMinus size={16} />,
+        label: t('profile.removeFriend', 'Remove Friend'),
+        onClick: handleRemoveFriend,
+      }] : []),
+      ...(!isSelf && !isBot ? [{
+        icon: profile?.isBlocked ? <Check size={16} /> : <Ban size={16} />,
+        label: profile?.isBlocked ? t('profile.unblockUser', 'Unblock User') : t('profile.blockUser', 'Block User'),
+        onClick: profile?.isBlocked ? handleUnblock : handleBlock,
+      }] : []),
       {
         icon: <Copy size={16} />,
-        label: 'Copy User ID',
-        shortcut: 'C',
-        onClick: () => {
-          navigator.clipboard.writeText(userId)
-          setContextMenu(null)
-        }
+        label: t('profile.copyUserId', 'Copy User ID'),
+        onClick: () => navigator.clipboard.writeText(userId),
       },
     ]
     
@@ -451,7 +450,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
         <div className="profile-body">
           <div className="profile-section">
-            <h4>{isBot ? 'Description' : 'About Me'}</h4>
+            <h4>{isBot ? t('profile.botDescription', 'Description') : t('profile.aboutMe', 'About Me')}</h4>
             {isBot ? (
               profile?.description ? (
                 <p style={{ color: 'var(--volt-text)', fontSize: 14 }}>{profile.description}</p>
@@ -464,13 +463,13 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
                   <MarkdownMessage content={profile.bio} />
                 </div>
               ) : (
-                <p className="no-bio">No bio set</p>
+                <p className="no-bio">{t('profile.noBio', 'No bio set')}</p>
               )
             )}
           </div>
 
           <div className="profile-section">
-            <h4>Status</h4>
+            <h4>{t('profile.status', 'Status')}</h4>
             <div className="profile-status-display">
               <span 
                 className="status-dot"
@@ -482,14 +481,14 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
           {isBot && profile?.prefix && (
             <div className="profile-section">
-              <h4>Prefix</h4>
+              <h4>{t('profile.prefix', 'Prefix')}</h4>
               <code style={{ background: 'var(--volt-bg-tertiary)', padding: '2px 8px', borderRadius: 4, fontSize: 14 }}>{profile.prefix}</code>
             </div>
           )}
 
           {isBot && profile?.commands?.length > 0 && (
             <div className="profile-section">
-              <h4><Terminal size={12} /> Commands</h4>
+              <h4><Terminal size={12} /> {t('profile.commands', 'Commands')}</h4>
               <div className="bot-commands-list">
                 {profile.commands.map(cmd => (
                   <div key={cmd.name} className="bot-command-item">
@@ -505,7 +504,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
           {!isBot && mutualServers.length > 0 && (
             <div className="profile-section">
-              <h4>Mutual Servers ({mutualServers.length})</h4>
+              <h4>{t('profile.mutualServers', 'Mutual Servers')} ({mutualServers.length})</h4>
               <div className="mutual-servers-grid expanded">
                 {mutualServers.map(srv => (
                   <div key={srv.id} className="mutual-server-item" title={srv.name}>
@@ -525,7 +524,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
           {!isBot && mutualFriends.length > 0 && (
             <div className="profile-section">
-              <h4>Mutual Friends ({mutualFriends.length})</h4>
+              <h4>{t('profile.mutualFriends', 'Mutual Friends')} ({mutualFriends.length})</h4>
               <div className="mutual-friends-grid expanded">
                 {mutualFriends.map(friend => (
                   <div key={friend.id} className="mutual-friend-item" title={friend.displayName || friend.username}>
@@ -544,7 +543,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
           {!isBot && (
             <div className="profile-section">
               <h4>
-                Connections
+                {t('profile.connections', 'Connections')}
                 {isOwnProfile && !editingSocials && (
                   <button className="section-edit-btn" onClick={() => { setEditingSocials(true); setSocialDraft(profile?.socialLinks || {}) }}>
                     <Edit2 size={12} />
@@ -558,7 +557,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
                       <p.icon size={16} />
                       <input
                         type="text"
-                        placeholder={p.label}
+                        placeholder={getPlatformLabel(p.key, t)}
                         value={socialDraft[p.key] || ''}
                         onChange={e => setSocialDraft(prev => ({ ...prev, [p.key]: e.target.value }))}
                       />
@@ -586,14 +585,14 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
                       const value = profile.socialLinks[p.key]
                       const url = value.startsWith('http') ? value : (p.prefix + value)
                       return (
-                        <a key={p.key} href={url} target="_blank" rel="noopener noreferrer" className="social-link" title={p.label}>
+                        <a key={p.key} href={url} target="_blank" rel="noopener noreferrer" className="social-link" title={getPlatformLabel(p.key, t)}>
                           <p.icon size={16} />
                           <span>{value.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</span>
                         </a>
                       )
                     })
                   ) : (
-                    <p className="no-socials">No connections added</p>
+                    <p className="no-socials">{t('profile.noConnections', 'No connections added')}</p>
                   )}
                 </div>
               )}
@@ -602,7 +601,7 @@ const UserProfileModal = ({ userId, server, members, onClose, onStartDM }) => {
 
           {profile?.createdAt && (
             <div className="profile-section">
-              <h4>{isBot ? 'Created' : 'Member Since'}</h4>
+              <h4>{isBot ? t('profile.created', 'Created') : t('profile.memberSince', 'Member Since')}</h4>
               <p>{new Date(profile.createdAt).toLocaleDateString('en-US', { 
                 year: 'numeric', 
                 month: 'long', 

@@ -104,6 +104,7 @@ export const apiService = {
   getDirectMessages: (search) => api.get('/dms', { params: { search } }),
   searchDMUsers: (query) => api.get('/dms/search', { params: { q: query } }),
   createDirectMessage: (userId) => api.post('/dms', { userId }),
+  createGroupDirectMessage: (participantIds, groupName) => api.post('/dms', { participantIds, groupName }),
   getDMMessages: (conversationId, params) => api.get(`/dms/${conversationId}/messages`, { params }),
   searchDMMessages: (query) => api.get('/dms/search/messages', { params: { q: query } }),
   sendDMMessage: (conversationId, data) => api.post(`/dms/${conversationId}/messages`, data),
@@ -216,11 +217,11 @@ export const apiService = {
   getDiscoveryApproved: (params) => api.get('/admin/discovery/approved', { params }),
   approveDiscovery: (submissionId) => api.post(`/admin/discovery/approve/${submissionId}`),
   rejectDiscovery: (submissionId) => api.post(`/admin/discovery/reject/${submissionId}`),
-  removeFromDiscovery: (serverId) => api.delete(`/admin/discovery/remove/${serverId}`),
+  removeFromDiscoveryAdmin: (serverId) => api.delete(`/admin/discovery/remove/${serverId}`),
   getPlatformHealth: () => api.get('/admin/platform/health'),
   getPlatformActivity: () => api.get('/admin/platform/activity'),
   getAllSelfVolts: () => api.get('/admin/self-volts'),
-  getSelfVolt: (voltId) => api.get(`/admin/self-volts/${voltId}`),
+  getSelfVoltAdmin: (voltId) => api.get(`/admin/self-volts/${voltId}`),
   deleteSelfVoltAdmin: (voltId) => api.delete(`/admin/self-volts/${voltId}`),
   testSelfVoltAdmin: (voltId) => api.post(`/admin/self-volts/${voltId}/test`),
 
@@ -235,6 +236,10 @@ export const apiService = {
   getAdminConfigSchema: () => api.get('/admin/config/schema'),
   getAdminConfigTemplate: () => api.get('/admin/config/template'),
   getAdminConfigInfo: () => api.get('/admin/config/info'),
+  getAdminConfigIssues: () => api.get('/admin/config/issues'),
+  getAdminConfigLogs: (lines = 200, maxFiles = 6) => api.get('/admin/config/logs', { params: { lines, maxFiles } }),
+  installAdminConfigDriver: (storageType, packageName) => api.post('/admin/config/install-driver', { storageType, packageName }),
+  restartVoltageServer: () => api.post('/admin/config/restart'),
 
   // Migration
   getStorageInfo: () => api.get('/migration/storage-info'),

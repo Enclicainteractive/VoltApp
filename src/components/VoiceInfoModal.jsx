@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { X, Wifi, Activity, Server, Mic, Volume2 } from 'lucide-react'
+import { X, Wifi, Activity } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 
 // How often to poll RTCPeerConnection stats (ms)
 const POLL_MS = 1000
@@ -7,6 +8,7 @@ const POLL_MS = 1000
 const GRAPH_SAMPLES = 100
 
 const VoiceInfoModal = ({ channel, onClose }) => {
+  const { t } = useTranslation()
   const [peers, setPeers] = useState([])   // [{ id, conn, ice, sig, rtt, jitter, packetsLost, bytesReceived, bytesSent }]
   const [pingHistory, setPingHistory] = useState([])  // last N rtt values (avg across peers)
   const canvasRef = useRef(null)
@@ -220,7 +222,7 @@ const VoiceInfoModal = ({ channel, onClose }) => {
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', borderBottom: '1px solid var(--volt-border)' }}>
           <Activity size={18} color="var(--volt-primary)" />
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Voice Connection — {channel?.name}</span>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>{t('voiceInfo.title')} — {channel?.name}</span>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--volt-text-muted)', display: 'flex' }}>
             <X size={18} />
           </button>
@@ -231,10 +233,10 @@ const VoiceInfoModal = ({ channel, onClose }) => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
               <Wifi size={14} color="var(--volt-text-muted)" />
-              <span style={{ fontSize: 12, color: 'var(--volt-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Latency</span>
+              <span style={{ fontSize: 12, color: 'var(--volt-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('voiceInfo.latency')}</span>
               {pingHistory.length > 0 && (
                 <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--volt-text-secondary)' }}>
-                  avg {Math.round(pingHistory.reduce((a, b) => a + b, 0) / pingHistory.length)} ms
+                  {t('voiceInfo.avgMs', { value: Math.round(pingHistory.reduce((a, b) => a + b, 0) / pingHistory.length) })}
                 </span>
               )}
             </div>
@@ -246,14 +248,14 @@ const VoiceInfoModal = ({ channel, onClose }) => {
             />
             {pingHistory.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--volt-text-muted)', fontSize: 12, marginTop: -60, position: 'relative' }}>
-                Gathering stats…
+                {t('voiceInfo.gatheringStats')}
               </div>
             )}
           </div>
 
           {/* Per-peer table */}
           {peers.length === 0 ? (
-            <div style={{ color: 'var(--volt-text-muted)', fontSize: 13, textAlign: 'center' }}>No active peer connections.</div>
+            <div style={{ color: 'var(--volt-text-muted)', fontSize: 13, textAlign: 'center' }}>{t('voiceInfo.noActivePeerConnections')}</div>
           ) : peers.map(p => (
             <div key={p.id} style={{ background: 'var(--volt-bg-tertiary)', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -266,15 +268,15 @@ const VoiceInfoModal = ({ channel, onClose }) => {
                 </span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px 12px', fontSize: 12 }}>
-                <StatRow label="Connection" value={p.conn} />
-                <StatRow label="ICE" value={p.ice} />
-                <StatRow label="Signaling" value={p.sig} />
-                <StatRow label="RTT" value={p.rtt != null ? `${p.rtt} ms` : '—'} />
-                <StatRow label="Jitter" value={p.jitter != null ? `${p.jitter} ms` : '—'} />
-                <StatRow label="Packets lost" value={fmt(p.packetsLost)} />
-                <StatRow label="Received" value={fmtBytes(p.bytesReceived)} />
-                <StatRow label="Sent" value={fmtBytes(p.bytesSent)} />
-                {p.codec && <StatRow label="Codec" value={p.codec} />}
+                <StatRow label={t('voiceInfo.connection')} value={p.conn} />
+                <StatRow label={t('voiceInfo.ice')} value={p.ice} />
+                <StatRow label={t('voiceInfo.signaling')} value={p.sig} />
+                <StatRow label={t('voiceInfo.rtt')} value={p.rtt != null ? `${p.rtt} ms` : '—'} />
+                <StatRow label={t('voiceInfo.jitter')} value={p.jitter != null ? `${p.jitter} ms` : '—'} />
+                <StatRow label={t('voiceInfo.packetsLost')} value={fmt(p.packetsLost)} />
+                <StatRow label={t('voiceInfo.received')} value={fmtBytes(p.bytesReceived)} />
+                <StatRow label={t('voiceInfo.sent')} value={fmtBytes(p.bytesSent)} />
+                {p.codec && <StatRow label={t('voiceInfo.codec')} value={p.codec} />}
               </div>
             </div>
           ))}

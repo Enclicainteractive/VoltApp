@@ -3,6 +3,7 @@ import { X, ShieldAlert, AlertTriangle, ShieldCheck, Camera, RotateCcw, Eye, Fil
 import * as faceapi from '@vladmandic/face-api'
 import { createWorker } from 'tesseract.js'
 import { apiService } from '../../services/apiService'
+import { useTranslation } from '../../hooks/useTranslation'
 import './Modal.css'
 import './AgeVerificationModal.css'
 
@@ -143,6 +144,7 @@ const detectDocType = (text) => {
 }
 
 const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
+  const { t } = useTranslation()
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const overlayCanvasRef = useRef(null)
@@ -842,7 +844,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       {PAGES.map((name, i) => (
         <div key={name} className={`wizard-dot ${i === wizardPage ? 'active' : ''} ${i < wizardPage ? 'done' : ''}`}>
           <div className="dot-circle">{i < wizardPage ? <CheckCircle size={14} /> : i + 1}</div>
-          <span className="dot-label">{['Welcome', 'Info', 'Method', 'Verify', 'Result', 'Done'][i]}</span>
+          <span className="dot-label">{[t('ageVerification.welcome'), t('ageVerification.info'), t('ageVerification.method'), t('ageVerification.verify'), t('ageVerification.result'), t('ageVerification.done')][i]}</span>
         </div>
       ))}
     </div>
@@ -852,43 +854,43 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
   const renderWelcome = () => (
     <div className="wizard-page welcome-page">
       <div className="welcome-icon"><ShieldAlert size={48} /></div>
-      <h2>Age Verification Required</h2>
+      <h2>{t('ageVerification.title', 'Age Verification Required')}</h2>
       <p className="welcome-subtitle">
-        Access to <strong>#{channelName || 'this channel'}</strong> requires age verification.
+        {t('ageVerification.channelAccess', 'Access to #{{channel}} requires age verification.', { channel: channelName || 'this channel' })}
       </p>
       <div className="welcome-features">
         <div className="feature-item">
           <Lock size={20} />
           <div>
-            <strong>100% On-Device</strong>
-            <span>Everything runs locally in your browser. Nothing is uploaded.</span>
+            <strong>{t('ageVerification.onDevice', '100% On-Device')}</strong>
+            <span>{t('ageVerification.onDeviceDesc', 'Everything runs locally in your browser. Nothing is uploaded.')}</span>
           </div>
         </div>
         <div className="feature-item">
           <Code size={20} />
           <div>
-            <strong>Open Source</strong>
-            <span>Every line of code is auditable. No black boxes.</span>
+            <strong>{t('ageVerification.openSource', 'Open Source')}</strong>
+            <span>{t('ageVerification.openSourceDesc', 'Every line of code is auditable. No black boxes.')}</span>
           </div>
         </div>
         <div className="feature-item">
           <ShieldCheck size={20} />
           <div>
-            <strong>Zero Third-Party Services</strong>
-            <span>No external APIs, SDKs, or cloud services involved. Period.</span>
+            <strong>{t('ageVerification.zeroThirdParty', 'Zero Third-Party Services')}</strong>
+            <span>{t('ageVerification.zeroThirdPartyDesc', 'No external APIs, SDKs, or cloud services involved. Period.')}</span>
           </div>
         </div>
       </div>
       {!modelsReady && (
         <div className="model-loading-inline">
           <div className="loading-spinner-small" />
-          <span>Loading AI models...</span>
+          <span>{t('ageVerification.loadingModels', 'Loading AI models...')}</span>
         </div>
       )}
       <div className="wizard-nav">
         <div />
         <button className="btn btn-primary" onClick={() => goToPage(1)} disabled={!modelsReady}>
-          Get Started <ChevronRight size={16} />
+          {t('ageVerification.getStarted', 'Get Started')} <ChevronRight size={16} />
         </button>
       </div>
     </div>
@@ -897,53 +899,53 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
   // ── PAGE: Important Info ──
   const renderInfo = () => (
     <div className="wizard-page info-page">
-      <h3>Before You Begin</h3>
-      <p className="info-lead">Here is what you need to know about this verification process.</p>
+      <h3>{t('ageVerification.beforeBegin', 'Before You Begin')}</h3>
+      <p className="info-lead">{t('ageVerification.infoLead', 'Here is what you need to know about this verification process.')}</p>
 
       <div className="info-grid">
         <div className="info-card">
-          <h4><Camera size={16} /> How It Works</h4>
+          <h4><Camera size={16} /> {t('ageVerification.howItWorks', 'How It Works')}</h4>
           <ul>
-            <li>AI models (TensorFlow.js) run directly in your browser</li>
-            <li>Camera feed is processed in-memory only</li>
-            <li>ID documents are scanned locally with Tesseract.js OCR</li>
-            <li>Face on ID is matched to your live face using local embeddings</li>
+            <li>{t('ageVerification.howItWorks1', 'AI models (TensorFlow.js) run directly in your browser')}</li>
+            <li>{t('ageVerification.howItWorks2', 'Camera feed is processed in-memory only')}</li>
+            <li>{t('ageVerification.howItWorks3', 'ID documents are scanned locally with Tesseract.js OCR')}</li>
+            <li>{t('ageVerification.howItWorks4', 'Face on ID is matched to your live face using local embeddings')}</li>
           </ul>
         </div>
         <div className="info-card">
-          <h4><ShieldCheck size={16} /> Privacy Guarantees</h4>
+          <h4><ShieldCheck size={16} /> {t('ageVerification.privacyGuarantees', 'Privacy Guarantees')}</h4>
           <ul>
-            <li>Zero images stored on disk or sent over the network</li>
-            <li>No face embeddings or biometric templates persisted</li>
-            <li>No analytics, session replay, or error logging</li>
-            <li>No third-party SDKs, APIs, or cloud services</li>
+            <li>{t('ageVerification.privacyGuarantees1', 'Zero images stored on disk or sent over the network')}</li>
+            <li>{t('ageVerification.privacyGuarantees2', 'No face embeddings or biometric templates persisted')}</li>
+            <li>{t('ageVerification.privacyGuarantees3', 'No analytics, session replay, or error logging')}</li>
+            <li>{t('ageVerification.privacyGuarantees4', 'No third-party SDKs, APIs, or cloud services')}</li>
           </ul>
         </div>
         <div className="info-card">
-          <h4><Lock size={16} /> What We Store</h4>
+          <h4><Lock size={16} /> {t('ageVerification.whatWeStore', 'What We Store')}</h4>
           <ul>
-            <li>Pass/fail verdict and a hashed proof transcript only</li>
-            <li>OCR text discarded immediately after DOB extraction</li>
-            <li>Face descriptors are in-memory only, garbage collected on close</li>
+            <li>{t('ageVerification.whatWeStore1', 'Pass/fail verdict and a hashed proof transcript only')}</li>
+            <li>{t('ageVerification.whatWeStore2', 'OCR text discarded immediately after DOB extraction')}</li>
+            <li>{t('ageVerification.whatWeStore3', 'Face descriptors are in-memory only, garbage collected on close')}</li>
           </ul>
         </div>
         <div className="info-card">
-          <h4><Eye size={16} /> Tips for Best Results</h4>
+          <h4><Eye size={16} /> {t('ageVerification.tipsBestResults', 'Tips for Best Results')}</h4>
           <ul>
-            <li>Good, even lighting on your face</li>
-            <li>Remove hats, sunglasses, or masks</li>
-            <li>For ID: ensure MRZ zone or DOB is clearly visible</li>
-            <li>Blink naturally -- liveness checks detect frozen images</li>
+            <li>{t('ageVerification.tipsBestResults1', 'Good, even lighting on your face')}</li>
+            <li>{t('ageVerification.tipsBestResults2', 'Remove hats, sunglasses, or masks')}</li>
+            <li>{t('ageVerification.tipsBestResults3', 'For ID: ensure MRZ zone or DOB is clearly visible')}</li>
+            <li>{t('ageVerification.tipsBestResults4', 'Blink naturally -- liveness checks detect frozen images')}</li>
           </ul>
         </div>
       </div>
 
       <div className="wizard-nav">
         <button className="btn btn-secondary" onClick={() => goToPage(0)}>
-          <ChevronLeft size={16} /> Back
+          <ChevronLeft size={16} /> {t('common.back', 'Back')}
         </button>
         <button className="btn btn-primary" onClick={() => goToPage(2)} disabled={!modelsReady}>
-          {modelsReady ? <>Continue <ChevronRight size={16} /></> : <>Loading models...</>}
+          {modelsReady ? <>{t('common.continue', 'Continue')} <ChevronRight size={16} /></> : <>{t('ageVerification.loadingModels', 'Loading models...')}</>}
         </button>
       </div>
     </div>
@@ -952,31 +954,31 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
   // ── PAGE: Method Selection ──
   const renderMethodSelect = () => (
     <div className="wizard-page method-page">
-      <h3>Choose Verification Method</h3>
-      <p className="method-lead">Select how you would like to verify your age. All methods run entirely on your device.</p>
+      <h3>{t('ageVerification.chooseMethod', 'Choose Verification Method')}</h3>
+      <p className="method-lead">{t('ageVerification.methodLead', 'Select how you would like to verify your age. All methods run entirely on your device.')}</p>
       <div className="method-cards">
         <button className="method-card" onClick={startFaceVerification}>
           <Camera size={32} />
-          <strong>Face Scan</strong>
-          <span>AI estimates your age from a live camera feed across 24 frames with blink liveness detection. Fastest option.</span>
-          <div className="method-tag">~10 seconds</div>
+          <strong>{t('ageVerification.faceScan', 'Face Scan')}</strong>
+          <span>{t('ageVerification.faceScanDesc', 'AI estimates your age from a live camera feed across 24 frames with blink liveness detection. Fastest option.')}</span>
+          <div className="method-tag">{t('ageVerification.seconds10', '~10 seconds')}</div>
         </button>
         <button className="method-card" onClick={startIdVerification}>
           <FileText size={32} />
-          <strong>ID Document</strong>
-          <span>Scan your ID locally. OCR extracts date of birth, MRZ checksums are validated, and face is matched to you.</span>
-          <div className="method-tag">~30 seconds</div>
+          <strong>{t('ageVerification.idDocument', 'ID Document')}</strong>
+          <span>{t('ageVerification.idDocumentDesc', 'Scan your ID locally. OCR extracts date of birth, MRZ checksums are validated, and face is matched to you.')}</span>
+          <div className="method-tag">{t('ageVerification.seconds30', '~30 seconds')}</div>
         </button>
         <button className="method-card" onClick={startHybridVerification}>
           <ScanLine size={32} />
-          <strong>Hybrid</strong>
-          <span>Face scan first. If the result is inconclusive, falls back to ID document. Most reliable approach.</span>
-          <div className="method-tag recommended">Recommended</div>
+          <strong>{t('ageVerification.hybrid', 'Hybrid')}</strong>
+          <span>{t('ageVerification.hybridDesc', 'Face scan first. If the result is inconclusive, falls back to ID document. Most reliable approach.')}</span>
+          <div className="method-tag recommended">{t('ageVerification.recommended', 'Recommended')}</div>
         </button>
       </div>
       <div className="wizard-nav">
         <button className="btn btn-secondary" onClick={() => goToPage(1)}>
-          <ChevronLeft size={16} /> Back
+          <ChevronLeft size={16} /> {t('common.back', 'Back')}
         </button>
         <div />
       </div>
@@ -999,10 +1001,10 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       {showIdUpload && (
         <div className="id-upload-area">
           <FileText size={40} className="id-icon" />
-          <p>{idStatus || 'Upload a clear photo of the front of your ID document.'}</p>
+          <p>{idStatus || t('ageVerification.uploadIdPrompt', 'Upload a clear photo of the front of your ID document.')}</p>
           <input type="file" ref={fileInputRef} accept="image/*" capture="environment" onChange={handleIdFileUpload} className="hidden-input" />
           <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
-            <FileText size={16} /> Upload ID Photo
+            <FileText size={16} /> {t('ageVerification.uploadIdPhoto', 'Upload ID Photo')}
           </button>
         </div>
       )}
@@ -1046,12 +1048,12 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
 
         {canRetry && (
           <button className="btn btn-primary" onClick={handleRetry}>
-            <RotateCcw size={16} /> Retry ({retriesLeft} left)
+            <RotateCcw size={16} /> {t('ageVerification.retry', 'Retry')} ({retriesLeft} {t('ageVerification.left', 'left')})
           </button>
         )}
 
         {phase === 'retry-needed' && retriesLeft === 0 && (
-          <div className="hint-box">No retries left. Close and reopen later to try again.</div>
+          <div className="hint-box">{t('ageVerification.noRetriesLeft', 'No retries left. Close and reopen later to try again.')}</div>
         )}
       </div>
 
@@ -1062,41 +1064,41 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
   )
 
   // ── PAGE: Result ──
-  const renderResult = () => (
+const renderResult = () => (
     <div className="wizard-page result-page">
       <div className={`result-icon ${finalVerdict}`}>
         {finalVerdict === 'pass' ? <CheckCircle size={56} /> : <XCircle size={56} />}
       </div>
-      <h2>{finalVerdict === 'pass' ? 'Verification Passed' : 'Verification Failed'}</h2>
+      <h2>{finalVerdict === 'pass' ? t('ageVerification.verificationPassed', 'Verification Passed') : t('ageVerification.verificationFailed', 'Verification Failed')}</h2>
       <p className="result-subtitle">
         {finalVerdict === 'pass'
-          ? 'Your age has been verified as 18+. You now have access to this channel.'
-          : status || 'The verification could not confirm you are 18 or older.'}
+          ? t('ageVerification.ageVerified', 'Your age has been verified as 18+. You now have access to this channel.')
+          : status || t('ageVerification.couldNotConfirm', 'The verification could not confirm you are 18 or older.')}
       </p>
 
       {result && (
         <div className="result-details">
-          <h4>Scan Details</h4>
+          <h4>{t('ageVerification.scanDetails', 'Scan Details')}</h4>
           <div className="result-grid">
-            {result.meanAge !== undefined && <div><strong>Estimated Age</strong><span>{result.meanAge} (&plusmn;{result.stdDev})</span></div>}
-            {result.probOver18 !== undefined && <div><strong>P(18+)</strong><span>{(result.probOver18 * 100).toFixed(1)}%</span></div>}
-            {result.validFrames !== undefined && <div><strong>Valid Frames</strong><span>{result.validFrames}</span></div>}
-            {result.lowerBound !== undefined && <div><strong>Age Range</strong><span>{result.lowerBound} - {result.upperBound}</span></div>}
-            {result.passiveMotion !== undefined && <div><strong>Liveness</strong><span>Motion: {result.passiveMotion ? 'detected' : 'none'}</span></div>}
+            {result.meanAge !== undefined && <div><strong>{t('ageVerification.estimatedAge', 'Estimated Age')}</strong><span>{result.meanAge} (±{result.stdDev})</span></div>}
+            {result.probOver18 !== undefined && <div><strong>{t('ageVerification.prob18', 'P(18+)')}</strong><span>{(result.probOver18 * 100).toFixed(1)}%</span></div>}
+            {result.validFrames !== undefined && <div><strong>{t('ageVerification.validFrames', 'Valid Frames')}</strong><span>{result.validFrames}</span></div>}
+            {result.lowerBound !== undefined && <div><strong>{t('ageVerification.ageRange', 'Age Range')}</strong><span>{result.lowerBound} - {result.upperBound}</span></div>}
+            {result.passiveMotion !== undefined && <div><strong>{t('ageVerification.liveness', 'Liveness')}</strong><span>{t('ageVerification.motion', 'Motion')}: {result.passiveMotion ? t('ageVerification.detected', 'detected') : t('ageVerification.none', 'none')}</span></div>}
           </div>
         </div>
       )}
 
       {idResult && (
         <div className="result-details id-details">
-          <h4>ID Document Details</h4>
+          <h4>{t('ageVerification.idDocumentDetails', 'ID Document Details')}</h4>
           <div className="result-grid">
-            <div><strong>Document</strong><span>{idResult.docType || 'unknown'}</span></div>
-            {idResult.country && <div><strong>Country</strong><span>{idResult.country}</span></div>}
-            <div><strong>DOB</strong><span>{idResult.dob || 'not found'}</span></div>
-            <div><strong>Age 18+</strong><span>{idResult.ageOver18 ? 'Yes' : 'No'}</span></div>
-            <div><strong>MRZ Valid</strong><span>{idResult.docAuthenticity?.mrzValid ? 'Yes' : 'No'}</span></div>
-            <div><strong>Face Match</strong><span>{idResult.faceMatch?.passed ? `Yes (${(idResult.faceMatch.similarity * 100).toFixed(0)}%)` : `No (${(idResult.faceMatch?.similarity * 100 || 0).toFixed(0)}%)`}</span></div>
+            <div><strong>{t('ageVerification.document', 'Document')}</strong><span>{idResult.docType || t('ageVerification.unknown', 'unknown')}</span></div>
+            {idResult.country && <div><strong>{t('ageVerification.country', 'Country')}</strong><span>{idResult.country}</span></div>}
+            <div><strong>{t('ageVerification.dob', 'DOB')}</strong><span>{idResult.dob || t('ageVerification.notFound', 'not found')}</span></div>
+            <div><strong>{t('ageVerification.age18Plus', 'Age 18+')}</strong><span>{idResult.ageOver18 ? t('common.yes', 'Yes') : t('common.no', 'No')}</span></div>
+            <div><strong>{t('ageVerification.mrzValid', 'MRZ Valid')}</strong><span>{idResult.docAuthenticity?.mrzValid ? t('common.yes', 'Yes') : t('common.no', 'No')}</span></div>
+            <div><strong>{t('ageVerification.faceMatch', 'Face Match')}</strong><span>{idResult.faceMatch?.passed ? `${t('common.yes', 'Yes')} (${(idResult.faceMatch.similarity * 100).toFixed(0)}%)` : `${t('common.no', 'No')} (${(idResult.faceMatch?.similarity * 100 || 0).toFixed(0)}%)`}</span></div>
           </div>
         </div>
       )}
@@ -1104,13 +1106,13 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       <div className="wizard-nav">
         {finalVerdict === 'fail' && canRetry && (
           <button className="btn btn-secondary" onClick={handleRetry}>
-            <RotateCcw size={16} /> Retry ({retriesLeft} left)
+            <RotateCcw size={16} /> {t('ageVerification.retry', 'Retry')} ({retriesLeft} {t('ageVerification.left', 'left')})
           </button>
         )}
         {!canRetry && finalVerdict === 'fail' && <div />}
         {finalVerdict === 'pass' && <div />}
         <button className="btn btn-primary" onClick={() => goToPage(5)}>
-          {finalVerdict === 'pass' ? <>Continue <ChevronRight size={16} /></> : <>Close <ChevronRight size={16} /></>}
+          {finalVerdict === 'pass' ? <>{t('common.continue', 'Continue')} <ChevronRight size={16} /></> : <>{t('common.close', 'Close')} <ChevronRight size={16} /></>}
         </button>
       </div>
     </div>
@@ -1122,33 +1124,33 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       <div className={`conclude-icon ${finalVerdict}`}>
         {finalVerdict === 'pass' ? <ShieldCheck size={48} /> : <ShieldAlert size={48} />}
       </div>
-      <h2>{finalVerdict === 'pass' ? 'You\'re All Set' : 'Verification Incomplete'}</h2>
+      <h2>{finalVerdict === 'pass' ? t('ageVerification.youreAllSet', "You're All Set") : t('ageVerification.verificationIncomplete', 'Verification Incomplete')}</h2>
       {finalVerdict === 'pass' ? (
         <>
           <p className="conclude-text">
-            Your 18+ verification is complete and will not expire. You can now access age-restricted channels.
+            {t('ageVerification.complete18Plus', 'Your 18+ verification is complete and will not expire. You can now access age-restricted channels.')}
           </p>
           <div className="conclude-reminders">
             <div className="conclude-reminder">
               <Lock size={14} />
-              <span>No images, video, or biometric data were stored or transmitted.</span>
+              <span>{t('ageVerification.noImagesStored', 'No images, video, or biometric data were stored or transmitted.')}</span>
             </div>
             <div className="conclude-reminder">
               <Code size={14} />
-              <span>Only a pass/fail verdict and hashed proof were recorded.</span>
+              <span>{t('ageVerification.onlyVerdictRecorded', 'Only a pass/fail verdict and hashed proof were recorded.')}</span>
             </div>
           </div>
         </>
       ) : (
         <p className="conclude-text">
           {retriesLeft > 0
-            ? 'You can close this dialog and try again later.'
-            : 'No retries remaining. Close and reopen later to try again.'}
+            ? t('ageVerification.tryAgainLater', 'You can close this dialog and try again later.')
+            : t('ageVerification.noRetriesRemaining', 'No retries remaining. Close and reopen later to try again.')}
         </p>
       )}
       <div className="wizard-nav center">
         <button className="btn btn-primary" onClick={closeModal}>
-          {finalVerdict === 'pass' ? <>Enter Channel <ArrowRight size={16} /></> : <>Close <X size={16} /></>}
+          {finalVerdict === 'pass' ? <>{t('ageVerification.enterChannel', 'Enter Channel')} <ArrowRight size={16} /></> : <>{t('common.close', 'Close')} <X size={16} /></>}
         </button>
       </div>
     </div>
@@ -1160,7 +1162,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
         <div className="modal-header">
           <div className="modal-title">
             <ShieldAlert size={20} />
-            <span>Age Verification</span>
+            <span>{t('ageVerification.ageVerification', 'Age Verification')}</span>
           </div>
           <button className="modal-close" onClick={closeModal}><X size={18} /></button>
         </div>

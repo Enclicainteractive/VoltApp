@@ -14,6 +14,7 @@ import {
   Trash2, CheckCheck, ExternalLink, ChevronDown, ChevronUp, X
 } from 'lucide-react'
 import { apiService } from '../services/apiService'
+import { useTranslation } from '../hooks/useTranslation'
 import MarkdownMessage from './MarkdownMessage'
 import '../assets/styles/SystemMessagePanel.css'
 
@@ -22,11 +23,11 @@ import '../assets/styles/SystemMessagePanel.css'
 // ---------------------------------------------------------------------------
 
 const CATEGORY_META = {
-  update:       { label: 'Update',       icon: RefreshCw,    colour: '#818cf8' },
-  account:      { label: 'Account',      icon: Shield,       colour: '#f59e0b' },
-  discovery:    { label: 'Discovery',    icon: Search,       colour: '#34d399' },
-  announcement: { label: 'Announcement', icon: Megaphone,    colour: '#60a5fa' },
-  default:      { label: 'System',       icon: Bell,         colour: '#94a3b8' }
+  update:       { key: 'system.categoryUpdate',       fallback: 'Update',       icon: RefreshCw,    colour: '#818cf8' },
+  account:      { key: 'system.categoryAccount',      fallback: 'Account',      icon: Shield,       colour: '#f59e0b' },
+  discovery:    { key: 'system.categoryDiscovery',    fallback: 'Discovery',    icon: Search,       colour: '#34d399' },
+  announcement: { key: 'system.categoryAnnouncement', fallback: 'Announcement', icon: Megaphone,    colour: '#60a5fa' },
+  default:      { key: 'system.categorySystem',       fallback: 'System',       icon: Bell,         colour: '#94a3b8' }
 }
 
 const SEVERITY_ICON = {
@@ -43,8 +44,9 @@ const SEVERITY_COLOUR = {
   info:    '#818cf8'
 }
 
-function getCategoryMeta(category) {
-  return CATEGORY_META[category] || CATEGORY_META.default
+function getCategoryMeta(category, t) {
+  const meta = CATEGORY_META[category] || CATEGORY_META.default
+  return { ...meta, label: t(meta.key, meta.fallback) }
 }
 
 function SeverityIcon({ severity, size = 16 }) {
@@ -57,9 +59,9 @@ function SeverityIcon({ severity, size = 16 }) {
 // Individual message card
 // ---------------------------------------------------------------------------
 
-function SystemMessageCard({ message, onMarkRead, onDelete }) {
+function SystemMessageCard({ message, onMarkRead, onDelete, t }) {
   const [expanded, setExpanded] = useState(!message.read)
-  const meta = getCategoryMeta(message.category)
+  const meta = getCategoryMeta(message.category, t)
   const CategoryIcon = meta.icon
 
   const handleExpand = () => {
@@ -70,11 +72,11 @@ function SystemMessageCard({ message, onMarkRead, onDelete }) {
   const timeAgo = (iso) => {
     const diff = Date.now() - new Date(iso).getTime()
     const mins = Math.floor(diff / 60000)
-    if (mins < 1) return 'just now'
-    if (mins < 60) return `${mins}m ago`
+    if (mins < 1) return t('system.justNow', 'just now')
+    if (mins < 60) return t('system.minutesAgoShort', '{{count}}m ago', { count: mins })
     const hrs = Math.floor(mins / 60)
-    if (hrs < 24) return `${hrs}h ago`
-    return `${Math.floor(hrs / 24)}d ago`
+    if (hrs < 24) return t('system.hoursAgoShort', '{{count}}h ago', { count: hrs })
+    return t('system.daysAgoShort', '{{count}}d ago', { count: Math.floor(hrs / 24) })
   }
 
   return (
@@ -100,7 +102,7 @@ function SystemMessageCard({ message, onMarkRead, onDelete }) {
           {!message.read && (
             <button
               className="sysmsg-action-btn"
-              title="Mark as read"
+              title={t('system.markAsRead', 'Mark as read')}
               onClick={e => { e.stopPropagation(); onMarkRead(message.id) }}
             >
               <CheckCheck size={14} />
@@ -108,7 +110,7 @@ function SystemMessageCard({ message, onMarkRead, onDelete }) {
           )}
           <button
             className="sysmsg-action-btn danger"
-            title="Dismiss"
+            title={t('system.dismiss', 'Dismiss')}
             onClick={e => { e.stopPropagation(); onDelete(message.id) }}
           >
             <Trash2 size={14} />
@@ -129,7 +131,7 @@ function SystemMessageCard({ message, onMarkRead, onDelete }) {
               className="sysmsg-external-link"
             >
               <ExternalLink size={13} />
-              View on GitHub
+              {t('system.viewOnGithub', 'View on GitHub')}
             </a>
           )}
         </div>
@@ -143,6 +145,7 @@ function SystemMessageCard({ message, onMarkRead, onDelete }) {
 // ---------------------------------------------------------------------------
 
 export default function SystemMessagePanel({ onClose }) {
+  const { t } = useTranslation()
   const [messages, setMessages] = useState([])
   const [unread, setUnread] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -201,22 +204,22 @@ export default function SystemMessagePanel({ onClose }) {
       <div className="sysmsg-panel-header">
         <div className="sysmsg-panel-title">
           <Bell size={18} />
-          <span>System Inbox</span>
+          <span>{t('system.systemInbox', 'System Inbox')}</span>
           {unread > 0 && <span className="sysmsg-badge">{unread}</span>}
         </div>
         <div className="sysmsg-panel-header-actions">
           {unread > 0 && (
-            <button className="sysmsg-header-btn" onClick={handleMarkAllRead} title="Mark all as read">
+            <button className="sysmsg-header-btn" onClick={handleMarkAllRead} title={t('system.markAllAsRead', 'Mark all as read')}>
               <CheckCheck size={15} />
             </button>
           )}
           {messages.length > 0 && (
-            <button className="sysmsg-header-btn danger" onClick={handleClearAll} title="Clear all">
+            <button className="sysmsg-header-btn danger" onClick={handleClearAll} title={t('system.clearAll', 'Clear all')}>
               <Trash2 size={15} />
             </button>
           )}
           {onClose && (
-            <button className="sysmsg-header-btn" onClick={onClose} title="Close">
+            <button className="sysmsg-header-btn" onClick={onClose} title={t('common.close', 'Close')}>
               <X size={15} />
             </button>
           )}
@@ -232,7 +235,7 @@ export default function SystemMessagePanel({ onClose }) {
               className={`sysmsg-filter-btn ${filter === f ? 'active' : ''}`}
               onClick={() => setFilter(f)}
             >
-              {f === 'all' ? 'All' : f === 'unread' ? `Unread (${unread})` : getCategoryMeta(f).label}
+              {f === 'all' ? t('system.all', 'All') : f === 'unread' ? t('system.unreadCount', 'Unread ({{count}})', { count: unread }) : getCategoryMeta(f, t).label}
             </button>
           ))}
         </div>
@@ -251,7 +254,7 @@ export default function SystemMessagePanel({ onClose }) {
         {!loading && displayed.length === 0 && (
           <div className="sysmsg-empty">
             <Bell size={36} opacity={0.25} />
-            <p>{filter === 'unread' ? 'No unread messages' : 'Your inbox is empty'}</p>
+            <p>{filter === 'unread' ? t('system.noUnreadMessages', 'No unread messages') : t('system.inboxEmpty', 'Your inbox is empty')}</p>
           </div>
         )}
 
@@ -261,6 +264,7 @@ export default function SystemMessagePanel({ onClose }) {
             message={msg}
             onMarkRead={handleMarkRead}
             onDelete={handleDelete}
+            t={t}
           />
         ))}
       </div>

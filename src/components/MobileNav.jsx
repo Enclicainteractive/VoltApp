@@ -1,5 +1,6 @@
 import React from 'react'
 import { Home, MessageSquare, Compass, Users, Settings, Plus, Hash, Zap } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import '../assets/styles/MobileNav.css'
 
 const MobileNav = ({ 
@@ -13,15 +14,16 @@ const MobileNav = ({
   servers = [],
   onDMClick
 }) => {
+  const { t } = useTranslation()
   const totalNotifications = friendRequestCount + dmNotifications + 
     Object.values(serverUnreadCounts).reduce((a, b) => a + b, 0)
 
   const tabs = [
-    { id: 'home', icon: Zap, label: 'Home', path: '/chat' },
-    { id: 'servers', icon: MessageSquare, label: 'Servers', path: '/chat' },
-    { id: 'dms', icon: MessageSquare, label: 'Messages', path: '/chat/dms' },
-    { id: 'friends', icon: Users, label: 'Friends', path: '/chat/friends' },
-    { id: 'discovery', icon: Compass, label: 'Discover', path: '/chat/discovery' },
+    { id: 'home', icon: Zap, label: t('mobileNav.home', 'Home'), path: '/chat' },
+    { id: 'servers', icon: MessageSquare, label: t('mobileNav.servers', 'Servers'), path: '/chat' },
+    { id: 'dms', icon: MessageSquare, label: t('mobileNav.messages', 'Messages'), path: '/chat/dms' },
+    { id: 'friends', icon: Users, label: t('mobileNav.friends', 'Friends'), path: '/chat/friends' },
+    { id: 'discovery', icon: Compass, label: t('mobileNav.discover', 'Discover'), path: '/chat/discovery' },
   ]
 
   return (
@@ -54,10 +56,10 @@ const MobileNav = ({
         })}
       </div>
       <div className="mobile-nav-actions">
-        <button className="mobile-nav-action" onClick={onCreateServer} title="Create Server">
+        <button className="mobile-nav-action" onClick={onCreateServer} title={t('app.createServer', 'Create Server')}>
           <Plus size={20} />
         </button>
-        <button className="mobile-nav-action" onClick={onOpenSettings} title="Settings">
+        <button className="mobile-nav-action" onClick={onOpenSettings} title={t('nav.settings', 'Settings')}>
           <Settings size={20} />
         </button>
       </div>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { formatDistance } from 'date-fns'
 import { Edit2, Trash2, Reply, Smile, MoreHorizontal, X, Check, Copy, Link, Share, Pin, ArrowDown, Loader2, MessageSquare } from 'lucide-react'
 import { useSocket } from '../contexts/SocketContext'
+import { useTranslation } from '../hooks/useTranslation'
 import Avatar from './Avatar'
 import EmojiPicker from './EmojiPicker'
 import MarkdownMessage from './MarkdownMessage'
@@ -12,6 +13,7 @@ import '../assets/styles/MessageList.css'
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥']
 
 const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, onPinMessage, onUnpinMessage, highlightMessageId, onSaveScrollPosition, scrollPosition, onShowProfile, members, serverEmojis }) => {
+  const { t } = useTranslation()
   const { socket } = useSocket()
   const messagesEndRef = useRef(null)
   const messagesStartRef = useRef(null)
@@ -196,7 +198,7 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
   }
 
   const handleDeleteMessage = (messageId) => {
-    if (!confirm('Delete this message?')) return
+    if (!confirm(t('chat.deleteConfirm', 'Delete this message?'))) return
     socket?.emit('message:delete', { messageId, channelId })
   }
 
@@ -356,14 +358,14 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
         }
       },
       {
-        label: 'Add Reaction',
+        label: t('chat.addReaction', 'Add Reaction'),
         icon: <Smile size={14} />,
         onClick: () => setShowEmojiPicker(message.id)
       },
       { type: 'separator' },
       ...(isOwn ? [
         {
-          label: 'Edit',
+          label: t('common.edit', 'Edit'),
           icon: <Edit2 size={14} />,
           onClick: () => {
             setEditingMessage(message.id)
@@ -371,7 +373,7 @@ const MessageList = ({ messages, currentUserId, channelId, onReply, onLoadMore, 
           }
         },
         {
-          label: 'Delete',
+          label: t('common.delete', 'Delete'),
           icon: <Trash2 size={14} />,
           danger: true,
           onClick: () => handleDeleteMessage(message.id)

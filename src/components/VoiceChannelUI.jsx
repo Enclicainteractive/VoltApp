@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Mic, MicOff, Headphones, VolumeX, PhoneOff, Settings, Volume2, Video, VideoOff, Monitor, MonitorOff, GripVertical } from 'lucide-react'
 import { useVoice } from '../contexts/VoiceContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useTranslation } from '../hooks/useTranslation'
 import Avatar from './Avatar'
 import '../assets/styles/VoiceChannel.css'
 
 const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, onShowConnectionInfo }) => {
+  const { t } = useTranslation()
   const {
     isConnected,
     connectionState,
@@ -198,16 +200,16 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
   
   // Get connection status
   const getConnectionStatus = () => {
-    if (!isConnected) return { text: 'Not Connected', color: 'var(--volt-text-muted)', class: 'disconnected' }
+    if (!isConnected) return { text: t('chat.disconnected', 'Disconnected'), color: 'var(--volt-text-muted)', class: 'disconnected' }
     switch (connectionState) {
       case 'connecting':
-        return { text: 'Connecting...', color: '#f59e0b', class: 'connecting' }
+        return { text: t('voice.connectingStatus', 'Connecting...'), color: '#f59e0b', class: 'connecting' }
       case 'connected':
-        return { text: 'Voice Connected', color: '#22c55e', class: 'connected' }
+        return { text: t('chat.voiceConnected', 'Voice Connected'), color: '#22c55e', class: 'connected' }
       case 'error':
-        return { text: 'Connection Error', color: '#ef4444', class: 'error' }
+        return { text: t('voice.connectionError', 'Connection Error'), color: '#ef4444', class: 'error' }
       default:
-        return { text: 'Disconnected', color: 'var(--volt-text-muted)', class: 'disconnected' }
+        return { text: t('chat.disconnected', 'Disconnected'), color: 'var(--volt-text-muted)', class: 'disconnected' }
     }
   }
   
@@ -236,7 +238,7 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
         {isConnecting && (
           <div className="voice-mini-connecting-overlay">
             <div className="voice-mini-connecting-spinner" />
-            <span className="voice-mini-connecting-text">Connecting...</span>
+            <span className="voice-mini-connecting-text">{t('voice.connectingStatus', 'Connecting...')}</span>
           </div>
         )}
         
@@ -250,28 +252,28 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
           <button 
             className={`voice-mini-btn ${isMuted ? 'active' : ''}`}
             onClick={toggleMute}
-            title={isMuted ? 'Unmute' : 'Mute'}
+            title={isMuted ? t('chat.unmute', 'Unmute') : t('chat.mute', 'Mute')}
           >
             {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
           </button>
           <button 
             className={`voice-mini-btn ${isDeafened ? 'active danger' : ''}`}
             onClick={toggleDeafen}
-            title={isDeafened ? 'Undeafen' : 'Deafen'}
+            title={isDeafened ? t('chat.undeafen', 'Undeafen') : t('chat.deafen', 'Deafen')}
           >
             {isDeafened ? <VolumeX size={16} /> : <Headphones size={16} />}
           </button>
           <button 
             className={`voice-mini-btn ${isVideoOn ? 'active' : ''}`}
             onClick={toggleVideo}
-            title={isVideoOn ? 'Stop Video' : 'Start Video'}
+            title={isVideoOn ? t('chat.disableVideo', 'Stop Video') : t('chat.enableVideo', 'Start Video')}
           >
             {isVideoOn ? <VideoOff size={16} /> : <Video size={16} />}
           </button>
           <button 
             className={`voice-mini-btn ${isScreenSharing ? 'active' : ''}`}
             onClick={toggleScreenShare}
-            title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+            title={isScreenSharing ? t('chat.stopSharing', 'Stop Sharing') : t('chat.shareScreen', 'Share Screen')}
           >
             {isScreenSharing ? <MonitorOff size={16} /> : <Monitor size={16} />}
           </button>
@@ -292,7 +294,7 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
     <div className="voice-channel-view">
       <div className="voice-header">
         <Volume2 size={24} />
-        <span className="voice-channel-name">{channel?.name || 'Voice Channel'}</span>
+        <span className="voice-channel-name">{channel?.name || t('chat.voiceChannel', 'Voice Channel')}</span>
         <span
           className={`connection-status ${connectionStatus.class} clickable`}
           onClick={() => onShowConnectionInfo?.()}
@@ -318,7 +320,7 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
             />
             <div className="main-video-overlay">
               <span className="main-video-name">
-                {mainVideoParticipant.id === user?.id ? 'You' : mainVideoParticipant.username}
+                {mainVideoParticipant.id === user?.id ? t('common.you', 'You') : mainVideoParticipant.username}
                 {mainVideoType === 'screen' && ' · Screen'}
               </span>
               {pinnedParticipant && (
@@ -474,7 +476,7 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
         <button 
           className={`voice-control-btn ${isMuted ? 'active' : ''}`}
           onClick={toggleMute}
-          title={isMuted ? 'Unmute' : 'Mute'}
+          title={isMuted ? t('chat.unmute', 'Unmute') : t('chat.mute', 'Mute')}
         >
           {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
         </button>
@@ -482,7 +484,7 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
         <button 
           className={`voice-control-btn ${isDeafened ? 'active' : ''}`}
           onClick={toggleDeafen}
-          title={isDeafened ? 'Undeafen' : 'Deafen'}
+          title={isDeafened ? t('chat.undeafen', 'Undeafen') : t('chat.deafen', 'Deafen')}
         >
           {isDeafened ? <VolumeX size={24} /> : <Headphones size={24} />}
         </button>
@@ -490,7 +492,7 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
         <button 
           className={`voice-control-btn ${isVideoOn ? 'active-video' : ''}`}
           onClick={toggleVideo}
-          title={isVideoOn ? 'Turn Off Camera' : 'Turn On Camera'}
+          title={isVideoOn ? t('chat.disableVideo', 'Turn Off Camera') : t('chat.enableVideo', 'Turn On Camera')}
         >
           {isVideoOn ? <Video size={24} /> : <VideoOff size={24} />}
         </button>
@@ -498,7 +500,7 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
         <button 
           className={`voice-control-btn ${isScreenSharing ? 'active-screen' : ''}`}
           onClick={toggleScreenShare}
-          title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+          title={isScreenSharing ? t('chat.stopSharing', 'Stop Sharing') : t('chat.shareScreen', 'Share Screen')}
         >
           {isScreenSharing ? <Monitor size={24} /> : <MonitorOff size={24} />}
         </button>
@@ -506,14 +508,14 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
         <button 
           className="voice-control-btn leave"
           onClick={handleLeave}
-          title="Leave Voice Channel"
+          title={t('misc.leaveVoiceChannel', 'Leave Voice Channel')}
         >
           <PhoneOff size={24} />
         </button>
 
         <button 
           className="voice-control-btn settings"
-          title="Voice Settings"
+          title={t('misc.voiceSettings', 'Voice Settings')}
           onClick={onOpenSettings}
         >
           <Settings size={24} />

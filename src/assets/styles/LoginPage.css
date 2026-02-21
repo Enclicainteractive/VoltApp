@@ -6,12 +6,13 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  background: var(--volt-bg-primary);
 }
 
 .login-background {
   position: absolute;
   inset: 0;
-  background: var(--volt-bg-gradient, linear-gradient(135deg, #0b1220 0%, #0f1828 50%, #0b1220 100%)), linear-gradient(135deg, var(--volt-bg-primary, #0b1220) 0%, var(--volt-bg-secondary, #0f1828) 50%, var(--volt-bg-primary, #0b1220) 100%);
+  background: linear-gradient(180deg, var(--volt-bg-primary), var(--volt-bg-secondary));
   z-index: 0;
 }
 
@@ -26,11 +27,7 @@
 }
 
 .glow {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(100px);
-  opacity: 0.3;
-  animation: float 8s ease-in-out infinite;
+  display: none;
 }
 
 .glow-1 {
@@ -75,116 +72,196 @@
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 480px;
+  max-width: 460px;
   padding: 20px;
 }
 
 .login-content {
   background: var(--volt-bg-secondary);
-  border-radius: var(--border-radius-xl);
-  padding: 48px;
-  box-shadow: 0 8px 32px var(--volt-shadow);
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   border: 1px solid var(--volt-border);
-  backdrop-filter: blur(10px);
 }
 
 .login-branding {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: 20px;
 }
 
 .logo {
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 20px;
-  background: linear-gradient(135deg, var(--volt-primary), var(--volt-primary-light));
-  border-radius: var(--border-radius-xl);
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  background: var(--volt-primary);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  box-shadow: 0 8px 24px rgba(31, 182, 255, 0.35);
 }
 
 .brand-name {
-  font-size: 36px;
-  font-weight: 800;
-  background: linear-gradient(135deg, var(--volt-primary-light), var(--volt-primary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 8px;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+  margin-bottom: 6px;
 }
 
 .brand-tagline {
   color: var(--volt-text-secondary);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
 }
 
-.features-grid {
+.login-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--volt-text-secondary);
+  margin: 10px 0 14px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.login-mode-toggle {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 32px;
-}
-
-.feature-card {
-  background: var(--volt-bg-tertiary);
-  padding: 20px;
-  border-radius: var(--border-radius-md);
-  border: 1px solid var(--volt-border);
-  transition: all var(--transition-medium);
-}
-
-.feature-card:hover {
-  background: var(--volt-bg-quaternary);
-  transform: translateY(-2px);
-  border-color: var(--volt-primary);
-}
-
-.feature-card svg {
-  color: var(--volt-primary);
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   margin-bottom: 12px;
 }
 
-.feature-card h3 {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: var(--volt-text-primary);
+.login-submode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
-.feature-card p {
-  font-size: 12px;
+.submode-btn {
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-tertiary);
   color: var(--volt-text-secondary);
-  line-height: 1.4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.submode-btn.active {
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-primary);
+  border-color: var(--volt-primary);
+}
+
+.submode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mode-btn {
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-secondary);
+  border-radius: 8px;
+  padding: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.mode-btn.active {
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-primary);
+  border-color: var(--volt-primary);
+}
+
+.mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.login-auth-panel {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.login-auth-panel.switching {
+  opacity: 0.65;
+  transform: translateY(3px);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-input {
+  width: 100%;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-primary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: var(--volt-primary);
 }
 
 .login-button {
   width: 100%;
-  padding: 16px;
-  background: linear-gradient(135deg, var(--volt-primary), var(--volt-primary-light));
+  padding: 12px;
+  background: var(--volt-primary);
   color: white;
-  border-radius: var(--border-radius-md);
-  font-size: 16px;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  box-shadow: 0 4px 16px rgba(31, 182, 255, 0.35);
-  transition: all var(--transition-medium);
-  margin-bottom: 20px;
+  gap: 8px;
+  transition: filter 0.15s ease, transform 0.05s ease;
+  margin-bottom: 12px;
 }
 
 .login-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(31, 182, 255, 0.45);
+  filter: brightness(1.05);
 }
 
 .login-button:active {
-  transform: translateY(0);
+  transform: translateY(1px);
+}
+
+.login-button:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.login-button.account {
+  margin-top: 2px;
+}
+
+.login-error {
+  margin: 4px 0 10px;
+  color: var(--volt-danger);
+  font-size: 13px;
 }
 
 .login-footer {
@@ -204,34 +281,27 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 8px 10px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
   border-radius: 6px;
-  color: #b5bac1;
+  color: var(--volt-text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
-  backdrop-filter: blur(10px);
+  transition: filter 0.15s ease;
 }
 
 .server-selector-button:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.25);
+  filter: brightness(1.08);
 }
 
 @media (max-width: 640px) {
   .login-content {
-    padding: 32px 24px;
-  }
-
-  .features-grid {
-    grid-template-columns: 1fr;
+    padding: 22px 16px;
   }
 
   .brand-name {
-    font-size: 28px;
+    font-size: 24px;
   }
 }

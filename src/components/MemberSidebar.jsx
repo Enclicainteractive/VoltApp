@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Crown, Shield, User, MessageSquare, UserPlus, UserMinus, Ban, Volume2, VolumeX } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { apiService } from '../services/apiService'
@@ -10,6 +11,7 @@ import Avatar from './Avatar'
 import '../assets/styles/MemberSidebar.css'
 
 const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBan, onAddFriend, visible = true, isMobile = false }) => {
+  const { t } = useTranslation()
   const { socket, connected } = useSocket()
   const { user: currentUser } = useAuth()
 
@@ -156,28 +158,28 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
     const items = [
       {
         icon: <User size={16} />,
-        label: 'Profile',
+        label: t('member.profile'),
         onClick: () => onMemberClick?.(member.id)
       },
       {
         icon: <MessageSquare size={16} />,
-        label: 'Message',
+        label: t('member.message'),
         onClick: () => onStartDM?.(member.id),
         disabled: isSelf
       },
       { type: 'separator' },
       {
         icon: <UserPlus size={16} />,
-        label: 'Add Friend',
+        label: t('member.addFriend'),
         onClick: () => onAddFriend?.(member.id),
         disabled: isSelf
       },
       ...(!isSelf ? [
         {
           icon: <Ban size={16} />,
-          label: 'Block User',
+          label: t('member.blockUser'),
           onClick: () => {
-            if (confirm('Block this user? They will be removed from servers and cannot interact with you.')) {
+            if (confirm(t('member.blockConfirm'))) {
               apiService.blockUser(member.id).then(() => {
                 onKick?.(member.id)
               }).catch(err => console.error('Failed to block user:', err))
@@ -190,13 +192,13 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
       ...(isModerator && !isSelf && !isOwner ? [
         {
           icon: <VolumeX size={16} />,
-          label: 'Mute',
+          label: t('member.mute'),
           onClick: () => {},
           disabled: true
         },
         {
           icon: <UserMinus size={16} />,
-          label: 'Kick',
+          label: t('member.kick'),
           onClick: () => onKick?.(member.id),
           danger: true
         }
@@ -204,7 +206,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
       ...(isAdmin && !isSelf && !isOwner ? [
         {
           icon: <Ban size={16} />,
-          label: 'Ban',
+          label: t('member.ban'),
           onClick: () => onBan?.(member.id),
           danger: true
         }
@@ -229,14 +231,14 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
   }
 
   const getRoleName = (member) => {
-    if (member.id === server?.ownerId) return 'Owner'
+    if (member.id === server?.ownerId) return t('member.owner')
     const primary = getPrimaryRole(member)
     if (!primary || primary.name?.toLowerCase() === 'member') return null
     return primary.name
   }
 
   const getAllRoles = (member) => {
-    if (member.id === server?.ownerId) return [{ name: 'Owner', color: '#eab308' }]
+    if (member.id === server?.ownerId) return [{ name: t('member.owner'), color: '#eab308' }]
     const roles = getMemberRoles(member)
     const resolved = roles.map(resolveRole).filter(Boolean)
     return resolved
@@ -295,7 +297,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
         {onlineMembers.length > 0 && (
           <div className="member-section">
             <div className="section-header">
-              ONLINE — {onlineMembers.length}
+              {t('status.online').toUpperCase()} — {onlineMembers.length}
             </div>
               {onlineMembers.map(member => {
               const customStatus = getMemberCustomStatus(member)
@@ -328,7 +330,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                       {member.id === server?.ownerId && <Crown size={12} className="role-dot" style={{ color: '#eab308' }} />}
                       {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
                       <span>{member.username}</span>
-                      {member.isBot && <span className="member-bot-badge">Bot</span>}
+                      {member.isBot && <span className="member-bot-badge">{t('member.bot')}</span>}
                     </div>
                     {memberRoles.length > 0 && (
                       <div className="member-roles">
@@ -363,7 +365,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
         {offlineMembers.length > 0 && (
           <div className="member-section">
             <div className="section-header">
-              OFFLINE — {offlineMembers.length}
+              {t('status.offline').toUpperCase()} — {offlineMembers.length}
             </div>
             {offlineMembers.map(member => {
               const customStatus = getMemberCustomStatus(member)
@@ -396,7 +398,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                       {member.id === server?.ownerId && <Crown size={12} className="role-dot" style={{ color: '#eab308' }} />}
                       {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
                       <span>{member.username}</span>
-                      {member.isBot && <span className="member-bot-badge">Bot</span>}
+                      {member.isBot && <span className="member-bot-badge">{t('member.bot')}</span>}
                     </div>
                     {memberRoles.length > 0 && (
                       <div className="member-roles">

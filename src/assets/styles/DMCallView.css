@@ -5,10 +5,15 @@
   align-items: center;
   justify-content: center;
   min-height: 300px;
-  background: linear-gradient(145deg, #2a2d36 0%, #1e2028 100%);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--volt-bg-secondary, #2a2d36) 92%, white) 0%,
+    color-mix(in srgb, var(--volt-bg-secondary, #1e2028) 82%, black) 100%
+  );
   border-radius: 12px;
   padding: 24px;
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--volt-border, #2f3446) 60%, transparent);
 }
 
 /* Video area */
@@ -27,6 +32,10 @@
   object-fit: cover;
 }
 
+.dm-call-remote-video.speaking {
+  box-shadow: inset 0 0 0 4px var(--volt-success, #22c55e);
+}
+
 .dm-call-local-video-container {
   position: absolute;
   bottom: 100px;
@@ -36,8 +45,12 @@
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid color-mix(in srgb, var(--volt-border, #2f3446) 70%, transparent);
   z-index: 10;
+}
+
+.dm-call-local-video-container.speaking {
+  box-shadow: 0 0 0 3px var(--volt-success, #22c55e), 0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
 .dm-call-local-video {
@@ -63,11 +76,16 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  position: relative;
+}
+
+.dm-call-participant.speaking .avatar {
+  box-shadow: 0 0 0 3px var(--volt-success, #22c55e);
 }
 
 .dm-call-participant .participant-name {
   font-size: 0.875rem;
-  color: #b9bbbe;
+  color: var(--volt-text-muted, #b9bbbe);
   font-weight: 500;
 }
 
@@ -76,11 +94,11 @@
 }
 
 .dm-call-participant .mute-indicator {
-  color: #ed4245;
+  color: var(--volt-danger, #ed4245);
   position: absolute;
   bottom: -4px;
   right: -4px;
-  background: #2a2d36;
+  background: var(--volt-bg-secondary, #2a2d36);
   border-radius: 50%;
   padding: 4px;
 }
@@ -97,25 +115,40 @@
   margin: 0 0 8px 0;
   font-size: 1.5rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--volt-text-primary, #fff);
 }
 
 .dm-call-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
   font-size: 0.875rem;
-  color: #b9bbbe;
+  color: var(--volt-text-muted, #b9bbbe);
   font-weight: 500;
+  background: color-mix(in srgb, var(--volt-bg-tertiary, #343944) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--volt-border, #2f3446) 65%, transparent);
+}
+
+.dm-call-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .dm-call-status.active {
-  color: #3ba55c;
+  color: var(--volt-success, #3ba55c);
 }
 
 .dm-call-status.connecting {
-  color: #faa61a;
+  color: var(--volt-warning, #faa61a);
 }
 
 .dm-call-status.ringing {
-  color: #5865f2;
+  color: var(--volt-primary, #5865f2);
 }
 
 /* Call controls */
@@ -134,30 +167,30 @@
   height: 56px;
   border: none;
   border-radius: 50%;
-  background: #36393f;
-  color: #b9bbbe;
+  background: var(--volt-bg-tertiary, #36393f);
+  color: var(--volt-text-muted, #b9bbbe);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .dm-call-btn:hover {
-  background: #4f545c;
-  color: #fff;
+  background: color-mix(in srgb, var(--volt-bg-tertiary, #4f545c) 88%, white);
+  color: var(--volt-text-primary, #fff);
   transform: scale(1.05);
 }
 
 .dm-call-btn.active {
-  background: #ed4245;
+  background: var(--volt-danger, #ed4245);
   color: #fff;
 }
 
 .dm-call-btn.active-video {
-  background: #5865f2;
+  background: var(--volt-primary, #5865f2);
   color: #fff;
 }
 
 .dm-call-btn.end {
-  background: #ed4245;
+  background: var(--volt-danger, #ed4245);
   color: #fff;
 }
 
@@ -178,15 +211,16 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: rgba(0, 0, 0, 0.7);
+  background: color-mix(in srgb, var(--volt-bg-primary, #0b1020) 72%, black);
   z-index: 20;
+  backdrop-filter: blur(5px);
 }
 
 .connecting-spinner {
   width: 48px;
   height: 48px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #5865f2;
+  border-top-color: var(--volt-primary, #5865f2);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -207,8 +241,39 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: rgba(0, 0, 0, 0.7);
+  background: color-mix(in srgb, var(--volt-bg-primary, #0b1020) 72%, black);
   z-index: 20;
+  backdrop-filter: blur(5px);
+}
+
+.dm-call-ended-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: color-mix(in srgb, var(--volt-bg-primary, #0b1020) 76%, black);
+  z-index: 25;
+  backdrop-filter: blur(5px);
+}
+
+.dm-call-return-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--volt-border, #2f3446);
+  background: var(--volt-bg-secondary, #202634);
+  color: var(--volt-text-primary, #fff);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.dm-call-return-btn:hover {
+  background: var(--volt-bg-tertiary, #2a3244);
 }
 
 .ringing-animation {
@@ -216,7 +281,14 @@
 }
 
 .ringing-phone {
-  color: #3ba55c;
+  color: var(--volt-success, #3ba55c);
+}
+
+.dm-call-overlay-text {
+  color: var(--volt-text-primary, #fff);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
 }
 
 @keyframes ring-bounce {

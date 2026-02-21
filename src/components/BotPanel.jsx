@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Bot, Plus, Trash2, RefreshCw, Copy, Eye, EyeOff, Settings, Server, Key, Globe, Code } from 'lucide-react'
+import { useTranslation } from '../hooks/useTranslation'
 import { apiService } from '../services/apiService'
 import './BotPanel.css'
 
@@ -27,6 +28,7 @@ const ALL_INTENTS = [
 ]
 
 const BotPanel = () => {
+  const { t } = useTranslation()
   const [bots, setBots] = useState([])
   const [loading, setLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -73,7 +75,7 @@ const BotPanel = () => {
   }
 
   const handleDelete = async (botId) => {
-    if (!confirm('Delete this bot? This cannot be undone.')) return
+    if (!confirm(t('botsPanel.deleteConfirm', 'Delete this bot? This cannot be undone.'))) return
     try {
       await apiService.deleteBot(botId)
       setBots(prev => prev.filter(b => b.id !== botId))
@@ -84,7 +86,7 @@ const BotPanel = () => {
   }
 
   const handleRegenToken = async (botId) => {
-    if (!confirm('Regenerate token? The old token will stop working immediately.')) return
+    if (!confirm(t('botsPanel.regenerateConfirm', 'Regenerate token? The old token will stop working immediately.'))) return
     try {
       const res = await apiService.regenerateBotToken(botId)
       setNewToken(res.data.token)
@@ -161,9 +163,9 @@ const BotPanel = () => {
         <div className="token-reveal">
           <div className="token-header">
             <Key size={16} />
-            <strong>Bot Token Created</strong>
+            <strong>{t('botsPanel.tokenCreated', 'Bot Token Created')}</strong>
           </div>
-          <p className="token-warning">Copy this token now. It will not be shown again.</p>
+          <p className="token-warning">{t('botsPanel.tokenWarning', 'Copy this token now. It will not be shown again.')}</p>
           <div className="token-value">
             <code>{showToken ? newToken : newToken.slice(0, 10) + '...' + newToken.slice(-6)}</code>
             <button className="btn btn-sm btn-ghost" onClick={() => setShowToken(!showToken)}>
@@ -173,27 +175,27 @@ const BotPanel = () => {
               <Copy size={14} />
             </button>
           </div>
-          <button className="btn btn-sm btn-primary" onClick={() => { setNewToken(null); setShowToken(false) }}>Done</button>
+          <button className="btn btn-sm btn-primary" onClick={() => { setNewToken(null); setShowToken(false) }}>{t('common.done', 'Done')}</button>
         </div>
       )}
 
       <div className="panel-section">
         <div className="section-header">
-          <h3>My Bots</h3>
+          <h3>{t('botsPanel.myBots', 'My Bots')}</h3>
           <div className="section-actions">
-            <button className="btn btn-sm btn-ghost" onClick={loadBots}><RefreshCw size={14} /></button>
+            <button className="btn btn-sm btn-ghost" onClick={loadBots} title={t('common.refresh', 'Refresh')}><RefreshCw size={14} /></button>
             <button className="btn btn-sm btn-primary" onClick={() => { setShowCreate(true); setSelectedBot(null) }}>
-              <Plus size={14} /> Create Bot
+              <Plus size={14} /> {t('bots.createBot', 'Create Bot')}
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div className="loading-state">Loading bots...</div>
+          <div className="loading-state">{t('botsPanel.loadingBots', 'Loading bots...')}</div>
         ) : bots.length === 0 && !showCreate ? (
           <div className="empty-state-small">
             <Bot size={32} className="empty-icon" />
-            <p>No bots yet. Create one to automate your servers.</p>
+            <p>{t('botsPanel.noBotsYet', 'No bots yet. Create one to automate your servers.')}</p>
           </div>
         ) : (
           <div className="bot-list">
@@ -210,7 +212,7 @@ const BotPanel = () => {
                   <div className="bot-name">{bot.name}</div>
                   <div className="bot-meta">
                     <span className={`bot-status ${bot.status}`}>{bot.status}</span>
-                    <span className="bot-servers">{bot.servers?.length || 0} servers</span>
+                    <span className="bot-servers">{bot.servers?.length || 0} {t('servers.title', 'Servers').toLowerCase()}</span>
                   </div>
                 </div>
                 <button className="btn btn-sm btn-ghost btn-danger" onClick={(e) => { e.stopPropagation(); handleDelete(bot.id) }}>
@@ -224,32 +226,32 @@ const BotPanel = () => {
 
       {(showCreate || selectedBot) && (
         <div className="bot-editor">
-          <h3>{showCreate ? 'Create Bot' : `Edit: ${selectedBot.name}`}</h3>
+          <h3>{showCreate ? t('bots.createBot', 'Create Bot') : t('botsPanel.editBot', 'Edit: {{name}}', { name: selectedBot.name })}</h3>
 
           <form onSubmit={showCreate ? handleCreate : (e) => { e.preventDefault(); handleUpdateBot() }}>
             <div className="form-group">
-              <label>Name</label>
+              <label>{t('bots.botName', 'Bot Name')}</label>
               <input
                 value={showCreate ? form.name : (selectedBot?.name || '')}
                 onChange={e => showCreate ? setForm(p => ({ ...p, name: e.target.value })) : setSelectedBot(p => ({ ...p, name: e.target.value }))}
-                placeholder="My Bot"
+                placeholder={t('botsPanel.myBot', 'My Bot')}
                 maxLength={32}
               />
             </div>
 
             <div className="form-group">
-              <label>Description</label>
+              <label>{t('selfvolt.description', 'Description')}</label>
               <textarea
                 value={showCreate ? form.description : (selectedBot?.description || '')}
                 onChange={e => showCreate ? setForm(p => ({ ...p, description: e.target.value })) : setSelectedBot(p => ({ ...p, description: e.target.value }))}
-                placeholder="What does this bot do?"
+                placeholder={t('botsPanel.botDescriptionPlaceholder', 'What does this bot do?')}
                 rows={2}
               />
             </div>
 
             <div className="form-row">
               <div className="form-group">
-                <label>Command Prefix</label>
+                <label>{t('botsPanel.commandPrefix', 'Command Prefix')}</label>
                 <input
                   value={showCreate ? form.prefix : (selectedBot?.prefix || '!')}
                   onChange={e => showCreate ? setForm(p => ({ ...p, prefix: e.target.value })) : setSelectedBot(p => ({ ...p, prefix: e.target.value }))}
@@ -259,7 +261,7 @@ const BotPanel = () => {
               </div>
 
               <div className="form-group">
-                <label>Webhook URL (optional)</label>
+                <label>{t('botsPanel.webhookUrlOptional', 'Webhook URL (optional)')}</label>
                 <input
                   value={showCreate ? form.webhookUrl : (selectedBot?.webhookUrl || '')}
                   onChange={e => showCreate ? setForm(p => ({ ...p, webhookUrl: e.target.value })) : setSelectedBot(p => ({ ...p, webhookUrl: e.target.value }))}
@@ -275,12 +277,12 @@ const BotPanel = () => {
                   checked={showCreate ? form.public : (selectedBot?.public || false)}
                   onChange={e => showCreate ? setForm(p => ({ ...p, public: e.target.checked })) : setSelectedBot(p => ({ ...p, public: e.target.checked }))}
                 />
-                List in public bot directory
+                {t('botsPanel.listInDirectory', 'List in public bot directory')}
               </label>
             </div>
 
             <div className="form-group">
-              <label>Permissions</label>
+              <label>{t('roles.permissions', 'Permissions')}</label>
               <div className="checkbox-grid">
                 {ALL_PERMISSIONS.map(p => (
                   <label key={p.id} className="checkbox-label">
@@ -296,7 +298,7 @@ const BotPanel = () => {
             </div>
 
             <div className="form-group">
-              <label>Intents</label>
+              <label>{t('botsPanel.intents', 'Intents')}</label>
               <div className="checkbox-grid">
                 {ALL_INTENTS.map(i => (
                   <label key={i.id} className="checkbox-label">
@@ -313,14 +315,14 @@ const BotPanel = () => {
 
             <div className="form-actions">
               <button type="submit" className="btn btn-primary">
-                {showCreate ? 'Create Bot' : 'Save Changes'}
+                {showCreate ? t('bots.createBot', 'Create Bot') : t('serverSettings.saveChanges', 'Save Changes')}
               </button>
               {showCreate && (
-                <button type="button" className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowCreate(false)}>{t('common.cancel', 'Cancel')}</button>
               )}
               {!showCreate && selectedBot && (
                 <button type="button" className="btn btn-warning" onClick={() => handleRegenToken(selectedBot.id)}>
-                  <Key size={14} /> Regenerate Token
+                  <Key size={14} /> {t('botsPanel.regenerateToken', 'Regenerate Token')}
                 </button>
               )}
             </div>
