@@ -1,0 +1,484 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MarkdownMessage.css — Discord-style rich message rendering
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.markdown-message {
+  line-height: 1.375;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  display: inline;
+}
+
+.markdown-message > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-message > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Make embeds block-level to prevent inline flow issues */
+.markdown-message .link-embed,
+.markdown-message .invite-embed,
+.markdown-message .gif-embed,
+.markdown-message .media-embed {
+  display: block;
+  clear: both;
+}
+
+/* ── Media embed (GIF, Sticker, Clip, Meme) ───────────────────────────────── */
+
+.media-embed {
+  display: block;
+  margin: 6px 0;
+  max-width: 400px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--volt-bg-tertiary);
+  line-height: 0;
+}
+
+.media-embed-img {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.media-embed-img:hover {
+  opacity: 0.9;
+}
+
+.media-embed-video {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  background: #000;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.media-embed-video:hover {
+  opacity: 0.9;
+}
+
+.media-fallback-link {
+  font-size: 13px;
+  color: var(--volt-primary);
+}
+
+/* Sticker specific - smaller, centered */
+.media-embed-sticker {
+  max-width: 200px;
+  margin: 6px auto;
+}
+
+/* Clip specific - wider */
+.media-embed-clip {
+  max-width: 100%;
+}
+
+/* Meme specific */
+.media-embed-meme {
+  max-width: 350px;
+}
+
+/* ── GIF embed ─────────────────────────────────────────────────────────────── */
+
+.gif-embed {
+  display: block;
+  margin: 6px 0;
+  max-width: 400px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--volt-bg-tertiary);
+  line-height: 0;
+}
+
+.gif-embed-img {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.gif-embed-img:hover {
+  opacity: 0.9;
+}
+
+.gif-fallback-link {
+  font-size: 13px;
+  color: var(--volt-primary);
+}
+
+/* ── Inline formatting ─────────────────────────────────────────────────────── */
+
+.markdown-message strong {
+  font-weight: 700;
+  color: inherit;
+}
+
+.markdown-message em {
+  font-style: italic;
+  color: inherit;
+}
+
+.markdown-message del {
+  text-decoration: line-through;
+  color: var(--volt-text-muted);
+}
+
+.markdown-message .md-underline {
+  text-decoration: underline;
+}
+
+/* ── Highlight (==text==) ────────────────────────────────────────────────── */
+.markdown-message .md-highlight {
+  background: rgba(255, 235, 59, 0.4);
+  color: var(--volt-text-primary);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* ── Superscript (X^2^) ─────────────────────────────────────────────────── */
+.markdown-message .md-superscript {
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 1;
+  color: var(--volt-text-secondary);
+}
+
+/* ── Subscript (H~2~O) ────────────────────────────────────────────────── */
+.markdown-message .md-subscript {
+  font-size: 0.75em;
+  vertical-align: sub;
+  line-height: 1;
+  color: var(--volt-text-secondary);
+}
+
+/* ── Spoiler ───────────────────────────────────────────────────────────────── */
+
+.markdown-message .spoiler {
+  background: var(--volt-text-primary);
+  color: transparent;
+  border-radius: 3px;
+  padding: 0 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.markdown-message .spoiler * {
+  color: transparent;
+  transition: color 0.15s ease;
+}
+
+.markdown-message .spoiler.revealed {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--volt-text-primary);
+}
+
+.markdown-message .spoiler.revealed * {
+  color: inherit;
+}
+
+/* ── Links ─────────────────────────────────────────────────────────────────── */
+
+.markdown-message .markdown-link {
+  color: #00aaff;
+  text-decoration: none;
+}
+
+.markdown-message .markdown-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Inline code ───────────────────────────────────────────────────────────── */
+
+.markdown-message .inline-code {
+  background: #2b2d31;
+  color: #f8f8f2;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-size: 0.875em;
+  line-height: 1.125rem;
+  white-space: pre-wrap;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ── Code block wrapper ────────────────────────────────────────────────────── */
+
+.markdown-message .code-block-wrapper {
+  position: relative;
+  background: #1e1f22;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  margin: 6px 0;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 100%;
+  display: block;
+  clear: both;
+}
+
+.markdown-message .code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #111214;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.markdown-message .code-lang-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #80848e;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: inherit;
+}
+
+.markdown-message .code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  color: #80848e;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  z-index: 1;
+}
+
+.markdown-message .code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #dbdee1;
+}
+
+.markdown-message .code-block-wrapper.has-lang .code-copy-btn {
+  top: 36px;
+}
+
+.markdown-message .code-block {
+  margin: 0;
+  padding: 12px 16px;
+  overflow-x: auto;
+  background: transparent;
+}
+
+.markdown-message .code-block code {
+  color: #cdd6f4;
+  background: none;
+  padding: 0;
+  white-space: pre;
+  font-size: inherit;
+  font-family: inherit;
+  border: none;
+  border-radius: 0;
+}
+
+/* ── Syntax highlighting (Catppuccin Mocha palette) ───────────────────────── */
+
+.markdown-message .language-javascript code,
+.markdown-message .language-typescript code,
+.markdown-message .language-jsx code,
+.markdown-message .language-tsx code { color: #f9e2af; }
+
+.markdown-message .language-python code { color: #a6e3a1; }
+.markdown-message .language-ruby code { color: #f38ba8; }
+.markdown-message .language-go code { color: #89dceb; }
+.markdown-message .language-rust code { color: #fab387; }
+.markdown-message .language-java code,
+.markdown-message .language-kotlin code { color: #f9e2af; }
+.markdown-message .language-swift code { color: #f9e2af; }
+.markdown-message .language-c code,
+.markdown-message .language-cpp code { color: #cba6f7; }
+.markdown-message .language-csharp code { color: #89b4fa; }
+.markdown-message .language-php code { color: #a6e3a1; }
+.markdown-message .language-html code { color: #f38ba8; }
+.markdown-message .language-css code,
+.markdown-message .language-scss code { color: #89dceb; }
+.markdown-message .language-json code { color: #fab387; }
+.markdown-message .language-yaml code { color: #a6e3a1; }
+.markdown-message .language-sql code { color: #89b4fa; }
+.markdown-message .language-bash code,
+.markdown-message .language-powershell code { color: #94e2d5; }
+.markdown-message .language-diff code { color: #cdd6f4; }
+.markdown-message .language-markdown code { color: #cdd6f4; }
+
+/* ── Blockquote ────────────────────────────────────────────────────────────── */
+
+.markdown-message .md-blockquote {
+  margin: 4px 0;
+  padding: 0 10px;
+  border-left: 4px solid #4e5058;
+  color: var(--volt-text-primary);
+  border-radius: 0 3px 3px 0;
+  display: block;
+}
+
+/* ── Headers ───────────────────────────────────────────────────────────────── */
+
+.markdown-message .md-h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 8px 0 4px;
+  color: var(--volt-text-primary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 4px;
+  display: block;
+}
+
+.markdown-message .md-h2 {
+  font-size: 1.25em;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 6px 0 3px;
+  color: var(--volt-text-primary);
+  display: block;
+}
+
+.markdown-message .md-h3 {
+  font-size: 1.07em;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 4px 0 2px;
+  color: var(--volt-text-primary);
+  display: block;
+}
+
+/* ── Lists ─────────────────────────────────────────────────────────────────── */
+
+.markdown-message .md-list {
+  margin: 4px 0;
+  padding-left: 18px;
+  display: block;
+}
+
+.markdown-message .md-list li {
+  margin: 2px 0;
+  line-height: 1.4;
+  display: list-item;
+}
+
+.markdown-message .md-list li.task-list-item {
+  list-style: none;
+  margin-left: -18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.markdown-message .task-checkbox {
+  margin-top: 4px;
+  cursor: default;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+
+.markdown-message .md-table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+  max-width: 100%;
+  font-size: 13px;
+}
+
+.markdown-message .md-table th,
+.markdown-message .md-table td {
+  border: 1px solid var(--volt-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.markdown-message .md-table th {
+  background: var(--volt-bg-tertiary);
+  font-weight: 600;
+}
+
+.markdown-message .md-table tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ── Horizontal rule ───────────────────────────────────────────────────────── */
+
+.markdown-message .md-hr {
+  border: none;
+  border-top: 2px solid rgba(255, 255, 255, 0.08);
+  margin: 8px 0;
+  display: block;
+}
+
+/* ── Mention styles (shared, also used by MessageList/DMChat inline spans) ── */
+
+.mention-highlight {
+  padding: 0 4px;
+  border-radius: 3px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.mention-highlight.mention-everyone,
+.mention-highlight.mention-here {
+  background: rgba(250, 166, 26, 0.3);
+  color: #f0b132;
+}
+.mention-highlight.mention-everyone:hover,
+.mention-highlight.mention-here:hover {
+  background: rgba(250, 166, 26, 0.45);
+  text-decoration: underline;
+}
+
+.mention-highlight.mention-user {
+  background: rgba(88, 101, 242, 0.3);
+  color: #c9cdfb;
+}
+.mention-highlight.mention-user:hover {
+  background: rgba(88, 101, 242, 0.45);
+  text-decoration: underline;
+}
+
+.mention-other {
+  color: #c9cdfb;
+  background: rgba(88, 101, 242, 0.15);
+  padding: 0 3px;
+  border-radius: 3px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.mention-other:hover {
+  background: rgba(88, 101, 242, 0.3);
+  text-decoration: underline;
+}
+
+/* Clickable mention — added when a click handler is bound (click opens profile) */
+.mention-clickable {
+  cursor: pointer;
+}
+.mention-clickable:hover {
+  text-decoration: underline;
+}

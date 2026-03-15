@@ -1,0 +1,790 @@
+import React, { useState, useCallback } from 'react'
+import InviteEmbed from './InviteEmbed'
+import LinkEmbed, { extractEmbedUrls, AGE_RESTRICTED_EMBEDS } from './LinkEmbed'
+import { useAuth } from '../contexts/AuthContext'
+import { useAppStore } from '../store/useAppStore'
+import { useTranslation } from '../hooks/useTranslation'
+import '../assets/styles/MarkdownMessage.css'
+
+// ─── Language map for syntax highlighting labels ───────────────────────────
+const LANGUAGES = {
+  js: 'javascript', javascript: 'javascript',
+  ts: 'typescript', typescript: 'typescript',
+  jsx: 'jsx', tsx: 'tsx',
+  py: 'python', python: 'python',
+  rb: 'ruby', ruby: 'ruby',
+  go: 'go',
+  rs: 'rust', rust: 'rust',
+  java: 'java',
+  kt: 'kotlin', kotlin: 'kotlin',
+  swift: 'swift',
+  c: 'c',
+  cpp: 'cpp', 'c++': 'cpp',
+  cs: 'csharp', 'c#': 'csharp',
+  php: 'php',
+  html: 'html',
+  css: 'css',
+  scss: 'scss',
+  json: 'json',
+  xml: 'xml',
+  yaml: 'yaml', yml: 'yaml',
+  sql: 'sql',
+  sh: 'bash', bash: 'bash', shell: 'bash', zsh: 'bash',
+  ps: 'powershell', powershell: 'powershell',
+  md: 'markdown', markdown: 'markdown',
+  diff: 'diff',
+  text: 'plaintext', txt: 'plaintext',
+  plaintext: 'plaintext',
+}
+
+// ─── Escape HTML for safe insertion ───────────────────────────────────────
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+// ─── Spoiler component (click to reveal) ──────────────────────────────────
+const Spoiler = ({ children }) => {
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <span
+      className={`spoiler${revealed ? ' revealed' : ''}`}
+      onClick={() => setRevealed(r => !r)}
+      title={revealed ? 'Click to hide' : 'Click to reveal spoiler'}
+    >
+      {children}
+    </span>
+  )
+}
+
+// ─── Inline code component ─────────────────────────────────────────────────
+const InlineCode = ({ code }) => (
+  <code className="inline-code">{code}</code>
+)
+
+// ─── Code block component ──────────────────────────────────────────────────
+const CodeBlock = ({ code, language }) => {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  const langLabel = language !== 'plaintext' ? language : ''
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }, [code])
+
+  return (
+    <div className={`code-block-wrapper${langLabel ? ' has-lang' : ''}`}>
+      {langLabel && <div className="code-block-header"><span className="code-lang-label">{langLabel}</span></div>}
+      <button className="code-copy-btn" onClick={handleCopy} title={t('common.copy', 'Copy')}>
+        {copied ? '✓ ' + t('common.copied', 'Copied') : t('common.copy', 'Copy')}
+      </button>
+      <pre className={`code-block language-${language}`} data-language={language}>
+        <code>{code}</code>
+      </pre>
+    </div>
+  )
+}
+
+// ─── Core inline parser ────────────────────────────────────────────────────
+// Returns an array of React nodes from a plain-text string.
+// Handles: bold, italic, underline, strikethrough, spoiler, inline code, links, @mentions
+function parseInline(text, key = 0, mentionProps = {}) {
+  if (!text) return []
+
+  const { currentUserId, mentions } = mentionProps
+
+  // Ordered patterns — most specific first.
+  // Groups: (fullmatch-content per pattern)
+  const patterns = [
+    // inline code — must come before everything else so backtick content is never parsed
+    { re: /`([^`]+)`/, type: 'code' },
+    // bold+italic combined ***text***
+    { re: /\*\*\*(.+?)\*\*\*/, type: 'bolditalic' },
+    // bold **text**
+    { re: /\*\*(.+?)\*\*/, type: 'bold' },
+    // italic *text* (not adjacent to *)
+    { re: /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/, type: 'italic' },
+    // italic _text_ (not adjacent to _)
+    { re: /(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/, type: 'italic' },
+    // underline __text__
+    { re: /__(.+?)__/, type: 'underline' },
+    // strikethrough ~~text~~
+    { re: /~~(.+?)~~/, type: 'strike' },
+    // spoiler ||text||
+    { re: /\|\|(.+?)\|\|/, type: 'spoiler' },
+    // highlight ==text== (extended syntax)
+    { re: /==(.+?)==/, type: 'highlight' },
+    // superscript X^text^ (extended syntax)
+    { re: /\^([^\^]+)\^/, type: 'superscript' },
+    // subscript H~text~ (extended syntax)
+    { re: /~([^~]+)~/, type: 'subscript' },
+    // @mention — supports @username:host (federated) and @username (local/special)
+    { re: /@(everyone|here|[a-zA-Z0-9_.:-]+)/, type: 'mention' },
+    // URL
+    { re: /(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])/, type: 'url' },
+  ]
+
+  const nodes = []
+  let remaining = text
+  let nodeKey = key * 10000
+
+  outer: while (remaining.length > 0) {
+    let earliest = null
+    let earliestIndex = Infinity
+
+    for (const { re, type } of patterns) {
+      const m = re.exec(remaining)
+      if (m && m.index < earliestIndex) {
+        earliest = { match: m, type }
+        earliestIndex = m.index
+      }
+    }
+
+    if (!earliest) {
+      nodes.push(remaining)
+      break
+    }
+
+    // Text before match
+    if (earliestIndex > 0) {
+      nodes.push(remaining.slice(0, earliestIndex))
+    }
+
+    const { match, type } = earliest
+    const content = match[1]
+    nodeKey++
+
+    switch (type) {
+      case 'code':
+        nodes.push(<InlineCode key={nodeKey} code={content} />)
+        break
+      case 'bolditalic':
+        nodes.push(<strong key={nodeKey}><em>{parseInline(content, nodeKey, mentionProps)}</em></strong>)
+        break
+      case 'bold':
+        nodes.push(<strong key={nodeKey}>{parseInline(content, nodeKey, mentionProps)}</strong>)
+        break
+      case 'italic':
+        nodes.push(<em key={nodeKey}>{parseInline(content, nodeKey, mentionProps)}</em>)
+        break
+      case 'underline':
+        nodes.push(<span key={nodeKey} className="md-underline">{parseInline(content, nodeKey, mentionProps)}</span>)
+        break
+      case 'strike':
+        nodes.push(<del key={nodeKey}>{parseInline(content, nodeKey, mentionProps)}</del>)
+        break
+      case 'spoiler':
+        nodes.push(<Spoiler key={nodeKey}>{parseInline(content, nodeKey, mentionProps)}</Spoiler>)
+        break
+      case 'highlight':
+        nodes.push(<mark key={nodeKey} className="md-highlight">{parseInline(content, nodeKey, mentionProps)}</mark>)
+        break
+      case 'superscript':
+        nodes.push(<sup key={nodeKey} className="md-superscript">{parseInline(content, nodeKey, mentionProps)}</sup>)
+        break
+      case 'subscript':
+        nodes.push(<sub key={nodeKey} className="md-subscript">{parseInline(content, nodeKey, mentionProps)}</sub>)
+        break
+      case 'mention': {
+        // content = match[1] which is the capture group WITHOUT the leading @
+        // e.g. for "@everyone" → content = "everyone"
+        //      for "@alice:host.com" → content = "alice:host.com"
+        const raw = content  // already without @
+        // Split username and optional host
+        const colonIdx = raw.indexOf(':')
+        const username = colonIdx !== -1 ? raw.slice(0, colonIdx) : raw
+        const host = colonIdx !== -1 ? raw.slice(colonIdx + 1) : null
+        const nameLower = username.toLowerCase()
+        const isEveryone = nameLower === 'everyone'
+        const isHere = nameLower === 'here'
+        const isDirectMention =
+          (mentions?.users && currentUserId && mentions.users.includes(currentUserId)) ||
+          (mentions?.usernames && mentions.usernames.some(u => u.toLowerCase() === nameLower))
+
+        // Display text: always @username (never show :host to the user)
+        const displayText = `@${username}`
+        // Title tooltip: show full federated id if cross-server
+        const federatedId = host ? `@${username}:${host}` : `@${username}`
+
+        let cls = 'mention-other'
+        let title = federatedId
+        if (isEveryone) { cls = 'mention-highlight mention-everyone'; title = 'Mentions everyone' }
+        else if (isHere) { cls = 'mention-highlight mention-here'; title = 'Mentions online members' }
+        else if (isDirectMention) { cls = `mention-highlight mention-user`; title = `You were mentioned (${federatedId})` }
+
+        // Look up userId from members list for click-to-profile
+        const member = mentionProps.members?.find(
+          m => m.username?.toLowerCase() === nameLower
+        )
+        const handleClick = mentionProps.onMentionClick
+          ? () => mentionProps.onMentionClick(member?.id || null, username, host)
+          : undefined
+
+        nodes.push(
+          <span
+            key={nodeKey}
+            className={`${cls}${handleClick ? ' mention-clickable' : ''}`}
+            title={title}
+            onClick={handleClick}
+            style={handleClick ? { cursor: 'pointer' } : undefined}
+          >
+            {displayText}
+          </span>
+        )
+        break
+      }
+      case 'url': {
+        const url = content
+        nodes.push(
+          <a key={nodeKey} href={url} target="_blank" rel="noopener noreferrer" className="markdown-link">
+            {url}
+          </a>
+        )
+        break
+      }
+      default:
+        nodes.push(content)
+    }
+
+    remaining = remaining.slice(earliestIndex + match[0].length)
+  }
+
+  return nodes
+}
+
+// ─── Block-level parser ────────────────────────────────────────────────────
+// Splits content into block-level nodes, then delegates inline parsing
+function parseBlocks(content, mentionProps = {}) {
+  if (!content) return []
+
+  const nodes = []
+  const normalizedContent = content.replace(/^\n+(?=```)/, '')
+  // Split into lines preserving \n
+  const lines = normalizedContent.split('\n')
+  let i = 0
+  let blockKey = 0
+
+  const nextKey = () => ++blockKey
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // ── Fenced code block ```lang
+    if (line.trimStart().startsWith('```')) {
+      const fence = line.trimStart().match(/^```(\w*)/)
+      const rawLang = fence?.[1]?.toLowerCase() || ''
+      const language = LANGUAGES[rawLang] || (rawLang ? rawLang : 'plaintext')
+      const codeLines = []
+      i++
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
+        codeLines.push(lines[i])
+        i++
+      }
+      i++ // consume closing ```
+      const code = codeLines.join('\n')
+      nodes.push(<CodeBlock key={nextKey()} code={code} language={language} />)
+      continue
+    }
+
+    // ── Blockquote > text (consecutive lines)
+    if (/^> /.test(line) || line === '>') {
+      const quoteLines = []
+      while (i < lines.length && (/^> /.test(lines[i]) || lines[i] === '>')) {
+        quoteLines.push(lines[i].replace(/^> ?/, ''))
+        i++
+      }
+      const quoteContent = quoteLines.join('\n')
+      nodes.push(
+        <blockquote key={nextKey()} className="md-blockquote">
+          {parseBlocks(quoteContent, mentionProps)}
+        </blockquote>
+      )
+      continue
+    }
+
+    // ── Headers # ## ###
+    const headerMatch = line.match(/^(#{1,3}) (.+)$/)
+    if (headerMatch) {
+      const level = headerMatch[1].length
+      const text = headerMatch[2]
+      const Tag = `h${level}`
+      nodes.push(
+        <Tag key={nextKey()} className={`md-h${level}`}>
+          {parseInline(text, nextKey(), mentionProps)}
+        </Tag>
+      )
+      i++
+      continue
+    }
+
+    // ── Unordered list (- or * or +) with task list support
+    if (/^[ \t]*[-*+] /.test(line) || /^[ \t]*[-*+] \[[ xX]\]/.test(line)) {
+      const listItems = []
+      const listType = 'ul'
+      while (i < lines.length && (/^[ \t]*[-*+] /.test(lines[i]) || /^[ \t]*[-*+] \[[ xX]\]/.test(lines[i]))) {
+        const isTask = /^[ \t]*[-*+] \[([ xX])\]/.test(lines[i])
+        const checked = isTask && lines[i].match(/^[ \t]*[-*+] \[([xX])\]/)
+        const itemText = lines[i].replace(/^[ \t]*[-*+] (\[[ xX]\] )?/, '')
+        listItems.push(
+          <li key={listItems.length} className={isTask ? 'task-list-item' : ''}>
+            {isTask && (
+              <input type="checkbox" checked={!!checked} readOnly className="task-checkbox" />
+            )}
+            <span>{parseInline(itemText, listItems.length, mentionProps)}</span>
+          </li>
+        )
+        i++
+      }
+      nodes.push(<ul key={nextKey()} className="md-list">{listItems}</ul>)
+      continue
+    }
+
+    // ── Ordered list 1. 2. with task list support
+    if (/^[ \t]*\d+\. /.test(line) || /^[ \t]*\d+\. \[[ xX]\]/.test(line)) {
+      const listItems = []
+      while (i < lines.length && (/^[ \t]*\d+\. /.test(lines[i]) || /^[ \t]*\d+\. \[[ xX]\]/.test(lines[i]))) {
+        const isTask = /^[ \t]*\d+\. \[([ xX])\]/.test(lines[i])
+        const checked = isTask && lines[i].match(/^[ \t]*\d+\. \[([xX])\]/)
+        const itemText = lines[i].replace(/^[ \t]*\d+\. (\[[ xX]\] )?/, '')
+        listItems.push(
+          <li key={listItems.length} className={isTask ? 'task-list-item' : ''}>
+            {isTask && (
+              <input type="checkbox" checked={!!checked} readOnly className="task-checkbox" />
+            )}
+            <span>{parseInline(itemText, listItems.length, mentionProps)}</span>
+          </li>
+        )
+        i++
+      }
+      nodes.push(<ol key={nextKey()} className="md-list">{listItems}</ol>)
+      continue
+    }
+
+    // ── Table parsing
+    if (/^\|.+\|$/.test(line) && i + 1 < lines.length && /^\|?[-:]+[-:|]*$/.test(lines[i + 1])) {
+      const tableRows = []
+      const headerRow = line.split('|').filter(cell => cell.trim() !== '')
+      i++
+      i++
+      while (i < lines.length && /^\|/.test(lines[i])) {
+        const rowCells = lines[i].split('|').filter(cell => cell.trim() !== '')
+        tableRows.push(rowCells)
+        i++
+      }
+      nodes.push(
+        <table key={nextKey()} className="md-table">
+          <thead>
+            <tr>
+              {headerRow.map((cell, idx) => (
+                <th key={idx}>{parseInline(cell.trim(), idx, mentionProps)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tableRows.map((row, rowIdx) => (
+              <tr key={rowIdx}>
+                {row.map((cell, cellIdx) => (
+                  <td key={cellIdx}>{parseInline(cell.trim(), cellIdx, mentionProps)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )
+      continue
+    }
+
+    // ── Horizontal rule ---
+    if (/^---+$/.test(line.trim())) {
+      nodes.push(<hr key={nextKey()} className="md-hr" />)
+      i++
+      continue
+    }
+
+    // ── Blank line → paragraph break (just spacing, Discord doesn't wrap in <p>)
+    if (line.trim() === '') {
+      // Emit a line break only if it's between content (not at start/end)
+      if (nodes.length > 0) {
+        nodes.push(<br key={nextKey()} />)
+      }
+      i++
+      continue
+    }
+
+    // ── Regular line → inline content
+    const inlineNodes = parseInline(line, nextKey(), mentionProps)
+    nodes.push(...inlineNodes.map((n, idx) =>
+      typeof n === 'string' ? n : React.cloneElement(n, { key: `${nextKey()}-${idx}` })
+    ))
+    // Add line break unless this is the last line
+    if (i < lines.length - 1) {
+      nodes.push(<br key={nextKey()} />)
+    }
+    i++
+  }
+
+  return nodes
+}
+
+// ─── Invite embed extractor ────────────────────────────────────────────────
+const INVITE_URL_RE = /https?:\/\/[^\s]*\/invite\/([a-zA-Z0-9_-]+)/g
+
+function extractInvites(content) {
+  const embeds = []
+  const seen = new Set()
+  let m
+  const re = new RegExp(INVITE_URL_RE.source, 'g')
+  while ((m = re.exec(content)) !== null) {
+    if (!seen.has(m[1])) {
+      seen.add(m[1])
+      embeds.push({ code: m[1], url: m[0] })
+    }
+  }
+  return embeds
+}
+
+// ─── GIF embed extractor ───────────────────────────────────────────────────
+// Matches [GIF: https://...] anywhere in the message content
+const GIF_TAG_RE = /\[GIF:\s*(https?:\/\/[^\]]+)\s*\]/i
+
+const STICKER_TAG_RE = /\[STICKER:\s*(https?:\/\/[^\]]+)\s*\]/i
+
+const CLIP_TAG_RE = /\[CLIP:\s*(https?:\/\/[^\]]+)\s*\]/i
+
+const MEME_TAG_RE = /\[MEME[S]?:\s*(https?:\/\/[^\]]+)\s*\]/i
+
+const MediaEmbed = ({ url, type }) => {
+  const [errored, setErrored] = useState(false)
+  
+  const isVideo = type === 'clip' || url.match(/\.(mp4|webm|mov)$/i)
+  const isGif = type === 'gif' || (url.match(/\.(gif|webp)$/i) && !url.match(/\.mp4|\.webm|\.mov/i))
+  
+  if (errored) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="markdown-link media-fallback-link">
+        {type === 'clip' ? '🎬 Video' : type === 'sticker' ? '🏷️ Sticker' : type === 'meme' ? '😂 Meme' : '🖼️ Image'}: {url}
+      </a>
+    )
+  }
+  
+  const typeLabels = {
+    gif: 'GIF',
+    sticker: 'Sticker',
+    clip: 'Video',
+    meme: 'Meme'
+  }
+  
+  return (
+    <div className={`media-embed media-embed-${type}`}>
+      {isVideo ? (
+        <video
+          src={url}
+          className="media-embed-video"
+          controls
+          controlsList="nodownload"
+          onError={() => setErrored(true)}
+          loading="lazy"
+          loop={isGif}
+          muted={isGif}
+          playsInline
+        />
+      ) : (
+        <img
+          src={url}
+          alt={typeLabels[type] || 'Media'}
+          className="media-embed-img"
+          onError={() => setErrored(true)}
+          loading="lazy"
+        />
+      )}
+    </div>
+  )
+}
+
+const GifEmbed = ({ url }) => <MediaEmbed url={url} type="gif" />
+const StickerEmbed = ({ url }) => <MediaEmbed url={url} type="sticker" />
+const ClipEmbed = ({ url }) => <MediaEmbed url={url} type="clip" />
+const MemeEmbed = ({ url }) => <MediaEmbed url={url} type="meme" />
+
+function splitMedia(content) {
+  const parts = []
+  let last = 0
+  
+  const patterns = [
+    { re: /\[GIF:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'gif' },
+    { re: /\[STICKER:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'sticker' },
+    { re: /\[CLIP:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'clip' },
+    { re: /\[MEME[S]?:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'meme' }
+  ]
+  
+  while (true) {
+    let earliest = null
+    let earliestIndex = Infinity
+    let earliestType = null
+    
+    for (const { re, type } of patterns) {
+      re.lastIndex = last
+      const m = re.exec(content)
+      if (m && m.index < earliestIndex) {
+        earliest = m
+        earliestIndex = m.index
+        earliestType = type
+      }
+    }
+    
+    if (!earliest) break
+    
+    if (earliestIndex > last) {
+      parts.push({ type: 'text', value: content.slice(last, earliestIndex) })
+    }
+    parts.push({ type: earliestType, url: earliest[1].trim() })
+    last = earliestIndex + earliest[0].length
+  }
+  
+  if (last < content.length) {
+    parts.push({ type: 'text', value: content.slice(last) })
+  }
+  
+  return parts
+}
+
+function stripMediaTags(content) {
+  return content
+    .replace(/\[[^\]]*https?:\/\/[^\]]+\]/gi, '')
+}
+
+// ─── Main component ────────────────────────────────────────────────────────
+/**
+ * MarkdownMessage
+ *
+ * Props:
+ *   content          string    — raw message text
+ *   currentUserId    string    — logged-in user's ID (for mention highlighting)
+ *   mentions         object    — { users: string[], usernames: string[] }
+ *   members          array     — server member list (for mention click-to-profile lookup)
+ *   onMentionClick   function  — (userId, username, host) called when a mention is clicked
+ */
+// ─── Custom emoji regex ────────────────────────────────────────────────────
+// Matches :emoji_name: patterns (alphanumeric + underscores, 1-32 chars)
+const CUSTOM_EMOJI_RE = /:([a-zA-Z0-9_]{1,32}):/g
+
+/**
+ * Replace :emoji_name: with inline <img> elements for server custom emojis.
+ * Returns an array of React nodes (strings + img elements).
+ */
+function renderCustomEmojis(text, serverEmojis) {
+  if (!serverEmojis || serverEmojis.length === 0 || !text) return [text]
+  
+  const emojiMap = {}
+  serverEmojis.forEach(e => { emojiMap[e.name] = e.url })
+  
+  const parts = []
+  let last = 0
+  let m
+  const re = new RegExp(CUSTOM_EMOJI_RE.source, 'g')
+  while ((m = re.exec(text)) !== null) {
+    const name = m[1]
+    const url = emojiMap[name]
+    if (!url) continue // Not a known server emoji, skip
+    
+    if (m.index > last) parts.push(text.slice(last, m.index))
+    parts.push(
+      <img
+        key={`emoji-${m.index}`}
+        src={url}
+        alt={`:${name}:`}
+        title={`:${name}:`}
+        className="custom-emoji-inline"
+        style={{ width: '1.375em', height: '1.375em', verticalAlign: 'bottom', margin: '0 1px', display: 'inline-block', objectFit: 'contain' }}
+        loading="lazy"
+      />
+    )
+    last = m.index + m[0].length
+  }
+  if (last === 0) return [text] // No custom emojis found
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
+const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionClick, serverEmojis }) => {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const globalEmojis = useAppStore(state => state.globalEmojis)
+  const isAgeVerified = user?.ageVerification?.verified && user?.ageVerification?.category === 'adult'
+  
+  if (!content) return null
+
+  // Combine server emojis with global emojis - server emojis take priority
+  const allEmojis = serverEmojis?.length > 0 
+    ? [...serverEmojis, ...globalEmojis.filter(g => !serverEmojis.some(s => s.name === g.name))]
+    : globalEmojis
+
+  const mentionProps = { currentUserId, mentions, members, onMentionClick }
+  const invites = extractInvites(content)
+  const contentWithoutMedia = stripMediaTags(content)
+
+  // Split content on media tags so we render text + embeds in order
+  const mediaParts = splitMedia(content)
+  const hasMedia = mediaParts.some(p => p.type !== 'text')
+
+  // Helper to render a text segment with custom emojis
+  const renderTextSegment = (text, key) => {
+    if (!allEmojis || allEmojis.length === 0) {
+      return <span key={key}>{parseBlocks(text, mentionProps)}</span>
+    }
+    // First parse blocks (markdown), then replace custom emojis in the result
+    const parsed = parseBlocks(text, mentionProps)
+    // We need to walk the parsed output and replace :emoji: in string nodes
+    const withEmojis = replaceInReactTree(parsed, allEmojis)
+    return <span key={key}>{withEmojis}</span>
+  }
+
+  return (
+    <span className="markdown-message">
+      {hasMedia ? (
+        <>
+          {mediaParts.map((part, i) => {
+            if (part.type === 'gif') return <GifEmbed key={i} url={part.url} />
+            if (part.type === 'sticker') return <StickerEmbed key={i} url={part.url} />
+            if (part.type === 'clip') return <ClipEmbed key={i} url={part.url} />
+            if (part.type === 'meme') return <MemeEmbed key={i} url={part.url} />
+            return part.value ? renderTextSegment(part.value, i) : null
+          })}
+        </>
+      ) : (
+        allEmojis && allEmojis.length > 0
+          ? replaceInReactTree(parseBlocks(content, mentionProps), allEmojis)
+          : parseBlocks(content, mentionProps)
+      )}
+      {invites.map(({ code, url }) => (
+        <InviteEmbed key={code} inviteCode={code} inviteUrl={url} />
+      ))}
+      {extractEmbedUrls(contentWithoutMedia).map((embed, i) => (
+        <LinkEmbed key={`link-embed-${i}-${embed.url}`} url={embed.url} type={embed.type} match={embed.match} isAgeVerified={isAgeVerified} />
+      ))}
+    </span>
+  )
+}
+
+/**
+ * Walk a React tree (array of nodes) and replace :emoji_name: in string children
+ * with inline <img> elements for server custom emojis.
+ */
+function replaceInReactTree(nodes, serverEmojis) {
+  if (!serverEmojis || serverEmojis.length === 0) return nodes
+  if (!Array.isArray(nodes)) nodes = [nodes]
+  
+  // Build emoji map from both name and id for global format lookup
+  const emojiMap = {}
+  const emojiIdMap = {} // emojiId -> { url, name, host, serverId }
+  serverEmojis.forEach(e => { 
+    emojiMap[e.name] = e.url
+    if (e.id) {
+      emojiIdMap[e.id] = { url: e.url, name: e.name, host: e.host, serverId: e.serverId }
+    }
+  })
+  const emojiNames = Object.keys(emojiMap)
+  if (emojiNames.length === 0 && Object.keys(emojiIdMap).length === 0) return nodes
+  
+  // Match either local emoji names or global format :host|serverId|emojiId|name:
+  const re = /:([a-zA-Z0-9_]{1,32}|[^|:\s]+\|[^|:\s]+\|[^|:\s]+\|[^:\s]+):/g
+  
+  let keyCounter = 0
+  
+  function walk(node) {
+    if (typeof node === 'string') {
+      if (!re.test(node)) return node
+      re.lastIndex = 0 // Reset after test
+      
+      const parts = []
+      let last = 0
+      let m
+      while ((m = re.exec(node)) !== null) {
+        const matchContent = m[1]
+        let url = null
+        let name = matchContent
+        let tooltip = `:${matchContent}:`
+        
+        if (matchContent.includes('|')) {
+          // Global format: host|serverId|emojiId|name
+          const parts = matchContent.split('|')
+          if (parts.length >= 4) {
+            const [host, serverId, emojiId, emojiName] = parts
+            // Look up by ID first, then by name
+            const emojiData = emojiIdMap[emojiId] || { url: emojiMap[emojiName], name: emojiName }
+            if (emojiData?.url) {
+              url = emojiData.url
+              name = emojiData.name || emojiName
+              tooltip = `:${emojiName}: (${serverId})`
+            } else {
+              // Emoji not found locally - might be from another server
+              // Try to construct URL or show placeholder
+              url = null
+            }
+          }
+        } else {
+          // Local format: just emoji name
+          url = emojiMap[matchContent]
+          name = matchContent
+          tooltip = `:${name}:`
+        }
+        
+        if (!url) {
+          // Emoji not found - keep the original text
+          if (m.index > last) parts.push(node.slice(last, m.index))
+          parts.push(m[0])
+          last = m.index + m[0].length
+          continue
+        }
+        
+        if (m.index > last) parts.push(node.slice(last, m.index))
+        parts.push(
+          <img
+            key={`ce-${keyCounter++}`}
+            src={url}
+            alt={tooltip}
+            title={tooltip}
+            className="custom-emoji-inline"
+            style={{ width: '1.375em', height: '1.375em', verticalAlign: 'bottom', margin: '0 1px', display: 'inline-block', objectFit: 'contain' }}
+            loading="lazy"
+          />
+        )
+        last = m.index + m[0].length
+      }
+      if (last === 0) return node
+      if (last < node.length) parts.push(node.slice(last))
+      return parts
+    }
+    
+    if (React.isValidElement(node)) {
+      const children = node.props.children
+      if (!children) return node
+      
+      const newChildren = Array.isArray(children)
+        ? children.flatMap(walk)
+        : walk(children)
+      
+      // Only clone if children actually changed
+      if (newChildren === children) return node
+      return React.cloneElement(node, {}, ...(Array.isArray(newChildren) ? newChildren : [newChildren]))
+    }
+    
+    if (Array.isArray(node)) {
+      return node.flatMap(walk)
+    }
+    
+    return node
+  }
+  
+  const result = Array.isArray(nodes) ? nodes.flatMap(walk) : walk(nodes)
+  return result
+}
+
+export default MarkdownMessage
