@@ -150,8 +150,8 @@ const ActivityAppsPanel = () => {
           <div className="token-field">
             <label>Client ID</label>
             <div className="token-value">
-              <code>{createdCreds.app.clientId}</code>
-              <button className="btn btn-sm btn-ghost" onClick={() => copyToClipboard(createdCreds.app.clientId)}>
+              <code>{createdCreds?.app?.clientId || 'N/A'}</code>
+              <button className="btn btn-sm btn-ghost" onClick={() => createdCreds?.app?.clientId && copyToClipboard(createdCreds.app.clientId)}>
                 <ClipboardDocumentIcon size={14} />
               </button>
             </div>

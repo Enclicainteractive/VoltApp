@@ -36,6 +36,7 @@ import DmContextMenu from './DmContextMenu'
 import MessageContextMenu from './MessageContextMenu'
 import ReactionEmojiPicker from './ReactionEmojiPicker'
 import { EncryptionFallback } from './EncryptionFallback'
+import BotUIMessage from './BotUIMessage'
 import { deserializeReactionEmoji, serializeReactionEmoji } from '../utils/reactionEmoji'
 import '../assets/styles/DMChat.css'
 
@@ -492,7 +493,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
       }
 
       // Receiver-side safety recheck (defense-in-depth for E2EE/local moderation).
-      try {
+      if (!message.bot) try {
         const selfAgeRaw = Number(user?.ageVerification?.age ?? user?.ageVerification?.estimatedAge)
         const selfAge = Number.isFinite(selfAgeRaw) ? selfAgeRaw : null
         const recipientContext = {
@@ -526,8 +527,8 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
         }
       } catch (err) {
         console.error('[DMChat] Receiver-side safety check failed:', err)
-      }
-      
+      } }
+
       setMessages(prev => {
         const messageNonce = processedMessage.clientNonce || null
         if (messageNonce) {
@@ -1634,8 +1635,15 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
                       ) : (
                         <>
                           <div className="dm-message-content">
-                            {renderMessageContent(message.content, message.mentions, message.attachments)}
-                            {Boolean(message.edited) && <span className="edited-indicator">(edited)</span>}
+                          {renderMessageContent(message.content, message.mentions, message.attachments)}
+                          {Boolean(message.edited) && <span className="edited-indicator">(edited)</span>}
+                          {message.ui && (
+                            <BotUIMessage
+                            ui={message.ui}
+                            messageId={message.id}
+                            channelId={conversation.id}
+                            />
+                          )}
                             {isOwn && grouped && sendStatus === 'sending' && (
                               <span className="dm-message-send-state-inline sending">Sending...</span>
                             )}

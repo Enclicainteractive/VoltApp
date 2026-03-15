@@ -21,6 +21,7 @@ import { CLIENT_BUILTIN_BY_ID, CLIENT_BUILTIN_ACTIVITIES } from '../activities/b
 import { loadVoiceOverlayState, saveVoiceOverlayState } from '../services/voiceOverlayService'
 import VoiceChannelTempChat from './VoiceChannelTempChat'
 import { useVoiceTempChat } from '../hooks/useVoiceTempChat'
+import { getStoredServer } from '../services/serverConfig'
 import '../assets/styles/VoiceChannel.css'
 import '../assets/styles/ScreenSharePicker.css'
 
@@ -361,6 +362,10 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
   const { t } = useTranslation()
   const { isEncryptionEnabled, getServerEncryptionStatus } = useE2e()
   const { focusedActivityId, activeActivities, setFocusedActivity, clearFocusedActivity, addActivity, removeActivity } = useAppStore()
+  
+  const currentServer = getStoredServer()
+  const apiUrl = currentServer?.apiUrl || ''
+  const imageApiUrl = currentServer?.imageApiUrl || apiUrl
   
   // Check if server encryption is enabled
   const serverId = channel?.serverId
