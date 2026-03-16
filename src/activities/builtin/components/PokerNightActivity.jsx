@@ -57,12 +57,23 @@ const createPokerSoundManager = () => {
       masterGain.connect(audioContext.destination)
       masterGain.gain.value = 0.25
     } catch (e) {
-      console.warn('[Poker] Audio not available:', e)
+      console.error('Audio initialization failed:', e)
+      return
+    }
+
+    // Validate AudioContext state before use
+    if (!audioContext || audioContext.state !== 'running') {
+      console.warn('AudioContext not available or not running')
+      return
     }
   }
 
   const playTone = (frequency, duration, type = 'sine', volume = 0.3) => {
     if (!audioContext || muted) return
+    if (audioContext.state !== 'running') {
+      console.warn('AudioContext not running, cannot play tone')
+      return
+    }
     try {
       const osc = audioContext.createOscillator()
       const gain = audioContext.createGain()
@@ -74,7 +85,9 @@ const createPokerSoundManager = () => {
       gain.connect(masterGain)
       osc.start()
       osc.stop(audioContext.currentTime + duration)
-    } catch (e) {}
+    } catch (e) {
+      console.error('Tone playback failed:', e)
+    }
   }
 
   const playChipSound = () => {
@@ -91,7 +104,9 @@ const createPokerSoundManager = () => {
       gain.connect(masterGain)
       osc.start()
       osc.stop(audioContext.currentTime + 0.1)
-    } catch (e) {}
+    } catch (e) {
+      console.error('Audio operation failed:', e)
+    }
   }
 
   const playCardFlip = () => {
@@ -113,7 +128,9 @@ const createPokerSoundManager = () => {
       filter.connect(gain)
       gain.connect(masterGain)
       noise.start()
-    } catch (e) {}
+    } catch (e) {
+      console.error('Audio operation failed:', e)
+    }
   }
 
   return {
