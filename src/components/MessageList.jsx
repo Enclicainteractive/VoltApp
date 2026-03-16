@@ -708,9 +708,6 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
                       userId={message.userId}
                     />
                     <span className="message-author" onClick={() => onShowProfile?.(message.userId)}>{message.username}</span>
-                    {message.guildTag && (
-                      <span className="message-guild-tag">[{message.guildTag}]</span>
-                    )}
                     {Boolean(message.bot) && (
                       <span className="bot-badge">BOT</span>
                     )}

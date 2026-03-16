@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { XMarkIcon, DocumentCheckIcon, ArrowUturnDownIcon, ServerStackIcon, ShieldCheckIcon, GlobeAltIcon, CircleStackIcon, LockClosedIcon, BoltIcon, CogIcon, CodeBracketIcon, ExclamationTriangleIcon, CheckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ArrowPathIcon, ArrowRightIcon, CubeIcon, PowerIcon, DocumentTextIcon, SignalIcon, CloudIcon, FolderIcon } from '@heroicons/react/24/outline'
-import { Server, Shield, Lock, Zap, Globe, Database, Key, Settings, FileText, Code, AlertTriangle, Check, Download, Upload, RefreshCw, ArrowRight, Box, Power, FolderOpen, Network, HardDrive, Layers } from 'lucide-react'
+import { XMarkIcon, DocumentCheckIcon, ArrowUturnDownIcon, ServerStackIcon, ShieldCheckIcon, GlobeAltIcon, CircleStackIcon, LockClosedIcon, BoltIcon, CogIcon, CodeBracketIcon, ExclamationTriangleIcon, CheckIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ArrowPathIcon, ArrowRightIcon, CubeIcon, PowerIcon, DocumentTextIcon } from '@heroicons/react/24/outline'
+import { Server, Shield, Lock, Zap, Globe, Database, Key, Settings, FileText, Code, AlertTriangle, Check, Download, Upload, RefreshCw, ArrowRight, Box, Power, FolderOpen } from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import { useTranslation } from '../../hooks/useTranslation'
 import './Modal.css'
@@ -149,66 +149,11 @@ const AdminConfigModal = ({ onClose }) => {
     restartPending: false
   })
 
-  const [scaleState, setScaleState] = useState({
-    loading: false,
-    status: null,
-    error: null,
-    refreshing: false,
-    testingNode: null,
-    testResults: {}
-  })
-
   useEffect(() => {
     loadConfig()
     loadMigrationInfo()
     loadOperationsInfo()
   }, [])
-
-  const loadScaleStatus = async () => {
-    setScaleState(prev => ({ ...prev, loading: true, error: null }))
-    try {
-      const res = await apiService.getScaleStatus()
-      setScaleState(prev => ({ ...prev, loading: false, status: res.data }))
-    } catch (err) {
-      setScaleState(prev => ({
-        ...prev,
-        loading: false,
-        error: err.response?.data?.error || err.message || 'Failed to load cluster status'
-      }))
-    }
-  }
-
-  const handleRefreshNodes = async () => {
-    setScaleState(prev => ({ ...prev, refreshing: true }))
-    try {
-      const res = await apiService.refreshScaleNodes()
-      setScaleState(prev => ({ ...prev, refreshing: false, status: res.data }))
-      setMessage({ type: 'success', text: 'Cluster registry refreshed.' })
-    } catch (err) {
-      setScaleState(prev => ({ ...prev, refreshing: false }))
-      setMessage({ type: 'error', text: err.response?.data?.error || err.message || 'Refresh failed' })
-    }
-  }
-
-  const handleTestNode = async (nodeId, nodeUrl) => {
-    setScaleState(prev => ({ ...prev, testingNode: nodeId }))
-    try {
-      const start = Date.now()
-      const res = await apiService.pingScaleNode(nodeUrl)
-      const latency = Date.now() - start
-      setScaleState(prev => ({
-        ...prev,
-        testingNode: null,
-        testResults: { ...prev.testResults, [nodeId]: { ok: true, latency, data: res.data } }
-      }))
-    } catch (err) {
-      setScaleState(prev => ({
-        ...prev,
-        testingNode: null,
-        testResults: { ...prev.testResults, [nodeId]: { ok: false, error: err.message } }
-      }))
-    }
-  }
 
   const loadMigrationInfo = async () => {
     try {
@@ -622,35 +567,27 @@ const AdminConfigModal = ({ onClose }) => {
           <div className="admin-config-body">
             <div className="admin-config-sidebar">
               {[
-                { id: 'server',     label: t('adminConfig.nav.server', 'Server'),         icon: Server },
-                { id: 'auth',       label: t('adminConfig.nav.auth', 'Auth'),             icon: Shield },
-                { id: 'email',      label: t('adminConfig.nav.email', 'Email'),           icon: FileText },
-                { id: 'security',   label: t('adminConfig.nav.security', 'Security'),     icon: Lock },
-                { id: 'features',   label: t('adminConfig.nav.features', 'Features'),     icon: Zap },
-                { id: 'limits',     label: t('adminConfig.nav.limits', 'Limits'),         icon: Layers },
-                { id: 'storage',    label: t('adminConfig.nav.storage', 'Storage'),       icon: Database },
-                { id: 'cdn',        label: t('adminConfig.nav.cdn', 'CDN & Files'),       icon: HardDrive },
-                { id: 'scaling',    label: t('adminConfig.nav.scaling', 'Scaling'),       icon: Network },
+                { id: 'server', label: t('adminConfig.nav.server', 'Server'), icon: Server },
+                { id: 'auth', label: t('adminConfig.nav.auth', 'Auth'), icon: Shield },
+                { id: 'email', label: t('adminConfig.nav.email', 'Email'), icon: DocumentTextIcon },
+                { id: 'security', label: t('adminConfig.nav.security', 'Security'), icon: Lock },
+                { id: 'features', label: t('adminConfig.nav.features', 'Features'), icon: Zap },
+                { id: 'limits', label: t('adminConfig.nav.limits', 'Limits'), icon: Globe },
+                { id: 'storage', label: t('adminConfig.nav.storage', 'Storage'), icon: Database },
+                { id: 'cdn', label: t('adminConfig.nav.cdn', 'CDN'), icon: Globe },
                 { id: 'federation', label: t('adminConfig.nav.federation', 'Federation'), icon: Globe },
-                { id: 'advanced',   label: t('adminConfig.nav.advanced', 'Advanced'),     icon: Settings },
-                { id: 'migration',  label: t('adminConfig.nav.migration', 'Migration'),   icon: RefreshCw },
+                { id: 'advanced', label: t('adminConfig.nav.advanced', 'Advanced'), icon: Settings },
+                { id: 'migration', label: t('adminConfig.nav.migration', 'Migration'), icon: RefreshCw },
               ].map(tab => {
                 const Icon = tab.icon
-                const hasNotice = tab.id === 'scaling' && config?.scaling?.enabled
                 return (
                   <button
                     key={tab.id}
                     className={`config-nav-btn ${activeTab === tab.id ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTab(tab.id)
-                      if (tab.id === 'scaling' && !scaleState.status && !scaleState.loading) {
-                        loadScaleStatus()
-                      }
-                    }}
+                    onClick={() => setActiveTab(tab.id)}
                   >
                     <Icon size={16} />
                     <span>{tab.label}</span>
-                    {hasNotice && <span className="nav-badge-dot" />}
                   </button>
                 )
               })}
@@ -1251,467 +1188,20 @@ const AdminConfigModal = ({ onClose }) => {
 
               {activeTab === 'cdn' && config?.cdn !== undefined && (
                 <div className="config-section">
-                  <h2 className="config-section-title">{t('adminConfig.sections.cdn.title', 'CDN & File Storage')}</h2>
-                  <p className="config-section-desc">{t('adminConfig.sections.cdn.desc', 'Where uploaded files, avatars, and attachments are stored and served from.')}</p>
-
-                  {/* Provider picker cards */}
+                  <h2 className="config-section-title">{t('adminConfig.sections.cdn.title', 'CDN')}</h2>
+                  <p className="config-section-desc">{t('adminConfig.sections.cdn.desc', 'Content delivery and file hosting provider.')}</p>
                   <div className="config-group">
-                    <h3><HardDrive size={16} /> {t('adminConfig.sections.cdn.storageProvider', 'Storage Provider')}</h3>
-                    <div className="provider-cards">
-                      {[
-                        { id: 'local',      label: 'Local Disk',      desc: 'Files stay on this server.', badge: null },
-                        { id: 'nfs',        label: 'NFS Shared',      desc: 'Shared folder across all scale nodes. No file-routing needed.', badge: 'Scaling' },
-                        { id: 's3',         label: 'Amazon S3',       desc: 'AWS S3 or any S3-compatible store.', badge: null },
-                        { id: 'cloudflare', label: 'Cloudflare R2',   desc: 'Zero egress fees.', badge: null },
-                      ].map(p => (
-                        <button
-                          key={p.id}
-                          className={`provider-card ${(config.cdn?.provider || 'local') === p.id ? 'selected' : ''}`}
-                          onClick={() => updateConfig('cdn', 'provider', p.id)}
-                          type="button"
-                        >
-                          <span className="provider-card-name">{p.label}</span>
-                          {p.badge && <span className="provider-card-badge">{p.badge}</span>}
-                          <span className="provider-card-desc">{p.desc}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* NFS config */}
-                  {config.cdn?.provider === 'nfs' && (
-                    <div className="config-group cdn-provider-config">
-                      <h3><FolderIcon size={16} /> NFS Shared Folder</h3>
-                      <div className="cdn-info-banner">
-                        <SignalIcon size={16} />
-                        <span>NFS makes all scale nodes read/write the same directory. No application-level file routing is needed. See <strong>Scaling</strong> tab for node setup and the SCALING.md guide for OS-level NFS setup.</span>
-                      </div>
-                      <div className="config-field">
-                        <label>NFS Mount Path</label>
-                        <input
-                          type="text"
-                          value={config.cdn?.nfs?.uploadDir || ''}
-                          onChange={(e) => updateNestedConfig('cdn', 'nfs', 'uploadDir', e.target.value)}
-                          placeholder="/www/shared_uploads"
-                        />
-                        <small>The local path on this server where the NFS share is mounted. Must exist and be writable before starting Voltage.</small>
-                      </div>
-                      <div className="config-field">
-                        <label>Public Base URL <span className="label-optional">(optional)</span></label>
-                        <input
-                          type="text"
-                          value={config.cdn?.nfs?.baseUrl || ''}
-                          onChange={(e) => updateNestedConfig('cdn', 'nfs', 'baseUrl', e.target.value)}
-                          placeholder="https://files.yourdomain.com"
-                        />
-                        <small>Leave blank to use the standard <code>/api/upload/file/</code> route.</small>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* S3 config */}
-                  {config.cdn?.provider === 's3' && (
-                    <div className="config-group cdn-provider-config">
-                      <h3><CloudIcon size={16} /> Amazon S3 / S3-Compatible</h3>
-                      <div className="config-fields-grid">
-                        <div className="config-field">
-                          <label>Bucket</label>
-                          <input type="text" value={config.cdn?.s3?.bucket || ''} onChange={(e) => updateNestedConfig('cdn', 's3', 'bucket', e.target.value)} placeholder="my-volt-media" />
-                        </div>
-                        <div className="config-field">
-                          <label>Region</label>
-                          <input type="text" value={config.cdn?.s3?.region || 'us-east-1'} onChange={(e) => updateNestedConfig('cdn', 's3', 'region', e.target.value)} />
-                        </div>
-                        <div className="config-field">
-                          <label>Access Key ID</label>
-                          <input type="text" value={config.cdn?.s3?.accessKeyId || ''} onChange={(e) => updateNestedConfig('cdn', 's3', 'accessKeyId', e.target.value)} />
-                        </div>
-                        <div className="config-field">
-                          <label>Secret Access Key</label>
-                          <input type="password" value={config.cdn?.s3?.secretAccessKey || ''} onChange={(e) => updateNestedConfig('cdn', 's3', 'secretAccessKey', e.target.value)} />
-                        </div>
-                        <div className="config-field">
-                          <label>Custom Endpoint <span className="label-optional">(MinIO, DO Spaces…)</span></label>
-                          <input type="text" value={config.cdn?.s3?.endpoint || ''} onChange={(e) => updateNestedConfig('cdn', 's3', 'endpoint', e.target.value)} placeholder="https://nyc3.digitaloceanspaces.com" />
-                        </div>
-                        <div className="config-field">
-                          <label>Public URL <span className="label-optional">(CDN domain)</span></label>
-                          <input type="text" value={config.cdn?.s3?.publicUrl || ''} onChange={(e) => updateNestedConfig('cdn', 's3', 'publicUrl', e.target.value)} placeholder="https://cdn.yourdomain.com" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Cloudflare R2 config */}
-                  {config.cdn?.provider === 'cloudflare' && (
-                    <div className="config-group cdn-provider-config">
-                      <h3><CloudIcon size={16} /> Cloudflare R2</h3>
-                      <div className="config-fields-grid">
-                        <div className="config-field">
-                          <label>Account ID</label>
-                          <input type="text" value={config.cdn?.cloudflare?.accountId || ''} onChange={(e) => updateNestedConfig('cdn', 'cloudflare', 'accountId', e.target.value)} />
-                        </div>
-                        <div className="config-field">
-                          <label>Bucket</label>
-                          <input type="text" value={config.cdn?.cloudflare?.bucket || ''} onChange={(e) => updateNestedConfig('cdn', 'cloudflare', 'bucket', e.target.value)} />
-                        </div>
-                        <div className="config-field">
-                          <label>Access Key ID</label>
-                          <input type="text" value={config.cdn?.cloudflare?.accessKeyId || ''} onChange={(e) => updateNestedConfig('cdn', 'cloudflare', 'accessKeyId', e.target.value)} />
-                        </div>
-                        <div className="config-field">
-                          <label>Secret Access Key</label>
-                          <input type="password" value={config.cdn?.cloudflare?.secretAccessKey || ''} onChange={(e) => updateNestedConfig('cdn', 'cloudflare', 'secretAccessKey', e.target.value)} />
-                        </div>
-                        <div className="config-field">
-                          <label>Public URL <span className="label-optional">(custom domain)</span></label>
-                          <input type="text" value={config.cdn?.cloudflare?.publicUrl || ''} onChange={(e) => updateNestedConfig('cdn', 'cloudflare', 'publicUrl', e.target.value)} placeholder="https://media.yourdomain.com" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="config-group">
-                    <h3>Enable CDN</h3>
-                    <div className="config-field toggle-row">
-                      <div>
-                        <span className="toggle-label">Enable CDN Provider</span>
-                        <span className="toggle-hint">When disabled, all files are served locally regardless of provider setting.</span>
-                      </div>
-                      <label className="toggle">
-                        <input type="checkbox" checked={config.cdn?.enabled || false} onChange={(e) => updateConfig('cdn', 'enabled', e.target.checked)} />
-                        <span className="toggle-slider" />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'scaling' && (
-                <div className="config-section">
-                  <h2 className="config-section-title">Horizontal Scaling</h2>
-                  <p className="config-section-desc">
-                    Run the same Voltage instance across multiple VPS servers behind a load balancer. All nodes share the same database and config — <strong>this is not federation</strong>.
-                  </p>
-
-                  {/* Enable toggle */}
-                  <div className="config-group">
-                    <h3><Network size={16} /> Scaling Mode</h3>
-                    <div className="config-field toggle-row">
-                      <div>
-                        <span className="toggle-label">Enable Multi-Node Scaling</span>
-                        <span className="toggle-hint">Activates node registry, heartbeat, and cross-node file routing. Requires a shared database (not SQLite) and Redis.</span>
-                      </div>
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={config?.scaling?.enabled || false}
-                          onChange={(e) => updateConfig('scaling', 'enabled', e.target.checked)}
-                        />
-                        <span className="toggle-slider" />
-                      </label>
-                    </div>
-
-                    {config?.scaling?.enabled && (
-                      <div className="scaling-warning-banner">
-                        <ExclamationTriangleIcon size={16} />
-                        <span>SQLite does not support multi-node. Use MariaDB, MySQL, PostgreSQL, or CockroachDB in the Storage tab. Redis must also be configured.</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* This node identity */}
-                  <div className="config-group">
-                    <h3><Server size={16} /> This Node</h3>
-                    <p className="config-description">These two fields are the <em>only</em> values that differ between nodes. Every other config key should be identical across all your VPS servers.</p>
-                    <div className="config-fields-grid">
-                      <div className="config-field">
-                        <label>Node ID</label>
-                        <input
-                          type="text"
-                          value={config?.scaling?.nodeId || ''}
-                          onChange={(e) => updateConfig('scaling', 'nodeId', e.target.value)}
-                          placeholder="node-1"
-                        />
-                        <small>Short unique slug for this VPS. e.g. <code>node-1</code>, <code>vps-nyc</code>, <code>eu-west</code></small>
-                      </div>
-                      <div className="config-field">
-                        <label>Node URL</label>
-                        <input
-                          type="text"
-                          value={config?.scaling?.nodeUrl || ''}
-                          onChange={(e) => updateConfig('scaling', 'nodeUrl', e.target.value)}
-                          placeholder="http://10.0.0.1:5000"
-                        />
-                        <small>Internal URL other nodes use to reach this server. Use a private IP, not a public domain.</small>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Shared secret */}
-                  <div className="config-group">
-                    <h3><Key size={16} /> Node Secret</h3>
-                    <p className="config-description">All nodes must share the same secret. Node-to-node API calls are rejected without it. Generate with: <code>openssl rand -hex 32</code></p>
-                    <div className="config-field secret-field">
-                      <label>Node Secret</label>
-                      <div className="secret-input-wrap">
-                        <input
-                          type={showSecrets['nodeSecret'] ? 'text' : 'password'}
-                          value={config?.scaling?.nodeSecret || ''}
-                          onChange={(e) => updateConfig('scaling', 'nodeSecret', e.target.value)}
-                          placeholder="(same on all nodes)"
-                        />
-                        <button
-                          type="button"
-                          className="secret-toggle-btn"
-                          onClick={() => setShowSecrets(prev => ({ ...prev, nodeSecret: !prev.nodeSecret }))}
-                        >
-                          {showSecrets['nodeSecret'] ? 'Hide' : 'Show'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Heartbeat & file resolution */}
-                  <div className="config-group">
-                    <h3><RefreshCw size={16} /> Heartbeat & File Resolution</h3>
-                    <div className="config-fields-grid">
-                      <div className="config-field">
-                        <label>Heartbeat Interval (ms)</label>
-                        <input
-                          type="number"
-                          value={config?.scaling?.heartbeatInterval || 30000}
-                          onChange={(e) => updateConfig('scaling', 'heartbeatInterval', parseInt(e.target.value))}
-                          min={5000}
-                          step={1000}
-                        />
-                        <small>How often to ping peer nodes. Default: 30000 (30s)</small>
-                      </div>
-                      <div className="config-field">
-                        <label>Heartbeat Timeout (ms)</label>
-                        <input
-                          type="number"
-                          value={config?.scaling?.heartbeatTimeout || 90000}
-                          onChange={(e) => updateConfig('scaling', 'heartbeatTimeout', parseInt(e.target.value))}
-                          min={10000}
-                          step={1000}
-                        />
-                        <small>Silence before a node is marked offline. Default: 90000 (90s)</small>
-                      </div>
+                    <h3>{t('adminConfig.sections.cdn.cdnSettings', 'CDN Settings')}</h3>
+                    <div className="config-field checkbox">
+                      <label><input type="checkbox" checked={config.cdn?.enabled || false} onChange={(e) => updateConfig('cdn', 'enabled', e.target.checked)} /> {t('adminConfig.fields.enableCdn', 'Enable CDN')}</label>
                     </div>
                     <div className="config-field">
-                      <label>File Resolution Mode</label>
-                      <div className="resolution-mode-cards">
-                        {[
-                          { id: 'proxy',    label: 'Proxy',    desc: 'Stream the file through this node. Peer URLs stay private.' },
-                          { id: 'redirect', label: 'Redirect', desc: '302 redirect to the peer node. One fewer hop, but exposes peer URLs.' },
-                        ].map(m => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            className={`resolution-card ${(config?.scaling?.fileResolutionMode || 'proxy') === m.id ? 'selected' : ''}`}
-                            onClick={() => updateConfig('scaling', 'fileResolutionMode', m.id)}
-                          >
-                            <span className="resolution-card-name">{m.label}</span>
-                            <span className="resolution-card-desc">{m.desc}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <small>Only relevant when using Local storage. Ignored when NFS or a CDN is configured.</small>
-                    </div>
-                  </div>
-
-                  {/* Node list config */}
-                  <div className="config-group">
-                    <h3><Layers size={16} /> All Nodes</h3>
-                    <p className="config-description">List every node in the cluster, including this one. This same list goes on every server — only <code>nodeId</code> and <code>nodeUrl</code> at the top change per machine.</p>
-                    <div className="nodes-list">
-                      {(config?.scaling?.nodes || []).map((node, idx) => (
-                        <div key={idx} className="node-config-row">
-                          <div className="node-config-fields">
-                            <input
-                              type="text"
-                              value={node.id || ''}
-                              onChange={(e) => {
-                                const nodes = [...(config.scaling.nodes || [])]
-                                nodes[idx] = { ...nodes[idx], id: e.target.value }
-                                updateConfig('scaling', 'nodes', nodes)
-                              }}
-                              placeholder="node-id"
-                              className="node-id-input"
-                            />
-                            <input
-                              type="text"
-                              value={node.url || ''}
-                              onChange={(e) => {
-                                const nodes = [...(config.scaling.nodes || [])]
-                                nodes[idx] = { ...nodes[idx], url: e.target.value }
-                                updateConfig('scaling', 'nodes', nodes)
-                              }}
-                              placeholder="http://10.0.0.x:5000"
-                              className="node-url-input"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            className="node-remove-btn"
-                            onClick={() => {
-                              const nodes = (config.scaling.nodes || []).filter((_, i) => i !== idx)
-                              updateConfig('scaling', 'nodes', nodes)
-                            }}
-                            title="Remove node"
-                          >
-                            <XMarkIcon size={14} />
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        className="btn btn-secondary node-add-btn"
-                        onClick={() => {
-                          const nodes = [...(config?.scaling?.nodes || []), { id: '', url: '' }]
-                          updateConfig('scaling', 'nodes', nodes)
-                        }}
-                      >
-                        + Add Node
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Live cluster status */}
-                  <div className="config-group">
-                    <div className="cluster-status-header">
-                      <h3><SignalIcon size={16} /> Live Cluster Status</h3>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={handleRefreshNodes}
-                        disabled={scaleState.refreshing || scaleState.loading}
-                      >
-                        {scaleState.refreshing
-                          ? <><ArrowPathIcon size={14} className="spin" /> Refreshing…</>
-                          : <><ArrowPathIcon size={14} /> Refresh</>}
-                      </button>
-                    </div>
-
-                    {!config?.scaling?.enabled && (
-                      <div className="cluster-disabled-note">Scaling is disabled. Enable it above to activate the node registry.</div>
-                    )}
-
-                    {config?.scaling?.enabled && scaleState.loading && (
-                      <div className="cluster-loading"><ArrowPathIcon size={16} className="spin" /> Loading cluster status…</div>
-                    )}
-
-                    {config?.scaling?.enabled && scaleState.error && (
-                      <div className="cluster-error"><ExclamationTriangleIcon size={16} /> {scaleState.error}</div>
-                    )}
-
-                    {config?.scaling?.enabled && scaleState.status && (
-                      <>
-                        <div className="cluster-summary-row">
-                          <div className="cluster-stat">
-                            <span className="cluster-stat-value">{scaleState.status.summary?.total ?? '—'}</span>
-                            <span className="cluster-stat-label">Total</span>
-                          </div>
-                          <div className="cluster-stat online">
-                            <span className="cluster-stat-value">{scaleState.status.summary?.online ?? '—'}</span>
-                            <span className="cluster-stat-label">Online</span>
-                          </div>
-                          <div className="cluster-stat degraded">
-                            <span className="cluster-stat-value">{scaleState.status.summary?.degraded ?? '—'}</span>
-                            <span className="cluster-stat-label">Degraded</span>
-                          </div>
-                          <div className="cluster-stat offline">
-                            <span className="cluster-stat-value">{scaleState.status.summary?.offline ?? '—'}</span>
-                            <span className="cluster-stat-label">Offline</span>
-                          </div>
-                          <div className="cluster-stat">
-                            <span className="cluster-stat-value">{scaleState.status.fileResolutionMode ?? '—'}</span>
-                            <span className="cluster-stat-label">File Mode</span>
-                          </div>
-                        </div>
-
-                        <div className="node-status-list">
-                          {(scaleState.status.nodes || []).map(node => {
-                            const testResult = scaleState.testResults[node.id]
-                            return (
-                              <div key={node.id} className={`node-status-card status-${node.status}`}>
-                                <div className="node-status-top">
-                                  <div className="node-status-id">
-                                    <span className={`node-dot status-${node.status}`} />
-                                    <strong>{node.label || node.id}</strong>
-                                    {node.isSelf && <span className="node-self-badge">This node</span>}
-                                  </div>
-                                  <span className={`node-status-pill status-${node.status}`}>{node.status}</span>
-                                </div>
-                                <div className="node-status-url">{node.url}</div>
-                                {node.last_seen > 0 && (
-                                  <div className="node-status-seen">
-                                    Last seen: {new Date(node.last_seen).toLocaleTimeString()}
-                                  </div>
-                                )}
-                                {testResult && (
-                                  <div className={`node-test-result ${testResult.ok ? 'ok' : 'fail'}`}>
-                                    {testResult.ok
-                                      ? <><CheckIcon size={13} /> Reachable · {testResult.latency}ms</>
-                                      : <><ExclamationTriangleIcon size={13} /> {testResult.error}</>}
-                                  </div>
-                                )}
-                                {!node.isSelf && (
-                                  <button
-                                    type="button"
-                                    className="node-test-btn"
-                                    onClick={() => handleTestNode(node.id, node.url)}
-                                    disabled={scaleState.testingNode === node.id}
-                                  >
-                                    {scaleState.testingNode === node.id
-                                      ? <><ArrowPathIcon size={13} className="spin" /> Testing…</>
-                                      : 'Test connection'}
-                                  </button>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </>
-                    )}
-
-                    {config?.scaling?.enabled && !scaleState.status && !scaleState.loading && !scaleState.error && (
-                      <div className="cluster-load-prompt">
-                        <button type="button" className="btn btn-secondary" onClick={loadScaleStatus}>
-                          <SignalIcon size={14} /> Load Cluster Status
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* File storage recommendation */}
-                  <div className="config-group scaling-storage-tip">
-                    <h3><HardDrive size={16} /> File Storage for Scaling</h3>
-                    <div className="storage-method-cards">
-                      <div className={`storage-method-card ${config?.cdn?.provider === 'nfs' ? 'recommended' : ''}`}>
-                        <div className="smc-header">
-                          <span className="smc-name">NFS Shared Folder</span>
-                          <span className="smc-badge">Recommended</span>
-                        </div>
-                        <p>Mount a shared folder from your storage master. All nodes write to the same disk. No application changes needed.</p>
-                        <button type="button" className="smc-action" onClick={() => setActiveTab('cdn')}>Configure in CDN tab →</button>
-                      </div>
-                      <div className={`storage-method-card ${(config?.cdn?.provider === 's3' || config?.cdn?.provider === 'cloudflare') ? 'recommended' : ''}`}>
-                        <div className="smc-header">
-                          <span className="smc-name">Object Storage (S3 / R2)</span>
-                          <span className="smc-badge best">Best for large scale</span>
-                        </div>
-                        <p>Files stored in a bucket. Zero local disk usage. Works across any number of nodes and regions.</p>
-                        <button type="button" className="smc-action" onClick={() => setActiveTab('cdn')}>Configure in CDN tab →</button>
-                      </div>
-                      <div className={`storage-method-card ${config?.cdn?.provider === 'local' && config?.scaling?.enabled ? 'active' : ''}`}>
-                        <div className="smc-header">
-                          <span className="smc-name">Peer-Proxy (Built-in)</span>
-                        </div>
-                        <p>No extra infrastructure. When a file isn't on this node, Voltage asks peers and proxies the response. Auto-active when scaling is enabled.</p>
-                        <span className="smc-auto">Active automatically when scaling is enabled with local storage</span>
-                      </div>
+                      <label>{t('adminConfig.fields.cdnProvider', 'CDN Provider')}</label>
+                      <select value={config.cdn?.provider || 'local'} onChange={(e) => updateConfig('cdn', 'provider', e.target.value)}>
+                        <option value="local">{t('adminConfig.options.localStorage', 'Local Storage')}</option>
+                        <option value="s3">{t('adminConfig.options.amazonS3', 'Amazon S3')}</option>
+                        <option value="cloudflare">{t('adminConfig.options.cloudflareR2', 'Cloudflare R2')}</option>
+                      </select>
                     </div>
                   </div>
                 </div>

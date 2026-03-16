@@ -269,18 +269,7 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
                   <div className="discovery-card-icon">
                     <Avatar src={server.icon} fallback={server.name} size={48} />
                   </div>
-                  <div className="discovery-card-name-row">
-                    <h3 className="discovery-card-name">{server.name}</h3>
-                    {server.guildTag && !server.guildTagPrivate && (
-                      <button
-                        className="discovery-guild-tag"
-                        onClick={(e) => { e.stopPropagation(); handleOpenServerProfile(server) }}
-                        title={`[${server.guildTag}] — Click to view ${server.name}`}
-                      >
-                        [{server.guildTag}]
-                      </button>
-                    )}
-                  </div>
+                  <h3 className="discovery-card-name">{server.name}</h3>
                   {server.description && (
                     <p className="discovery-card-description">{server.description}</p>
                   )}
@@ -354,12 +343,7 @@ const Discovery = ({ onJoinServer, onSubmitServer }) => {
                     />
                   </div>
                   <div className="server-profile-title">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <h2>{selectedServerProfile.name}</h2>
-                      {selectedServerProfile.guildTag && (
-                        <span className="server-profile-guild-tag">[{selectedServerProfile.guildTag}]</span>
-                      )}
-                    </div>
+                    <h2>{selectedServerProfile.name}</h2>
                     {selectedServerProfile.category && (
                       <span className="server-profile-category">
                         {(() => {

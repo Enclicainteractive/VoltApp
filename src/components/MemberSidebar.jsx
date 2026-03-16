@@ -621,10 +621,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                     <div className="member-name" style={roleColor ? { color: roleColor } : {}}>
                       {member.id === server?.ownerId && <TrophyIcon size={12} className="role-dot" style={{ color: '#eab308' }} />}
                       {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
-                      <span>{member.nick || member.username}</span>
-                      {member.guildTag && (
-                        <span className="member-guild-tag">[{member.guildTag}]</span>
-                      )}
+                      <span>{member.username}</span>
                       {member.isBot && <span className="member-bot-badge">{t('member.bot')}</span>}
                     </div>
                     {memberRoles.length > 0 && (
@@ -703,10 +700,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                     <div className="member-name" style={roleColor ? { color: roleColor } : {}}>
                       {member.id === server?.ownerId && <TrophyIcon size={12} className="role-dot" style={{ color: '#eab308' }} />}
                       {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
-                      <span>{member.nick || member.username}</span>
-                      {member.guildTag && (
-                        <span className="member-guild-tag">[{member.guildTag}]</span>
-                      )}
+                      <span>{member.username}</span>
                       {member.isBot && <span className="member-bot-badge">{t('member.bot')}</span>}
                     </div>
                     {memberRoles.length > 0 && (

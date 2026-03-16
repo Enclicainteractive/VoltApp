@@ -119,12 +119,6 @@ function parseInline(text, key = 0, mentionProps = {}) {
     { re: /~~(.+?)~~/, type: 'strike' },
     // spoiler ||text||
     { re: /\|\|(.+?)\|\|/, type: 'spoiler' },
-    // highlight ==text== (extended syntax)
-    { re: /==(.+?)==/, type: 'highlight' },
-    // superscript X^text^ (extended syntax)
-    { re: /\^([^\^]+)\^/, type: 'superscript' },
-    // subscript H~text~ (extended syntax)
-    { re: /~([^~]+)~/, type: 'subscript' },
     // @mention — supports @username:host (federated) and @username (local/special)
     { re: /@(everyone|here|[a-zA-Z0-9_.:-]+)/, type: 'mention' },
     // URL
@@ -182,15 +176,6 @@ function parseInline(text, key = 0, mentionProps = {}) {
         break
       case 'spoiler':
         nodes.push(<Spoiler key={nodeKey}>{parseInline(content, nodeKey, mentionProps)}</Spoiler>)
-        break
-      case 'highlight':
-        nodes.push(<mark key={nodeKey} className="md-highlight">{parseInline(content, nodeKey, mentionProps)}</mark>)
-        break
-      case 'superscript':
-        nodes.push(<sup key={nodeKey} className="md-superscript">{parseInline(content, nodeKey, mentionProps)}</sup>)
-        break
-      case 'subscript':
-        nodes.push(<sub key={nodeKey} className="md-subscript">{parseInline(content, nodeKey, mentionProps)}</sub>)
         break
       case 'mention': {
         // content = match[1] which is the capture group WITHOUT the leading @
@@ -324,21 +309,13 @@ function parseBlocks(content, mentionProps = {}) {
       continue
     }
 
-    // ── Unordered list (- or * or +) with task list support
-    if (/^[ \t]*[-*+] /.test(line) || /^[ \t]*[-*+] \[[ xX]\]/.test(line)) {
+    // ── Unordered list (- or * or +)
+    if (/^[ \t]*[-*+] /.test(line)) {
       const listItems = []
-      const listType = 'ul'
-      while (i < lines.length && (/^[ \t]*[-*+] /.test(lines[i]) || /^[ \t]*[-*+] \[[ xX]\]/.test(lines[i]))) {
-        const isTask = /^[ \t]*[-*+] \[([ xX])\]/.test(lines[i])
-        const checked = isTask && lines[i].match(/^[ \t]*[-*+] \[([xX])\]/)
-        const itemText = lines[i].replace(/^[ \t]*[-*+] (\[[ xX]\] )?/, '')
+      while (i < lines.length && /^[ \t]*[-*+] /.test(lines[i])) {
+        const itemText = lines[i].replace(/^[ \t]*[-*+] /, '')
         listItems.push(
-          <li key={listItems.length} className={isTask ? 'task-list-item' : ''}>
-            {isTask && (
-              <input type="checkbox" checked={!!checked} readOnly className="task-checkbox" />
-            )}
-            <span>{parseInline(itemText, listItems.length, mentionProps)}</span>
-          </li>
+          <li key={listItems.length}>{parseInline(itemText, listItems.length, mentionProps)}</li>
         )
         i++
       }
@@ -346,58 +323,17 @@ function parseBlocks(content, mentionProps = {}) {
       continue
     }
 
-    // ── Ordered list 1. 2. with task list support
-    if (/^[ \t]*\d+\. /.test(line) || /^[ \t]*\d+\. \[[ xX]\]/.test(line)) {
+    // ── Ordered list 1. 2.
+    if (/^[ \t]*\d+\. /.test(line)) {
       const listItems = []
-      while (i < lines.length && (/^[ \t]*\d+\. /.test(lines[i]) || /^[ \t]*\d+\. \[[ xX]\]/.test(lines[i]))) {
-        const isTask = /^[ \t]*\d+\. \[([ xX])\]/.test(lines[i])
-        const checked = isTask && lines[i].match(/^[ \t]*\d+\. \[([xX])\]/)
-        const itemText = lines[i].replace(/^[ \t]*\d+\. (\[[ xX]\] )?/, '')
+      while (i < lines.length && /^[ \t]*\d+\. /.test(lines[i])) {
+        const itemText = lines[i].replace(/^[ \t]*\d+\. /, '')
         listItems.push(
-          <li key={listItems.length} className={isTask ? 'task-list-item' : ''}>
-            {isTask && (
-              <input type="checkbox" checked={!!checked} readOnly className="task-checkbox" />
-            )}
-            <span>{parseInline(itemText, listItems.length, mentionProps)}</span>
-          </li>
+          <li key={listItems.length}>{parseInline(itemText, listItems.length, mentionProps)}</li>
         )
         i++
       }
       nodes.push(<ol key={nextKey()} className="md-list">{listItems}</ol>)
-      continue
-    }
-
-    // ── Table parsing
-    if (/^\|.+\|$/.test(line) && i + 1 < lines.length && /^\|?[-:]+[-:|]*$/.test(lines[i + 1])) {
-      const tableRows = []
-      const headerRow = line.split('|').filter(cell => cell.trim() !== '')
-      i++
-      i++
-      while (i < lines.length && /^\|/.test(lines[i])) {
-        const rowCells = lines[i].split('|').filter(cell => cell.trim() !== '')
-        tableRows.push(rowCells)
-        i++
-      }
-      nodes.push(
-        <table key={nextKey()} className="md-table">
-          <thead>
-            <tr>
-              {headerRow.map((cell, idx) => (
-                <th key={idx}>{parseInline(cell.trim(), idx, mentionProps)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {tableRows.map((row, rowIdx) => (
-              <tr key={rowIdx}>
-                {row.map((cell, cellIdx) => (
-                  <td key={cellIdx}>{parseInline(cell.trim(), cellIdx, mentionProps)}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )
       continue
     }
 
@@ -452,112 +388,43 @@ function extractInvites(content) {
 
 // ─── GIF embed extractor ───────────────────────────────────────────────────
 // Matches [GIF: https://...] anywhere in the message content
-const GIF_TAG_RE = /\[GIF:\s*(https?:\/\/[^\]]+)\s*\]/i
+const GIF_TAG_RE = /\[GIF:\s*(https?:\/\/[^\]\s]+)\]/g
 
-const STICKER_TAG_RE = /\[STICKER:\s*(https?:\/\/[^\]]+)\s*\]/i
-
-const CLIP_TAG_RE = /\[CLIP:\s*(https?:\/\/[^\]]+)\s*\]/i
-
-const MEME_TAG_RE = /\[MEME[S]?:\s*(https?:\/\/[^\]]+)\s*\]/i
-
-const MediaEmbed = ({ url, type }) => {
+const GifEmbed = ({ url }) => {
   const [errored, setErrored] = useState(false)
-  
-  const isVideo = type === 'clip' || url.match(/\.(mp4|webm|mov)$/i)
-  const isGif = type === 'gif' || (url.match(/\.(gif|webp)$/i) && !url.match(/\.mp4|\.webm|\.mov/i))
-  
   if (errored) {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="markdown-link media-fallback-link">
-        {type === 'clip' ? '🎬 Video' : type === 'sticker' ? '🏷️ Sticker' : type === 'meme' ? '😂 Meme' : '🖼️ Image'}: {url}
+      <a href={url} target="_blank" rel="noopener noreferrer" className="markdown-link gif-fallback-link">
+        {url}
       </a>
     )
   }
-  
-  const typeLabels = {
-    gif: 'GIF',
-    sticker: 'Sticker',
-    clip: 'Video',
-    meme: 'Meme'
-  }
-  
   return (
-    <div className={`media-embed media-embed-${type}`}>
-      {isVideo ? (
-        <video
-          src={url}
-          className="media-embed-video"
-          controls
-          controlsList="nodownload"
-          onError={() => setErrored(true)}
-          loading="lazy"
-          loop={isGif}
-          muted={isGif}
-          playsInline
-        />
-      ) : (
-        <img
-          src={url}
-          alt={typeLabels[type] || 'Media'}
-          className="media-embed-img"
-          onError={() => setErrored(true)}
-          loading="lazy"
-        />
-      )}
+    <div className="gif-embed">
+      <img
+        src={url}
+        alt="GIF"
+        className="gif-embed-img"
+        onError={() => setErrored(true)}
+        loading="lazy"
+      />
     </div>
   )
 }
 
-const GifEmbed = ({ url }) => <MediaEmbed url={url} type="gif" />
-const StickerEmbed = ({ url }) => <MediaEmbed url={url} type="sticker" />
-const ClipEmbed = ({ url }) => <MediaEmbed url={url} type="clip" />
-const MemeEmbed = ({ url }) => <MediaEmbed url={url} type="meme" />
-
-function splitMedia(content) {
+function splitGifs(content) {
+  // Returns alternating text and gif-url segments
   const parts = []
   let last = 0
-  
-  const patterns = [
-    { re: /\[GIF:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'gif' },
-    { re: /\[STICKER:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'sticker' },
-    { re: /\[CLIP:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'clip' },
-    { re: /\[MEME[S]?:\s*(https?:\/\/[^\]]+)\s*\]/gi, type: 'meme' }
-  ]
-  
-  while (true) {
-    let earliest = null
-    let earliestIndex = Infinity
-    let earliestType = null
-    
-    for (const { re, type } of patterns) {
-      re.lastIndex = last
-      const m = re.exec(content)
-      if (m && m.index < earliestIndex) {
-        earliest = m
-        earliestIndex = m.index
-        earliestType = type
-      }
-    }
-    
-    if (!earliest) break
-    
-    if (earliestIndex > last) {
-      parts.push({ type: 'text', value: content.slice(last, earliestIndex) })
-    }
-    parts.push({ type: earliestType, url: earliest[1].trim() })
-    last = earliestIndex + earliest[0].length
+  let m
+  const re = new RegExp(GIF_TAG_RE.source, 'g')
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > last) parts.push({ type: 'text', value: content.slice(last, m.index) })
+    parts.push({ type: 'gif', url: m[1] })
+    last = m.index + m[0].length
   }
-  
-  if (last < content.length) {
-    parts.push({ type: 'text', value: content.slice(last) })
-  }
-  
+  if (last < content.length) parts.push({ type: 'text', value: content.slice(last) })
   return parts
-}
-
-function stripMediaTags(content) {
-  return content
-    .replace(/\[[^\]]*https?:\/\/[^\]]+\]/gi, '')
 }
 
 // ─── Main component ────────────────────────────────────────────────────────
@@ -628,11 +495,10 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
 
   const mentionProps = { currentUserId, mentions, members, onMentionClick }
   const invites = extractInvites(content)
-  const contentWithoutMedia = stripMediaTags(content)
 
-  // Split content on media tags so we render text + embeds in order
-  const mediaParts = splitMedia(content)
-  const hasMedia = mediaParts.some(p => p.type !== 'text')
+  // Split content on [GIF: url] tags so we render text + gif embeds in order
+  const gifParts = splitGifs(content)
+  const hasGifs = gifParts.some(p => p.type === 'gif')
 
   // Helper to render a text segment with custom emojis
   const renderTextSegment = (text, key) => {
@@ -648,15 +514,15 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
 
   return (
     <span className="markdown-message">
-      {hasMedia ? (
+      {hasGifs ? (
         <>
-          {mediaParts.map((part, i) => {
-            if (part.type === 'gif') return <GifEmbed key={i} url={part.url} />
-            if (part.type === 'sticker') return <StickerEmbed key={i} url={part.url} />
-            if (part.type === 'clip') return <ClipEmbed key={i} url={part.url} />
-            if (part.type === 'meme') return <MemeEmbed key={i} url={part.url} />
-            return part.value ? renderTextSegment(part.value, i) : null
-          })}
+          {gifParts.map((part, i) =>
+            part.type === 'gif'
+              ? <GifEmbed key={i} url={part.url} />
+              : part.value
+                ? renderTextSegment(part.value, i)
+                : null
+          )}
         </>
       ) : (
         allEmojis && allEmojis.length > 0
@@ -666,7 +532,7 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
       {invites.map(({ code, url }) => (
         <InviteEmbed key={code} inviteCode={code} inviteUrl={url} />
       ))}
-      {extractEmbedUrls(contentWithoutMedia).map((embed, i) => (
+      {extractEmbedUrls(content).map((embed, i) => (
         <LinkEmbed key={`link-embed-${i}-${embed.url}`} url={embed.url} type={embed.type} match={embed.match} isAgeVerified={isAgeVerified} />
       ))}
     </span>

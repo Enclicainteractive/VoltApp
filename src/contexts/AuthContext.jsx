@@ -3,7 +3,6 @@ import { authService } from '../services/authService'
 import { apiService } from '../services/apiService'
 import { useAppStore } from '../store/useAppStore'
 import { clearAuthTokenState } from '../services/authToken'
-import { customCSSService } from '../services/customCSSService'
 import {
   clearSessionStorage,
   getStoredAccessToken,
@@ -131,10 +130,6 @@ export const AuthProvider = ({ children }) => {
       status: user?.status || 'online',
       customStatus: user?.customStatus || ''
     })
-    // Sync client CSS from profile when user data loads
-    if (user?.clientCSS !== undefined || user?.clientCSSEnabled !== undefined) {
-      customCSSService.loadFromProfile(user.clientCSS, user.clientCSSEnabled)
-    }
   }, [user, setSelfPresence, setUserInStore])
 
   useEffect(() => {

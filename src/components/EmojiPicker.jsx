@@ -3,7 +3,6 @@ import { MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, HeartIcon, ArrowsPointin
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from '../hooks/useTranslation'
 import emojiNameMap from 'emoji-name-map'
-import { searchGifs, getTrendingGifs, isTrackingEnabled, isAdsEnabled } from '../services/klipyService'
 import '../assets/styles/EmojiPicker.css'
 
 const PAGE_SIZE = 24
@@ -111,8 +110,13 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true, in
     if (!query.trim()) { setGifs([]); setGifNext(null); return }
     append ? setLoadingMore(true) : setLoadingGifs(true)
     try {
-      const page = pos ? parseInt(pos, 10) : 1
-      const data = await searchGifs(query, page, PAGE_SIZE)
+      // Use backend proxy to avoid CORS issues
+      const apiUrl = new URL('/api/gif/search', window.location.origin)
+      apiUrl.searchParams.set('q', query)
+      apiUrl.searchParams.set('limit', String(PAGE_SIZE))
+      if (pos) apiUrl.searchParams.set('pos', pos)
+      const res = await fetch(apiUrl.toString())
+      const data = await res.json()
       setGifs(prev => append ? [...prev, ...(data.results || [])] : (data.results || []))
       setGifNext(data.next || null)
     } catch (err) {
@@ -122,21 +126,6 @@ const EmojiPicker = ({ onSelect, onClose, serverEmojis = [], showGifs = true, in
   }, [])
 
   // Debounced search
-  // Initial load for trending GIFs
-  useEffect(() => {
-    if (activeTab !== 'gif' || gifs.length > 0) return
-    const loadTrending = async () => {
-      try {
-        const data = await getTrendingGifs(1, PAGE_SIZE)
-        setGifs(data.results || [])
-        setGifNext(data.next || null)
-      } catch (err) {
-        console.error('GIF trending error:', err)
-      }
-    }
-    loadTrending()
-  }, [activeTab])
-
   useEffect(() => {
     if (activeTab !== 'gif') return
     const t = setTimeout(() => { if (searchRef.current) fetchGifs(searchRef.current) }, 300)

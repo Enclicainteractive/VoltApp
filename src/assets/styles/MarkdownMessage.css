@@ -21,73 +21,9 @@
 /* Make embeds block-level to prevent inline flow issues */
 .markdown-message .link-embed,
 .markdown-message .invite-embed,
-.markdown-message .gif-embed,
-.markdown-message .media-embed {
+.markdown-message .gif-embed {
   display: block;
   clear: both;
-}
-
-/* ── Media embed (GIF, Sticker, Clip, Meme) ───────────────────────────────── */
-
-.media-embed {
-  display: block;
-  max-width: 400px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--volt-bg-tertiary);
-  line-height: 0;
-}
-
-.media-embed-img {
-  display: block;
-  max-width: 100%;
-  max-height: 300px;
-  width: auto;
-  height: auto;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.media-embed-img:hover {
-  opacity: 0.9;
-}
-
-.media-embed-video {
-  display: block;
-  max-width: 100%;
-  max-height: 300px;
-  width: auto;
-  height: auto;
-  border-radius: 8px;
-  background: #000;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.media-embed-video:hover {
-  opacity: 0.9;
-}
-
-.media-fallback-link {
-  font-size: 13px;
-  color: var(--volt-primary);
-}
-
-/* Sticker specific - smaller, centered */
-.media-embed-sticker {
-  max-width: 200px;
-  margin: 6px auto;
-}
-
-/* Clip specific - wider */
-.media-embed-clip {
-  max-width: 100%;
-}
-
-/* Meme specific */
-.media-embed-meme {
-  max-width: 350px;
 }
 
 /* ── GIF embed ─────────────────────────────────────────────────────────────── */
@@ -141,30 +77,6 @@
 
 .markdown-message .md-underline {
   text-decoration: underline;
-}
-
-/* ── Highlight (==text==) ────────────────────────────────────────────────── */
-.markdown-message .md-highlight {
-  background: rgba(255, 235, 59, 0.4);
-  color: var(--volt-text-primary);
-  padding: 0 2px;
-  border-radius: 2px;
-}
-
-/* ── Superscript (X^2^) ─────────────────────────────────────────────────── */
-.markdown-message .md-superscript {
-  font-size: 0.75em;
-  vertical-align: super;
-  line-height: 1;
-  color: var(--volt-text-secondary);
-}
-
-/* ── Subscript (H~2~O) ────────────────────────────────────────────────── */
-.markdown-message .md-subscript {
-  font-size: 0.75em;
-  vertical-align: sub;
-  line-height: 1;
-  color: var(--volt-text-secondary);
 }
 
 /* ── Spoiler ───────────────────────────────────────────────────────────────── */
@@ -380,45 +292,6 @@
   margin: 2px 0;
   line-height: 1.4;
   display: list-item;
-}
-
-.markdown-message .md-list li.task-list-item {
-  list-style: none;
-  margin-left: -18px;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.markdown-message .task-checkbox {
-  margin-top: 4px;
-  cursor: default;
-}
-
-/* ── Tables ───────────────────────────────────────────────────────────────── */
-
-.markdown-message .md-table {
-  border-collapse: collapse;
-  margin: 8px 0;
-  width: 100%;
-  max-width: 100%;
-  font-size: 13px;
-}
-
-.markdown-message .md-table th,
-.markdown-message .md-table td {
-  border: 1px solid var(--volt-border);
-  padding: 6px 10px;
-  text-align: left;
-}
-
-.markdown-message .md-table th {
-  background: var(--volt-bg-tertiary);
-  font-weight: 600;
-}
-
-.markdown-message .md-table tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02);
 }
 
 /* ── Horizontal rule ───────────────────────────────────────────────────────── */

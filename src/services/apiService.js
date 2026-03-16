@@ -241,20 +241,7 @@ export const apiService = {
   // Profile Customization & Theme
   getProfileTheme: () => api.get('/user/profile/theme'),
   updateProfileTheme: (data) => api.put('/user/profile/theme', data),
-
-  // Guild Tags (user)
-  getUserGuildTag: () => api.get('/user/guild-tag'),
-  setUserGuildTag: (serverId) => api.put('/user/guild-tag', { serverId }),
-  clearUserGuildTag: () => api.put('/user/guild-tag', { serverId: null }),
-
-  // Server Nick
-  getServerNick: (serverId) => api.get(`/user/server-nick/${serverId}`),
-  setServerNick: (serverId, nick) => api.put(`/user/server-nick/${serverId}`, { nick }),
-
-  // Server Guild Tag settings
-  getServerGuildTag: (serverId) => api.get(`/servers/${serverId}/guild-tag`),
-  setServerGuildTag: (serverId, guildTag, guildTagPrivate) => api.put(`/servers/${serverId}/guild-tag`, { guildTag, guildTagPrivate }),
-
+  
   // Friends
   getFriends: () => api.get('/user/friends'),
   removeFriend: (friendId) => api.delete(`/user/friends/${friendId}`),
@@ -400,12 +387,6 @@ export const apiService = {
   getAdminConfigLogs: (lines = 200, maxFiles = 6) => api.get('/admin/config/logs', { params: { lines, maxFiles } }),
   installAdminConfigDriver: (storageType, packageName) => api.post('/admin/config/install-driver', { storageType, packageName }),
   restartVoltageServer: () => api.post('/admin/config/restart'),
-
-  // Scaling / Multi-Node Cluster
-  getScaleStatus: () => api.get('/scale/admin/status'),
-  getScaleNodes: () => api.get('/scale/admin/nodes'),
-  refreshScaleNodes: () => api.post('/scale/admin/refresh'),
-  pingScaleNode: (nodeUrl) => api.get('/scale/ping', { params: { target: nodeUrl } }),
 
   // Migration
   getStorageInfo: () => api.get('/migration/storage-info'),

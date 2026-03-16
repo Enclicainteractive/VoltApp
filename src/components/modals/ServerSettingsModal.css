@@ -1882,11 +1882,3 @@
   margin-bottom: 16px;
   font-size: 14px;
 }
-
-/* Guild Tag Settings */
-.settings-divider {
-  height: 1px;
-  background: var(--volt-border);
-  margin: 24px 0;
-  width: 100%;
-}

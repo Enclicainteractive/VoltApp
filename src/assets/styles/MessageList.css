@@ -296,23 +296,6 @@
   letter-spacing: 0.3px;
 }
 
-.message-guild-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 5px;
-  height: 16px;
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 3px;
-  background: rgba(250, 168, 26, 0.15);
-  color: #faa81a;
-  border: 1px solid rgba(250, 168, 26, 0.3);
-  margin-left: 4px;
-  line-height: 16px;
-  vertical-align: middle;
-  letter-spacing: 0.5px;
-}
-
 .encrypted-badge {
   display: inline-flex;
   align-items: center;

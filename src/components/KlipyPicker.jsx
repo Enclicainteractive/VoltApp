@@ -1,24 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  searchGifs, getTrendingGifs, getGifCategories,
-  searchStickers, getTrendingStickers, getStickerCategories,
-  searchClips, getTrendingClips, getClipCategories,
-  searchMemes, getTrendingMemes, getMemeCategories,
-  isTrackingEnabled, setTrackingEnabled,
-  isAdsEnabled, setAdsEnabled,
-  isAnonymousTracking, setAnonymousTracking
+  searchGifs,
+  getTrendingGifs,
+  getGifCategories,
+  isTrackingEnabled,
+  setTrackingEnabled
 } from '../services/klipyService'
 import '../assets/styles/KlipyPicker.css'
 
-const CONTENT_TABS = [
-  { id: 'gifs', label: 'GIFs', icon: '🎞️', search: searchGifs, trending: getTrendingGifs, categories: getGifCategories },
-  { id: 'stickers', label: 'Stickers', icon: '🏷️', search: searchStickers, trending: getTrendingStickers, categories: getStickerCategories },
-  { id: 'clips', label: 'Clips', icon: '🎬', search: searchClips, trending: getTrendingClips, categories: getClipCategories },
-  { id: 'memes', label: 'Memes', icon: '😂', search: searchMemes, trending: getTrendingMemes, categories: getMemeCategories }
-]
-
-const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
-  const [activeTab, setActiveTab] = useState(initialTab)
+const KlipyPicker = ({ onSelect, onClose }) => {
   const [query, setQuery] = useState('')
   const [items, setItems] = useState([])
   const [categories, setCategories] = useState([])
@@ -28,20 +18,14 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
   const [hasMore, setHasMore] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [trackingEnabled, setTrackingState] = useState(false)
-  const [adsEnabled, setAdsState] = useState(true)
-  const [anonymousTracking, setAnonymousTrackingState] = useState(true)
   const [showPrivacySettings, setShowPrivacySettings] = useState(false)
   const searchInputRef = useRef(null)
   const scrollContainerRef = useRef(null)
   const scrollTimeoutRef = useRef(null)
   const isLoadingRef = useRef(false)
 
-  const currentTab = CONTENT_TABS.find(t => t.id === activeTab) || CONTENT_TABS[0]
-
   useEffect(() => {
     setTrackingState(isTrackingEnabled())
-    setAdsState(isAdsEnabled())
-    setAnonymousTrackingState(isAnonymousTracking())
   }, [])
 
   const loadTrending = useCallback(async (pageNum = 1, append = false) => {
@@ -52,7 +36,7 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
     else setLoadingMore(true)
     
     try {
-      const data = await currentTab.trending(pageNum, 24)
+      const data = await getTrendingGifs(pageNum, 24)
       if (pageNum === 1) {
         setItems(data.results || [])
       } else {
@@ -60,13 +44,13 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
       }
       setHasMore(!!data.next)
     } catch (error) {
-      console.error(`Error loading ${activeTab} trending:`, error)
+      console.error('Error loading trending:', error)
     } finally {
       setLoading(false)
       setLoadingMore(false)
       isLoadingRef.current = false
     }
-  }, [activeTab, currentTab])
+  }, [])
 
   const loadSearch = useCallback(async (searchQuery, pageNum = 1, append = false) => {
     if (isLoadingRef.current) return
@@ -76,7 +60,7 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
     else setLoadingMore(true)
     
     try {
-      const data = await currentTab.search(searchQuery, pageNum, 24)
+      const data = await searchGifs(searchQuery, pageNum, 24)
       if (pageNum === 1) {
         setItems(data.results || [])
       } else {
@@ -84,23 +68,23 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
       }
       setHasMore(!!data.next)
     } catch (error) {
-      console.error(`Error searching ${activeTab}:`, error)
+      console.error('Error searching:', error)
     } finally {
       setLoading(false)
       setLoadingMore(false)
       isLoadingRef.current = false
     }
-  }, [activeTab, currentTab])
+  }, [])
 
   const loadCategories = useCallback(async () => {
     try {
-      const data = await currentTab.categories()
+      const data = await getGifCategories()
       setCategories(data.results || [])
     } catch (error) {
-      console.error(`Error loading ${activeTab} categories:`, error)
+      console.error('Error loading categories:', error)
       setCategories([])
     }
-  }, [activeTab, currentTab])
+  }, [])
 
   useEffect(() => {
     setPage(1)
@@ -110,7 +94,7 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
     setHasMore(true)
     loadCategories()
     loadTrending(1, false)
-  }, [activeTab, loadTrending, loadCategories])
+  }, [loadTrending, loadCategories])
 
   useEffect(() => {
     if (searchInputRef.current) {
@@ -137,23 +121,16 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
   }
 
   const handleItemClick = async (item) => {
-    if (item.type === 'ad') {
-      return
-    }
-    
     let url = item.url || item.preview
-    let itemType = item.type || activeTab.slice(0, -1)
+    let itemType = item.type || 'gif'
     if (itemType === 'gifs') itemType = 'gif'
     if (itemType === 'static-memes') itemType = 'meme'
-    if (itemType === 'stickers') itemType = 'sticker'
-    if (itemType === 'clips') itemType = 'clip'
     
     onSelect({
       type: itemType,
       url,
       slug: item.slug,
-      title: item.title,
-      mediaFormats: item.media_formats
+      title: item.title
     })
   }
 
@@ -161,18 +138,6 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
     const newValue = !trackingEnabled
     setTrackingEnabled(newValue)
     setTrackingState(newValue)
-  }
-
-  const toggleAds = () => {
-    const newValue = !adsEnabled
-    setAdsEnabled(newValue)
-    setAdsState(newValue)
-  }
-
-  const toggleAnonymousTracking = () => {
-    const newValue = !anonymousTracking
-    setAnonymousTracking(newValue)
-    setAnonymousTrackingState(newValue)
   }
 
   const loadMore = useCallback(() => {
@@ -211,20 +176,6 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
   }, [])
 
   const renderItem = (item) => {
-    if (item.type === 'ad') {
-      return (
-        <div 
-          key={item.id || item._adIndex || 'ad'} 
-          className="klipy-ad"
-        >
-          <div 
-            className="klipy-ad-content"
-            dangerouslySetInnerHTML={{ __html: item.content }}
-          />
-        </div>
-      )
-    }
-    
     const url = item.url || item.preview
     if (!url) return null
 
@@ -247,7 +198,7 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content klipy-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>KLIPY</h2>
+          <h2>KLIPY GIFs</h2>
           <button className="modal-close" onClick={onClose}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
@@ -255,25 +206,11 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
           </button>
         </div>
 
-        <div className="klipy-tabs">
-          {CONTENT_TABS.map(tab => (
-            <button
-              key={tab.id}
-              className={`klipy-tab ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-              title={tab.label}
-            >
-              <span className="klipy-tab-icon">{tab.icon}</span>
-              <span className="klipy-tab-label">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-
         <form className="klipy-search" onSubmit={handleSearch}>
           <input
             ref={searchInputRef}
             type="text"
-            placeholder={`Search ${currentTab.label}...`}
+            placeholder="Search GIFs..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -312,7 +249,7 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
             </div>
           ) : items.length === 0 ? (
             <div className="klipy-empty">
-              No {currentTab.label} found
+              No GIFs found
             </div>
           ) : (
             <div className="klipy-grid">
@@ -334,61 +271,20 @@ const KlipyPicker = ({ onSelect, onClose, initialTab = 'gifs' }) => {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             </svg>
-            Settings
+            {trackingEnabled ? 'Tracking Enabled' : 'Tracking Disabled'}
           </button>
           
           {showPrivacySettings && (
             <div className="klipy-privacy-panel">
-              <div className="klipy-privacy-option">
-                <div className="klipy-privacy-info">
-                  <span className="klipy-privacy-label">Show Ads</span>
-                  <span className="klipy-privacy-desc">Support KLIPY content creators</span>
-                </div>
-                <label className="klipy-toggle">
-                  <input 
-                    type="checkbox" 
-                    checked={adsEnabled}
-                    onChange={toggleAds}
-                  />
-                  <span className="klipy-toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div className="klipy-privacy-option">
-                <div className="klipy-privacy-info">
-                  <span className="klipy-privacy-label">Enable Tracking</span>
-                  <span className="klipy-privacy-desc">Personalize content recommendations</span>
-                </div>
-                <label className="klipy-toggle">
-                  <input 
-                    type="checkbox" 
-                    checked={trackingEnabled}
-                    onChange={toggleTracking}
-                  />
-                  <span className="klipy-toggle-slider"></span>
-                </label>
-              </div>
-              
-              {trackingEnabled && (
-                <div className="klipy-privacy-option">
-                  <div className="klipy-privacy-info">
-                    <span className="klipy-privacy-label">Anonymous Tracking</span>
-                    <span className="klipy-privacy-desc">Keep your identity private</span>
-                  </div>
-                  <label className="klipy-toggle">
-                    <input 
-                      type="checkbox" 
-                      checked={anonymousTracking}
-                      onChange={toggleAnonymousTracking}
-                    />
-                    <span className="klipy-toggle-slider"></span>
-                  </label>
-                </div>
-              )}
-              
-              <p className="klipy-privacy-footer">
-                Ads help support Voltage and keep content free. Your privacy is important - tracking can be disabled anytime and by default it is.
-              </p>
+              <p>When enabled, KLIPY can track your usage to personalize content. This is off by default for privacy.</p>
+              <label className="klipy-toggle">
+                <input 
+                  type="checkbox" 
+                  checked={trackingEnabled}
+                  onChange={toggleTracking}
+                />
+                <span className="klipy-toggle-slider"></span>
+              </label>
             </div>
           )}
         </div>

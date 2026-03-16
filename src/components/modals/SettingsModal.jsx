@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { XMarkIcon, UserIcon, BellIcon, ShieldCheckIcon, MicrophoneIcon, VideoCameraIcon, VideoCameraSlashIcon, ComputerDesktopIcon, EyeIcon, PencilIcon, ServerIcon, SparklesIcon, PlayIcon, PauseIcon, SpeakerWaveIcon, Cog6ToothIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, KeyIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
-import { Camera, ImagePlus, Trash2, X, User, Bell, Volume2, ShieldCheck, Palette, Info, Mic, Video, Monitor, VideoOff, Eye, Pencil, Globe, Server, Settings, Sparkles, Play, Pause, Languages, Download, Upload, Key, Wand2, Type, Sliders, Tag, Code, Layout, Package, FileCode, RotateCcw } from 'lucide-react'
+import { Camera, ImagePlus, Trash2, X, User, Bell, Volume2, ShieldCheck, Palette, Info, Mic, Video, Monitor, VideoOff, Eye, Pencil, Globe, Server, Settings, Sparkles, Play, Pause, Languages, Download, Upload, Key, Wand2, Type, Sliders } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useI18n } from '../../contexts/I18nContext'
@@ -8,11 +8,6 @@ import { useE2e } from '../../contexts/E2eContext'
 import { useBanner } from '../../hooks/useAvatar'
 import { useUserPreferences } from '../../hooks/useUserPreferences'
 import { settingsService } from '../../services/settingsService'
-import { 
-  isAdsEnabled, setAdsEnabled,
-  isTrackingEnabled, setTrackingEnabled,
-  isAnonymousTracking, setAnonymousTracking
-} from '../../services/klipyService'
 import { createVTPPackage, downloadVTPPackage, importVTPPackage, validateThemePackage, exportCurrentTheme } from '../../utils/themePackage'
 import { soundService } from '../../services/soundService'
 import { pushService } from '../../services/pushService'
@@ -27,16 +22,12 @@ import ThemeCustomizer from './ThemeCustomizer'
 import FontSelector from './FontSelector'
 import AnimationSettings from './AnimationSettings'
 import ColorCustomizer from './ColorCustomizer'
-import CustomCSSEditor from './CustomCSSEditor'
-import ProfileCustomizer from './ProfileCustomizer'
 import SelfVoltPanel from '../SelfVoltPanel'
 import FederationPanel from '../FederationPanel'
 import BotPanel from '../BotPanel'
 import ActivityAppsPanel from '../ActivityAppsPanel'
 import './Modal.css'
 import './SettingsModal.css'
-import './CustomCSSEditor.css'
-import './ProfileCustomizer.css'
 import '../../assets/styles/RichTextEditor.css'
 
 const SettingsModal = ({ onClose, initialTab = 'account' }) => {
@@ -44,7 +35,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const [isMobile, setIsMobile] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
   const { user, logout, refreshUser } = useAuth()
-  const { theme, setTheme, allThemes, customThemes, addCustomTheme, removeCustomTheme, saveActiveThemeConfig, exportThemeState, resetThemeSystem } = useTheme()
+  const { theme, setTheme, allThemes, customThemes, addCustomTheme, removeCustomTheme, saveActiveThemeConfig } = useTheme()
   const { t, language, setLanguage, availableLanguages } = useI18n()
   const { exportAllKeysForBackup, importAllKeysFromBackup, userKeys } = useE2e()
   const server = getStoredServer()
@@ -118,14 +109,6 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const soundPreviewTimeoutRef = useRef(null)
 
   const [isAdminUser, setIsAdminUser] = useState(false)
-  const [guildTagServers, setGuildTagServers] = useState([])
-  const [guildTagSaving, setGuildTagSaving] = useState(false)
-  const [guildTagError, setGuildTagError] = useState('')
-  const [accentColorValue, setAccentColorValue] = useState('')
-  const [showCustomCSS, setShowCustomCSS] = useState(false)
-  const [showProfileCustomizer, setShowProfileCustomizer] = useState(false)
-  const [vtpStatus, setVtpStatus] = useState('')
-  const vtpImportRef = useRef(null)
   const isDesktopApp = typeof window !== 'undefined' && window.__IS_DESKTOP_APP__ && typeof window.electron?.setDiscordPresence === 'function'
   const soundpackOptions = [
     { value: 'default', label: t('notifications.defaultSoundpack', 'Default (Generated)') },
@@ -203,14 +186,6 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
       }
     }
   }, [previewingSound])
-
-  // Load guild tag servers and accent color on mount
-  useEffect(() => {
-    apiService.getServers().then(r => {
-      setGuildTagServers((r.data || []).filter(s => s.guildTag))
-    }).catch(() => {})
-    if (user?.accentColor) setAccentColorValue(user.accentColor)
-  }, [user?.id])
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -1226,94 +1201,13 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         maxLength={500}
                       />
                     )}
-                     <span className="char-count">{(bioValue || user?.bio || '').length}/500</span>
-                   </div>
-                 </div>
+                    <span className="char-count">{(bioValue || user?.bio || '').length}/500</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
-                 {/* Guild Tag Selection */}
-                 <div className="form-group">
-                   <label><Tag size={14} style={{ display: 'inline', marginRight: 4 }} /> Guild Tag</label>
-                   <p style={{ fontSize: 13, color: 'var(--volt-text-secondary)', marginBottom: 8 }}>
-                     Display a server's tag next to your name everywhere on the platform. Only servers with a tag set will appear.
-                   </p>
-                   {user?.guildTag && (
-                     <div style={{ marginBottom: 8 }}>
-                       Current tag: <span className="guild-tag-badge">[{user.guildTag}]</span>
-                     </div>
-                   )}
-                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                     <select
-                       className="input"
-                       value={user?.guildTagServerId || ''}
-                       onChange={async (e) => {
-                         setGuildTagSaving(true)
-                         setGuildTagError('')
-                         try {
-                           const val = e.target.value
-                           if (!val) {
-                             await apiService.clearUserGuildTag()
-                           } else {
-                             await apiService.setUserGuildTag(val)
-                           }
-                           await refreshUser?.()
-                         } catch (err) {
-                           setGuildTagError(err.response?.data?.error || 'Failed to update guild tag')
-                         } finally {
-                           setGuildTagSaving(false)
-                         }
-                       }}
-                       disabled={guildTagSaving}
-                     >
-                       <option value="">None</option>
-                       {guildTagServers.map(s => (
-                         <option key={s.id} value={s.id}>[{s.guildTag}] {s.name}</option>
-                       ))}
-                     </select>
-                     {guildTagSaving && <span style={{ fontSize: 12, color: 'var(--volt-text-muted)' }}>Saving...</span>}
-                   </div>
-                   {guildTagError && <span className="error-text">{guildTagError}</span>}
-                   {guildTagServers.length === 0 && (
-                     <small className="form-hint">Join a server that has a guild tag set to display one here.</small>
-                   )}
-                 </div>
-
-                 {/* Accent Color */}
-                 <div className="form-group">
-                   <label><Palette size={14} style={{ display: 'inline', marginRight: 4 }} /> Profile Accent Color</label>
-                   <p style={{ fontSize: 13, color: 'var(--volt-text-secondary)', marginBottom: 8 }}>
-                     A custom color shown on your profile page.
-                   </p>
-                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                     <input
-                       type="color"
-                       className="input"
-                       style={{ width: 60, height: 38, padding: 2, cursor: 'pointer' }}
-                       value={accentColorValue || '#1fb6ff'}
-                       onChange={(e) => setAccentColorValue(e.target.value)}
-                       onBlur={() => {
-                         apiService.updateProfile({ accentColor: accentColorValue || null })
-                           .then(() => refreshUser?.())
-                           .catch(err => console.error('Failed to update accent color:', err))
-                       }}
-                     />
-                     {accentColorValue && (
-                       <button
-                         type="button"
-                         className="btn btn-secondary btn-sm"
-                         onClick={() => {
-                           setAccentColorValue('')
-                           apiService.updateProfile({ accentColor: null }).then(() => refreshUser?.()).catch(() => {})
-                         }}
-                       >
-                         Reset
-                       </button>
-                     )}
-                   </div>
-                 </div>
-               </div>
-             )}
-
-             {activeTab === 'language' && (
+            {activeTab === 'language' && (
               <div className="settings-section">
                 <h2>{t('settings.language')}</h2>
                 <p style={{ marginBottom: '20px', color: 'var(--volt-text-secondary)' }}>
@@ -1872,78 +1766,6 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   </label>
                 </div>
 
-                <div className="privacy-note" style={{ marginTop: '24px', borderTop: '1px solid var(--volt-border)', paddingTop: '20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                    <Sparkles size={20} />
-                    <h4>KLIPY Media Settings</h4>
-                  </div>
-                  <p style={{ marginBottom: '16px', color: 'var(--volt-text-secondary)', fontSize: '14px' }}>
-                    Manage your GIF, Sticker, Clip, Meme, and AI Emoji preferences. KLIPY provides these media content through their API.
-                  </p>
-
-                  <div className="setting-item" style={{ marginBottom: '16px' }}>
-                    <div>
-                      <h4>Show Advertisements</h4>
-                      <p>Display ads to support Voltage. Your privacy is protected.</p>
-                    </div>
-                    <label className="toggle">
-                      <input
-                        type="checkbox"
-                        checked={isAdsEnabled()}
-                        onChange={() => {
-                          setAdsEnabled(!isAdsEnabled())
-                          setSettings(prev => ({ ...prev, klipyAdsEnabled: !isAdsEnabled() }))
-                        }}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  <div className="setting-item" style={{ marginBottom: '16px' }}>
-                    <div>
-                      <h4>Enable Tracking</h4>
-                      <p>Allow KLIPY to track your usage for personalized content recommendations.</p>
-                    </div>
-                    <label className="toggle">
-                      <input
-                        type="checkbox"
-                        checked={isTrackingEnabled()}
-                        onChange={() => {
-                          setTrackingEnabled(!isTrackingEnabled())
-                          setSettings(prev => ({ ...prev, klipyTrackingEnabled: !isTrackingEnabled() }))
-                        }}
-                      />
-                      <span className="toggle-slider"></span>
-                    </label>
-                  </div>
-
-                  {isTrackingEnabled() && (
-                    <div className="setting-item">
-                      <div>
-                        <h4>Anonymous Tracking</h4>
-                        <p>Keep your identity private by using a random anonymous ID instead of your user ID.</p>
-                      </div>
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={isAnonymousTracking()}
-                          onChange={() => {
-                            setAnonymousTracking(!isAnonymousTracking())
-                            setSettings(prev => ({ ...prev, klipyAnonymousTracking: !isAnonymousTracking() }))
-                          }}
-                        />
-                        <span className="toggle-slider"></span>
-                      </label>
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: '16px', padding: '12px', background: 'var(--volt-bg-tertiary)', borderRadius: '8px' }}>
-                    <p style={{ fontSize: '12px', color: 'var(--volt-text-muted)', margin: 0 }}>
-                      <strong>Note:</strong> When tracking is disabled or anonymous, content recommendations may be less personalized. Ads help support Voltage and keep content free for everyone.
-                    </p>
-                  </div>
-                </div>
-
                 {userKeys && (
                   <div className="privacy-note" style={{ marginTop: '24px', borderTop: '1px solid var(--volt-border)', paddingTop: '20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
@@ -2239,14 +2061,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
               <div className="settings-section">
                 <h2>Customization</h2>
                 <p style={{ color: 'var(--volt-text-secondary)', marginBottom: '24px' }}>
-                  Personalize your VoltChat experience — themes, custom CSS, profile styling, and more.
+                  Personalize your VoltChat experience with advanced customization options.
                 </p>
 
-                {/* Interface customization */}
-                <h3 className="settings-subsection-title">Interface</h3>
                 <div className="customization-list">
                   <button className="customization-item" onClick={() => setShowThemeCustomizer(true)}>
-                    <div className="customization-item-icon"><Palette size={24} /></div>
+                    <div className="customization-item-icon">
+                      <Palette size={24} />
+                    </div>
                     <div className="customization-item-content">
                       <h3>Theme Studio</h3>
                       <p>Create and manage custom themes with full control over colors, fonts, and effects.</p>
@@ -2255,7 +2077,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   </button>
 
                   <button className="customization-item" onClick={() => setShowFontModal(true)}>
-                    <div className="customization-item-icon"><Type size={24} /></div>
+                    <div className="customization-item-icon">
+                      <Type size={24} />
+                    </div>
                     <div className="customization-item-content">
                       <h3>Typography</h3>
                       <p>Choose from 20+ fonts to customize your reading experience.</p>
@@ -2264,7 +2088,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   </button>
 
                   <button className="customization-item" onClick={() => setShowAnimationModal(true)}>
-                    <div className="customization-item-icon"><SparklesIcon size={24} /></div>
+                    <div className="customization-item-icon">
+                      <SparklesIcon size={24} />
+                    </div>
                     <div className="customization-item-content">
                       <h3>Animations</h3>
                       <p>Customize modal animations and transition effects.</p>
@@ -2272,132 +2098,23 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <div className="customization-item-arrow">›</div>
                   </button>
 
-                  <button className="customization-item" onClick={() => setShowCustomCSS(v => !v)}>
-                    <div className="customization-item-icon"><Code size={24} /></div>
-                    <div className="customization-item-content">
-                      <h3>Custom CSS <span className="customization-badge">CLIENT MOD</span></h3>
-                      <p>Inject your own CSS into the entire interface — like modified clients, but native.</p>
+                  <button className="customization-item" onClick={() => setShowProfileCustomModal(true)}>
+                    <div className="customization-item-icon">
+                      <Sliders size={24} />
                     </div>
-                    <div className="customization-item-arrow">{showCustomCSS ? '▾' : '›'}</div>
-                  </button>
-
-                  {showCustomCSS && (
-                    <div className="customization-inline-panel">
-                      <CustomCSSEditor
-                        onClose={() => setShowCustomCSS(false)}
-                        onSaved={() => refreshUser?.()}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Profile customization */}
-                <h3 className="settings-subsection-title" style={{ marginTop: 24 }}>Profile</h3>
-                <div className="customization-list">
-                  <button className="customization-item" onClick={() => setShowProfileCustomizer(v => !v)}>
-                    <div className="customization-item-icon"><Layout size={24} /></div>
                     <div className="customization-item-content">
                       <h3>Profile Customization</h3>
-                      <p>Templates, custom profile CSS visible to everyone, banner effects, and layout.</p>
-                    </div>
-                    <div className="customization-item-arrow">{showProfileCustomizer ? '▾' : '›'}</div>
-                  </button>
-
-                  {showProfileCustomizer && (
-                    <div className="customization-inline-panel">
-                      <ProfileCustomizer
-                        settings={settings}
-                        onSettingsChange={(s) => Object.entries(s).forEach(([k, v]) => handleSelect(k, v))}
-                        onClose={() => setShowProfileCustomizer(false)}
-                      />
-                    </div>
-                  )}
-
-                  <button className="customization-item" onClick={() => setShowProfileCustomModal(true)}>
-                    <div className="customization-item-icon"><Sliders size={24} /></div>
-                    <div className="customization-item-content">
-                      <h3>Quick Profile Options</h3>
-                      <p>Fast access to layout, badge style, and banner effect selectors.</p>
+                      <p>Customize your profile appearance, banner effects, and layout.</p>
                     </div>
                     <div className="customization-item-arrow">›</div>
                   </button>
                 </div>
 
-                {/* Theme packages */}
-                <h3 className="settings-subsection-title" style={{ marginTop: 24 }}>Theme Packages (.vtp)</h3>
-                <p style={{ fontSize: 13, color: 'var(--volt-text-secondary)', marginBottom: 12 }}>
-                  Export your entire theme configuration as a portable <code style={{ fontFamily: 'monospace', background: 'var(--volt-bg-tertiary)', padding: '1px 4px', borderRadius: 3 }}>.vtp</code> file and share it, or import one.
-                </p>
-                {vtpStatus && (
-                  <div className={`settings-inline-${vtpStatus.startsWith('Error') ? 'error' : 'success'}`} style={{ marginBottom: 10 }}>
-                    {vtpStatus}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={async () => {
-                      try {
-                        setVtpStatus('')
-                        const state = exportThemeState()
-                        const activeConf = state.themeConfigs?.[state.activeThemeId] || {}
-                        const themeData = {
-                          name: activeConf.name || state.activeThemeId || 'My Theme',
-                          description: 'Exported from VoltChat',
-                          author: user?.displayName || user?.username || 'Unknown',
-                          version: '1.0.0',
-                          vars: activeConf.vars || {},
-                          backgroundImage: null
-                        }
-                        const errs = validateThemePackage(themeData)
-                        if (errs.length > 0) { setVtpStatus('Error: ' + errs[0]); return }
-                        const blob = await createVTPPackage(themeData)
-                        downloadVTPPackage(blob, `${themeData.name.replace(/\s+/g, '-')}.vtp`)
-                        setVtpStatus('Theme exported successfully!')
-                        setTimeout(() => setVtpStatus(''), 3000)
-                      } catch (err) {
-                        setVtpStatus('Error: ' + err.message)
-                      }
-                    }}
-                  >
-                    <Download size={15} /> Export Theme (.vtp)
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => vtpImportRef.current?.click()}
-                  >
-                    <Upload size={15} /> Import Theme (.vtp)
-                  </button>
-                  <input
-                    ref={vtpImportRef}
-                    type="file"
-                    accept=".vtp,application/x-volt-theme"
-                    style={{ display: 'none' }}
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0]
-                      if (!file) return
-                      e.target.value = ''
-                      try {
-                        setVtpStatus('')
-                        const themeData = await importVTPPackage(file)
-                        const id = `imported_${Date.now()}`
-                        addCustomTheme({ id, name: themeData.name || 'Imported Theme', vars: themeData.vars, isCustom: true })
-                        setTheme(id)
-                        setVtpStatus(`Imported "${themeData.name}" successfully!`)
-                        setTimeout(() => setVtpStatus(''), 4000)
-                      } catch (err) {
-                        setVtpStatus('Error importing theme: ' + err.message)
-                      }
-                    }}
-                  />
-                </div>
-
-                {/* Reset */}
-                <div className="customization-reset" style={{ marginTop: 24 }}>
+                <div className="customization-reset">
                   <button 
                     className="btn btn-secondary"
                     onClick={() => {
-                      if (confirm('Reset all interface customization settings to default?')) {
+                      if (confirm('Reset all customization settings to default?')) {
                         const defaultSettings = {
                           font: 'default',
                           entranceAnimation: 'fade',
@@ -2406,13 +2123,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                           profileLayout: 'standard',
                           bannerEffect: 'none',
                           badgeStyle: 'default',
-                        }
-                        Object.entries(defaultSettings).forEach(([key, value]) => handleSelect(key, value))
-                        resetThemeSystem()
+                        };
+                        Object.entries(defaultSettings).forEach(([key, value]) => {
+                          handleSelect(key, value);
+                        });
                       }
                     }}
                   >
-                    <RotateCcw size={15} /> Reset All Customizations
+                    Reset Customizations
                   </button>
                 </div>
               </div>

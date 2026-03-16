@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X, MessageSquare, UserPlus, UserMinus, Ban, MoreVertical,
   User, Activity, Shield, Clock, Globe,
   Github, Twitter, Youtube, Twitch, Gamepad2, Music,
   Server, Users, Link2, Hash, Zap, Sparkles,
-  Flag, Copy, Pencil, Check, Tag, Terminal
+  Flag, Copy, Pencil, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiService } from '../../services/apiService';
@@ -55,9 +55,6 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
   const [userActivity, setUserActivity] = useState([]);
   const [userStats, setUserStats] = useState(null);
 
-  // Guild tag state
-  const [guildTagServers, setGuildTagServers] = useState([]);
-
   // Editing states
   const [editingBio, setEditingBio] = useState(false);
   const [bioDraft, setBioDraft] = useState('');
@@ -72,8 +69,6 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
   const moreMenuRef = useRef(null);
 
   const isBot = userId?.startsWith('bot_');
-  // Unique scope ID so profile CSS doesn't leak between open modals
-  const profileScopeId = useMemo(() => `pscope-${userId?.replace(/[^a-z0-9]/gi, '')}`, [userId]);
   const isOwnProfile = currentUser?.id === userId;
   const currentServer = getStoredServer();
   const apiUrl = currentServer?.apiUrl || '';
@@ -105,28 +100,6 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
   }
   
   const { bannerSrc } = useBanner(bannerUrl, bannerFallbackUrls);
-
-  // Inject / clean up per-profile scoped CSS
-  useEffect(() => {
-    if (!profile?.profileCSS) return;
-    const styleId = `volt-profile-css-${profileScopeId}`;
-    let el = document.getElementById(styleId);
-    if (!el) {
-      el = document.createElement('style');
-      el.id = styleId;
-      document.head.appendChild(el);
-    }
-    // Scope the CSS to the container class+id so it only affects this modal
-    const scoped = profile.profileCSS.replace(
-      /\.profile-modal-container\b/g,
-      `.profile-modal-container.${profileScopeId}`
-    );
-    el.textContent = scoped || profile.profileCSS;
-    return () => {
-      const toRemove = document.getElementById(styleId);
-      if (toRemove) toRemove.remove();
-    };
-  }, [profile?.profileCSS, profileScopeId]);
 
   // Load profile data
   useEffect(() => {
@@ -187,14 +160,6 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
         const res = await apiService.getUserProfile(userId);
         setProfile(res.data);
 
-        // If viewing own profile, load servers for guild tag selection
-        if (userId === currentUser?.id) {
-          apiService.getServers().then(r => {
-            const all = r.data || [];
-            setGuildTagServers(all.filter(s => s.guildTag));
-          }).catch(() => {});
-        }
-
         if (userId !== currentUser?.id) {
           const [mutualFriendsRes, mutualServersRes, activityRes, statsRes] = await Promise.all([
             apiService.getMutualFriends(userId).catch(() => ({ data: [] })),
@@ -219,20 +184,6 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
       console.error('Failed to load profile:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSetGuildTag = async (serverId) => {
-    try {
-      if (!serverId) {
-        await apiService.clearUserGuildTag();
-        setProfile(p => ({ ...p, guildTag: null, guildTagServerId: null }));
-      } else {
-        const res = await apiService.setUserGuildTag(serverId);
-        setProfile(p => ({ ...p, guildTag: res.data.guildTag, guildTagServerId: res.data.guildTagServerId }));
-      }
-    } catch (err) {
-      console.error('Failed to set guild tag:', err);
     }
   };
 
@@ -531,68 +482,6 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
         </section>
       )}
 
-      {/* Bot Commands Section */}
-      {isBot && profile?.commands && profile.commands.length > 0 && (
-        <section className="profile-section">
-          <div className="section-header">
-            <h3><Terminal size={16} /> Commands</h3>
-          </div>
-          <div className="bot-commands-grid">
-            {profile.commands.map((cmd, idx) => (
-              <div key={cmd.name || idx} className="bot-command-card">
-                <div className="bot-command-name">
-                  {profile.prefix || '/'}{cmd.name}
-                </div>
-                {cmd.description && (
-                  <div className="bot-command-desc">{cmd.description}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Guild Tag Section (own profile - lets user choose which server tag to display) */}
-      {!isBot && isOwnProfile && (
-        <section className="profile-section">
-          <div className="section-header">
-            <h3><Tag size={16} /> Guild Tag</h3>
-          </div>
-          <div className="guild-tag-section">
-            <p className="guild-tag-desc">Display a server's tag next to your name everywhere on the platform.</p>
-            {profile?.guildTag && (
-              <div className="guild-tag-current">
-                Current tag: <span className="guild-tag-badge">[{profile.guildTag}]</span>
-              </div>
-            )}
-            <div className="guild-tag-select-row">
-              <select
-                className="guild-tag-select"
-                value={profile?.guildTagServerId || ''}
-                onChange={e => handleSetGuildTag(e.target.value || null)}
-              >
-                <option value="">None</option>
-                {guildTagServers.map(s => (
-                  <option key={s.id} value={s.id}>[{s.guildTag}] {s.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Guild Tag display for other users */}
-      {!isBot && !isOwnProfile && profile?.guildTag && (
-        <section className="profile-section">
-          <div className="section-header">
-            <h3><Tag size={16} /> Guild Tag</h3>
-          </div>
-          <div className="guild-tag-display">
-            <span className="guild-tag-badge large">[{profile.guildTag}]</span>
-          </div>
-        </section>
-      )}
-
       {/* Member Since */}
       {profile?.createdAt && (
         <section className="profile-section">
@@ -769,12 +658,7 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
         <div className="profile-modal-overlay" onClick={handleClose}>
           <motion.div
             ref={modalRef}
-            className={[
-              'profile-modal-container',
-              profileScopeId,
-              profile?.profileLayout ? `profile-layout-${profile.profileLayout}` : '',
-              profile?.badgeStyle ? `badge-style-${profile.badgeStyle}` : ''
-            ].filter(Boolean).join(' ')}
+            className="profile-modal-container"
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 30 }}
@@ -792,15 +676,14 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
             {/* Banner Section */}
             <div className="profile-banner-area">
               <div
-                className={['profile-banner-bg', profile?.bannerEffect ? `banner-effect-${profile.bannerEffect}` : ''].filter(Boolean).join(' ')}
+                className="profile-banner-bg"
                 style={{
                   backgroundImage: (!isBot && bannerSrc)
                     ? `url(${bannerSrc})`
                     : undefined,
                   backgroundColor: isBot || !bannerSrc
                     ? 'var(--volt-primary)'
-                    : undefined,
-                  ...(profile?.accentColor ? { '--profile-accent': profile.accentColor } : {})
+                    : undefined
                 }}
               />
 
@@ -820,14 +703,11 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
             </div>
 
             {/* User Info Section */}
-            <div className="profile-info-area" style={profile?.accentColor ? { '--profile-accent': profile.accentColor } : {}}>
+            <div className="profile-info-area">
               <div className="profile-names-area">
                 <h2 className="profile-display-name">
                   {displayName}
                   {isBot && <span className="profile-bot-tag"><Sparkles size={12} /> Bot</span>}
-                  {profile?.guildTag && (
-                    <span className="profile-guild-tag">[{profile.guildTag}]</span>
-                  )}
                   {profile?.ageVerification?.riskLevel === 'self_attested_adult' && (
                     <span className="profile-risk-tag">18+ self-attested</span>
                   )}

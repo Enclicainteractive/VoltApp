@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { themes as builtInThemes } from '../theme/themes'
-import { customCSSService } from '../services/customCSSService'
 
 const DEFAULT_THEME_ID = 'dark'
 const LEGACY_THEME_KEY = 'voltchat_theme'
@@ -356,8 +355,6 @@ export const ThemeProvider = ({ children }) => {
       activeThemeId: state.activeThemeId,
       themeConfigs: state.themeConfigs
     })
-    // Re-apply custom CSS after every theme change so it always wins
-    customCSSService.apply()
   }, [allThemes, state.activeThemeId, state.themeConfigs])
 
   useEffect(() => {
@@ -381,8 +378,7 @@ export const ThemeProvider = ({ children }) => {
         applyThemeVars,
         resetThemeSystem,
         exportThemeState,
-        importThemeState,
-        customCSS: customCSSService
+        importThemeState
       }}
     >
       {children}

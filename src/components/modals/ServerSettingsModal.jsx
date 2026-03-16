@@ -70,11 +70,6 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const [importError, setImportError] = useState('')
   const [importSuccess, setImportSuccess] = useState('')
   const [importTemplateCode, setImportTemplateCode] = useState('')
-  const [guildTagValue, setGuildTagValue] = useState(server?.guildTag || '')
-  const [guildTagPrivate, setGuildTagPrivate] = useState(server?.guildTagPrivate === true)
-  const [guildTagSaving, setGuildTagSaving] = useState(false)
-  const [guildTagError, setGuildTagError] = useState('')
-  const [guildTagSuccess, setGuildTagSuccess] = useState(false)
   
   useEffect(() => {
     setServerData({
@@ -86,27 +81,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
       backgroundUrl: server?.backgroundUrl || '',
       bannerPosition: server?.bannerPosition || 'cover'
     })
-    setGuildTagValue(server?.guildTag || '')
-    setGuildTagPrivate(server?.guildTagPrivate === true)
   }, [server?.id])
-
-  const handleSaveGuildTag = async () => {
-    setGuildTagSaving(true)
-    setGuildTagError('')
-    setGuildTagSuccess(false)
-    try {
-      const res = await apiService.setServerGuildTag(server.id, guildTagValue || null, guildTagPrivate)
-      setGuildTagValue(res.data.guildTag || '')
-      setGuildTagPrivate(res.data.guildTagPrivate === true)
-      setGuildTagSuccess(true)
-      setTimeout(() => setGuildTagSuccess(false), 2000)
-      onUpdate?.({ ...server, guildTag: res.data.guildTag, guildTagPrivate: res.data.guildTagPrivate })
-    } catch (err) {
-      setGuildTagError(err.response?.data?.error || 'Failed to save guild tag')
-    } finally {
-      setGuildTagSaving(false)
-    }
-  }
 
   useEffect(() => {
     if (server?.id) {
@@ -1078,58 +1053,6 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     disabled={saving}
                   >
                     {saving ? t('common.saving', 'Saving...') : t('serverSettings.saveChanges', 'Save Changes')}
-                  </button>
-                )}
-
-                {/* Guild Tag Settings */}
-                <div className="settings-divider" />
-                <div className="section-header-row" style={{ marginBottom: 12 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 600 }}>Guild Tag</h3>
-                  {guildTagSuccess && (
-                    <span className="save-success-badge"><CheckIcon size={14} /> Saved</span>
-                  )}
-                </div>
-                <p style={{ fontSize: 13, color: 'var(--volt-text-secondary)', marginBottom: 12 }}>
-                  Set a short tag (1-4 characters) that members can display next to their name globally. No emojis allowed.
-                </p>
-                <div className="form-group">
-                  <label>Tag (1–4 characters)</label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={guildTagValue}
-                    onChange={e => setGuildTagValue(e.target.value.slice(0, 4))}
-                    placeholder="e.g. VOLT"
-                    maxLength={4}
-                    disabled={!isAdmin}
-                    style={{ width: 120 }}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="privacy-option" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <input
-                      type="checkbox"
-                      checked={guildTagPrivate}
-                      onChange={e => setGuildTagPrivate(e.target.checked)}
-                      disabled={!isAdmin}
-                    />
-                    <div>
-                      <span className="privacy-label">Private Tag</span>
-                      <br/>
-                      <span className="privacy-desc" style={{ fontSize: 12 }}>
-                        When enabled, clicking the tag will not show a server info popup in Discovery. The tag will still show on member names.
-                      </span>
-                    </div>
-                  </label>
-                </div>
-                {guildTagError && <div className="error-message">{guildTagError}</div>}
-                {isAdmin && (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={handleSaveGuildTag}
-                    disabled={guildTagSaving}
-                  >
-                    {guildTagSaving ? 'Saving...' : 'Save Guild Tag'}
                   </button>
                 )}
               </div>

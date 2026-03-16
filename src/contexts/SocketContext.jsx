@@ -141,8 +141,8 @@ export const SocketProvider = ({ children }) => {
             window.focus()
             if (typeof window.__HANDLE_DEEP_LINK__ === 'function') {
               window.__HANDLE_DEEP_LINK__(deeplink)
-            } else if (navigate) {
-              navigate(deeplink)
+            } else {
+              navigate?.(deeplink) || window.location.assign(deeplink)
             }
             nativeNotification.close()
           }

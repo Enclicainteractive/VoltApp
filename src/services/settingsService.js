@@ -25,11 +25,7 @@ const defaultSettings = {
   // Voice state persistence
   voiceMuted: false,
   voiceDeafened: false,
-  rememberVoiceState: true,
-  // KLIPY settings
-  klipyAdsEnabled: true,
-  klipyTrackingEnabled: false,
-  klipyAnonymousTracking: true
+  rememberVoiceState: true
 }
 
 // Simple event emitter so components can react to live settings changes
