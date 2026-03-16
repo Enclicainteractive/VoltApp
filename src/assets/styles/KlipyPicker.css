@@ -1,0 +1,438 @@
+.klipy-modal {
+  max-width: 600px;
+  width: 90vw;
+}
+
+.klipy-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.klipy-modal .modal-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+}
+
+.klipy-modal .modal-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text-secondary);
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.klipy-modal .modal-close:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.klipy-search {
+  display: flex;
+  padding: 12px 16px;
+  gap: 8px;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.klipy-search input {
+  flex: 1;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--volt-text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.klipy-search input:focus {
+  border-color: var(--volt-primary);
+  background: var(--volt-bg-primary);
+}
+
+.klipy-search input::placeholder {
+  color: var(--volt-text-muted);
+}
+
+.klipy-search button {
+  background: var(--volt-primary);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.klipy-search button:hover {
+  opacity: 0.9;
+}
+
+.klipy-categories {
+  display: flex;
+  padding: 12px 16px;
+  gap: 8px;
+  overflow-x: auto;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.klipy-categories::-webkit-scrollbar {
+  display: none;
+}
+
+.klipy-category {
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 16px;
+  padding: 6px 12px;
+  color: var(--volt-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.klipy-category:hover {
+  background: var(--volt-hover);
+  border-color: var(--volt-primary);
+  color: var(--volt-text-primary);
+}
+
+.klipy-category.active {
+  background: var(--volt-primary);
+  border-color: var(--volt-primary);
+  color: #fff;
+}
+
+.klipy-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 16px;
+  min-height: 300px;
+  max-height: 400px;
+  contain: content;
+}
+
+.klipy-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.klipy-content::-webkit-scrollbar-track {
+  background: var(--volt-bg-tertiary);
+  border-radius: 4px;
+}
+
+.klipy-content::-webkit-scrollbar-thumb {
+  background: var(--volt-border);
+  border-radius: 4px;
+}
+
+.klipy-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  contain: layout;
+}
+
+@media (max-width: 480px) {
+  .klipy-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.klipy-item {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--volt-bg-tertiary);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border: 1px solid transparent;
+  contain: layout;
+  min-height: 100px;
+}
+
+.klipy-item:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-color: var(--volt-primary);
+  z-index: 1;
+}
+
+.klipy-item img {
+  width: 100%;
+  height: auto;
+  display: block;
+  min-height: 100px;
+}
+
+.klipy-item img[src=""] {
+  display: none;
+}
+
+.klipy-loading,
+.klipy-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--volt-text-muted);
+}
+
+.klipy-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--volt-border);
+  border-top-color: var(--volt-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.klipy-loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  min-height: 48px;
+}
+
+.klipy-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--volt-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.klipy-privacy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  color: var(--volt-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.klipy-privacy-toggle:hover {
+  background: var(--volt-hover);
+  border-color: var(--volt-primary);
+  color: var(--volt-text-primary);
+}
+
+.klipy-privacy-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+}
+
+.klipy-privacy-panel p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  flex: 1;
+}
+
+.klipy-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.klipy-toggle input {
+  display: none;
+}
+
+.klipy-toggle-slider {
+  width: 40px;
+  height: 22px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 11px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.klipy-toggle-slider::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: var(--volt-text-muted);
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.klipy-toggle input:checked + .klipy-toggle-slider {
+  background: var(--volt-primary);
+}
+
+.klipy-toggle input:checked + .klipy-toggle-slider::before {
+  transform: translateX(18px);
+  background: white;
+}
+
+/* Tabs */
+.klipy-tabs {
+  display: flex;
+  padding: 8px 16px;
+  gap: 4px;
+  border-bottom: 1px solid var(--volt-border);
+  overflow-x: auto;
+}
+
+.klipy-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.klipy-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--volt-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.klipy-tab:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.klipy-tab.active {
+  background: var(--volt-primary);
+  color: #fff;
+  border-color: var(--volt-primary);
+}
+
+.klipy-tab-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.klipy-tab-label {
+  font-weight: 500;
+}
+
+@media (max-width: 480px) {
+  .klipy-tab-label {
+    display: none;
+  }
+  .klipy-tab {
+    padding: 8px;
+  }
+}
+
+/* Ad styles */
+.klipy-ad {
+  grid-column: span 2;
+  min-height: 120px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--volt-border);
+}
+
+@media (max-width: 480px) {
+  .klipy-ad {
+    grid-column: span 3;
+  }
+}
+
+.klipy-ad-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.klipy-ad-content iframe,
+.klipy-ad-content img {
+  max-width: 100%;
+  max-height: 250px;
+}
+
+/* Enhanced privacy panel */
+.klipy-privacy-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 8px;
+}
+
+.klipy-privacy-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.klipy-privacy-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.klipy-privacy-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--volt-text-primary);
+}
+
+.klipy-privacy-desc {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+}
+
+.klipy-privacy-footer {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  text-align: center;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(59, 130, 246, 0.15);
+}

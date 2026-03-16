@@ -1,0 +1,302 @@
+.automod-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.automod-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--volt-text-muted);
+}
+
+.automod-hero,
+.automod-overview-card,
+.automod-rule-card,
+.automod-panel-card {
+  border: 1px solid var(--volt-border);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(90, 200, 250, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    var(--volt-bg-secondary);
+}
+
+.automod-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 22px;
+}
+
+.automod-kicker {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(90, 200, 250, 0.15);
+  color: #87ddff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.automod-hero h3 {
+  margin: 12px 0 0;
+  max-width: 560px;
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.automod-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: min(360px, 100%);
+}
+
+.automod-stat-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--volt-border);
+}
+
+.automod-stat-card strong {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.automod-stat-card span {
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}
+
+.automod-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.automod-overview-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+}
+
+.automod-overview-card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.automod-overview-card p {
+  margin: 0;
+  color: var(--volt-text-muted);
+  line-height: 1.45;
+}
+
+.automod-overview-warning {
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.automod-toggle {
+  position: relative;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--volt-border);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.automod-toggle span {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s ease;
+}
+
+.automod-toggle.checked {
+  background: var(--volt-primary);
+}
+
+.automod-toggle.checked span {
+  transform: translateX(21px);
+}
+
+.automod-rule-grid,
+.automod-split-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.automod-rule-card {
+  padding: 18px;
+}
+
+.automod-rule-card.active {
+  box-shadow: 0 20px 36px rgba(0, 0, 0, 0.16);
+}
+
+.automod-rule-header,
+.automod-panel-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.automod-rule-title,
+.automod-panel-card-title {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.automod-rule-title strong,
+.automod-panel-card-title strong {
+  display: block;
+}
+
+.automod-rule-title p {
+  margin: 4px 0 0;
+  color: var(--volt-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.automod-rule-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.automod-field {
+  display: grid;
+  gap: 6px;
+}
+
+.automod-field-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.automod-field-hint {
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}
+
+.automod-token-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.automod-token-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.automod-token-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.automod-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--volt-border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.automod-token-link {
+  color: #8bd8ff;
+}
+
+.automod-token button,
+.icon-btn {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.automod-custom-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.automod-custom-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid var(--volt-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.automod-custom-item code {
+  display: block;
+  margin: 6px 0 5px;
+  padding: 6px 9px;
+  border-radius: 10px;
+  background: rgba(80, 144, 255, 0.12);
+  color: #9dc2ff;
+  word-break: break-word;
+}
+
+.automod-custom-item span {
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}
+
+.automod-exemptions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.automod-exemptions-grid h4 {
+  margin: 0 0 10px;
+}
+
+.danger {
+  color: #f38b8b;
+}
+
+@media (max-width: 980px) {
+  .automod-hero,
+  .automod-overview,
+  .automod-rule-grid,
+  .automod-split-grid,
+  .automod-exemptions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .automod-hero {
+    flex-direction: column;
+  }
+
+  .automod-stats {
+    min-width: 0;
+    width: 100%;
+  }
+}

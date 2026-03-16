@@ -1,0 +1,220 @@
+.bot-ui-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--volt-bg-secondary, rgba(0, 0, 0, 0.2));
+  border-radius: 8px;
+  border: 1px solid var(--volt-separator, rgba(255, 255, 255, 0.1));
+}
+
+.bot-ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bot-ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bot-ui-button-primary {
+  background: var(--volt-primary, #5865f2);
+  color: white;
+}
+
+.bot-ui-button-primary:hover:not(:disabled) {
+  background: var(--volt-primary-hover, #4752c4);
+}
+
+.bot-ui-button-secondary {
+  background: var(--volt-bg-tertiary, #4f545c);
+  color: white;
+}
+
+.bot-ui-button-secondary:hover:not(:disabled) {
+  background: var(--volt-bg-hover, #5d6269);
+}
+
+.bot-ui-button-danger {
+  background: #ed4245;
+  color: white;
+}
+
+.bot-ui-button-danger:hover:not(:disabled) {
+  background: #c93b3e;
+}
+
+.bot-ui-button-success {
+  background: #3ba55c;
+  color: white;
+}
+
+.bot-ui-button-success:hover:not(:disabled) {
+  background: #2d8b47;
+}
+
+.bot-ui-button-link {
+  background: transparent;
+  color: var(--volt-primary, #5865f2);
+  padding: 4px 8px;
+}
+
+.bot-ui-button-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.bot-ui-button-emoji {
+  font-size: 16px;
+}
+
+.bot-ui-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bot-ui-input-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--volt-text-secondary, #b9bbbe);
+}
+
+.bot-ui-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.bot-ui-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--volt-separator, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  background: var(--volt-bg-input, #40444b);
+  color: var(--volt-text-normal, #dcddde);
+  font-size: 14px;
+}
+
+.bot-ui-input:focus {
+  outline: none;
+  border-color: var(--volt-primary, #5865f2);
+}
+
+.bot-ui-input::placeholder {
+  color: var(--volt-text-muted, #72767d);
+}
+
+.bot-ui-input-submit {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--volt-primary, #5865f2);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.bot-ui-input-submit:hover:not(:disabled) {
+  background: var(--volt-primary-hover, #4752c4);
+}
+
+.bot-ui-input-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bot-ui-input-error {
+  font-size: 12px;
+  color: #ed4245;
+}
+
+.bot-ui-select-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bot-ui-select-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--volt-text-secondary, #b9bbbe);
+}
+
+.bot-ui-select {
+  padding: 8px 12px;
+  border: 1px solid var(--volt-separator, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  background: var(--volt-bg-input, #40444b);
+  color: var(--volt-text-normal, #dcddde);
+  font-size: 14px;
+}
+
+.bot-ui-select:focus {
+  outline: none;
+  border-color: var(--volt-primary, #5865f2);
+}
+
+.bot-ui-canvas-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.bot-ui-canvas {
+  border: 1px solid var(--volt-separator, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+
+.bot-ui-canvas-hint {
+  font-size: 12px;
+  color: var(--volt-text-muted, #72767d);
+}
+
+.bot-ui-text {
+  font-size: 14px;
+  color: var(--volt-text-normal, #dcddde);
+}
+
+.bot-ui-text-markdown {
+  line-height: 1.5;
+}
+
+.bot-ui-image-container {
+  max-width: 100%;
+}
+
+.bot-ui-image {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 4px;
+}
+
+.bot-ui-divider {
+  border: none;
+  border-top: 1px solid var(--volt-separator, rgba(255, 255, 255, 0.1));
+  margin: 8px 0;
+}
+
+.bot-ui-spacer {
+  width: 100%;
+}
+
+.bot-ui-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}

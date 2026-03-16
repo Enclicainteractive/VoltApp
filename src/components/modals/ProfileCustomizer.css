@@ -1,0 +1,509 @@
+/* ProfileCustomizer.css */
+
+.profile-customizer {
+  display: flex;
+  flex-direction: column;
+  background: var(--volt-bg-secondary);
+  border-radius: 14px;
+  border: 1px solid var(--volt-border);
+  overflow: hidden;
+  width: 100%;
+  min-height: 520px;
+  max-height: 85vh;
+}
+
+/* Header */
+.pc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--volt-bg-tertiary);
+  border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.pc-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--volt-text-primary);
+}
+
+.pc-header-left h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.pc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pc-save-status {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pc-save-status.success { color: var(--volt-success); }
+.pc-save-status.error { color: var(--volt-danger); }
+
+.pc-close-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pc-close-btn:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+/* Tabs */
+.pc-tabs {
+  display: flex;
+  gap: 0;
+  background: var(--volt-bg-primary);
+  border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
+}
+
+.pc-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--volt-text-secondary);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: transparent;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.pc-tab:hover {
+  color: var(--volt-text-primary);
+  background: var(--volt-hover);
+}
+
+.pc-tab.active {
+  color: var(--volt-primary);
+  border-bottom-color: var(--volt-primary);
+  font-weight: 600;
+}
+
+/* Body */
+.pc-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Hint text */
+.pc-hint {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.pc-hint code {
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--volt-primary);
+}
+
+/* Templates */
+.pc-templates {
+  padding: 20px;
+}
+
+.pc-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.pc-template-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid var(--volt-border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--volt-bg-tertiary);
+  text-align: left;
+}
+
+.pc-template-card:hover {
+  border-color: var(--volt-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+
+.pc-template-card.selected {
+  border-color: var(--volt-primary);
+  box-shadow: 0 0 0 2px rgba(var(--volt-primary-rgb, 31, 182, 255), 0.2);
+}
+
+.pc-template-preview {
+  height: 72px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pc-template-accent-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.3);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.pc-template-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  background: var(--volt-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.pc-template-info {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pc-template-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+}
+
+.pc-template-desc {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+}
+
+/* CSS Tab */
+.pc-css-tab {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pc-css-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pc-css-header h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+  margin: 0 0 4px;
+}
+
+.pc-css-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pc-byte-counter {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  white-space: nowrap;
+}
+
+.pc-byte-counter.warning {
+  color: var(--volt-warning);
+}
+
+.pc-css-scope-hint {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: monospace;
+  margin: 0;
+}
+
+.pc-css-editor-wrapper {
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0d1117;
+}
+
+.pc-css-textarea {
+  width: 100%;
+  min-height: 220px;
+  max-height: 360px;
+  resize: vertical;
+  border: none;
+  outline: none;
+  background: #0d1117;
+  color: #c9d1d9;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.pc-css-textarea::placeholder {
+  color: #4a5568;
+}
+
+.pc-usage-bar {
+  height: 3px;
+  background: var(--volt-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pc-usage-fill {
+  height: 100%;
+  transition: width 0.3s ease, background 0.3s ease;
+  border-radius: 2px;
+}
+
+.pc-css-snippets-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pc-snippets-label {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pc-snippet-chip {
+  font-size: 11px;
+  font-family: monospace;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-primary);
+  cursor: pointer;
+  transition: all 0.1s;
+  white-space: nowrap;
+}
+
+.pc-snippet-chip:hover {
+  background: var(--volt-hover);
+  border-color: var(--volt-primary);
+}
+
+/* Effects tab */
+.pc-effects-tab {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pc-effect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pc-effect-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px;
+  border-radius: 8px;
+  border: 2px solid var(--volt-border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--volt-bg-tertiary);
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  position: relative;
+}
+
+.pc-effect-card:hover {
+  border-color: var(--volt-primary);
+  color: var(--volt-text-primary);
+}
+
+.pc-effect-card.selected {
+  border-color: var(--volt-primary);
+  background: rgba(var(--volt-primary-rgb, 31, 182, 255), 0.08);
+  color: var(--volt-primary);
+}
+
+.pc-effect-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  color: var(--volt-primary);
+}
+
+.pc-effect-preview {
+  width: 60px;
+  height: 36px;
+  border-radius: 6px;
+  background: var(--volt-bg-quaternary);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Preview animations for effects */
+.pc-effect-preview.banner-effect-gradient-shift {
+  background: linear-gradient(90deg, #1fb6ff, #7c3aed, #ec4899, #1fb6ff);
+  background-size: 200% 100%;
+  animation: bannerGradientShift 3s ease infinite;
+}
+
+.pc-effect-preview.banner-effect-pulse {
+  background: var(--volt-primary);
+  animation: bannerPulse 2s ease-in-out infinite;
+}
+
+.pc-effect-preview.banner-effect-wave {
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  animation: bannerWave 2s ease-in-out infinite;
+}
+
+.pc-effect-preview.banner-effect-aurora {
+  background: linear-gradient(135deg, #1fb6ff, #a855f7, #22d3ee);
+  background-size: 300% 300%;
+  animation: bannerAurora 4s ease infinite;
+}
+
+.pc-effect-preview.banner-effect-shimmer {
+  background: linear-gradient(90deg, #374151, #6b7280, #374151);
+  background-size: 200% 100%;
+  animation: bannerShimmer 2s linear infinite;
+}
+
+.pc-effect-preview.banner-effect-particles {
+  background: radial-gradient(circle at 20% 50%, rgba(31,182,255,0.4) 0%, transparent 50%),
+              radial-gradient(circle at 80% 50%, rgba(168,85,247,0.4) 0%, transparent 50%),
+              var(--volt-bg-tertiary);
+}
+
+.pc-layout-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.pc-layout-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 2px solid var(--volt-border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--volt-bg-tertiary);
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.pc-layout-card:hover {
+  border-color: var(--volt-primary);
+  color: var(--volt-text-primary);
+}
+
+.pc-layout-card.selected {
+  border-color: var(--volt-primary);
+  background: rgba(var(--volt-primary-rgb, 31, 182, 255), 0.08);
+  color: var(--volt-primary);
+  font-weight: 600;
+}
+
+/* Form group */
+.pc-effects-tab .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pc-effects-tab .form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+  margin-bottom: 2px;
+}
+
+/* Shared icon btn from CustomCSSEditor */
+.cce-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cce-icon-btn:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.cce-icon-btn.danger:hover {
+  background: rgba(255, 80, 80, 0.15);
+  color: var(--volt-danger);
+  border-color: var(--volt-danger);
+}

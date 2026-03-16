@@ -1,0 +1,878 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VoiceChannelMainView — full chat-area voice channel view
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.vc-main-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--volt-bg-primary);
+  overflow: hidden;
+  position: relative;
+  height: 100%;
+}
+
+/* Mini Voice Bar (when in text channel but still in call) */
+.vc-mini-view {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .vc-mini-view {
+    display: flex;
+    position: fixed;
+    bottom: var(--mobile-nav-height);
+    left: 0;
+    right: 0;
+    background: var(--volt-bg-secondary);
+    border-top: 1px solid var(--volt-border);
+    z-index: 999;
+    flex-direction: column;
+    padding: 8px 12px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .vc-mini-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--volt-bg-tertiary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+
+  .vc-mini-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--volt-text-primary);
+  }
+
+  .vc-mini-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .vc-mini-expand-icon {
+    color: var(--volt-text-muted);
+  }
+
+  .vc-mini-controls {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .vc-mini-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: none;
+    background: var(--volt-bg-tertiary);
+    color: var(--volt-text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .vc-mini-btn:active {
+    transform: scale(0.95);
+  }
+
+  .vc-mini-btn.active {
+    background: var(--volt-primary);
+    color: white;
+  }
+
+  .vc-mini-btn.active.danger {
+    background: var(--volt-danger);
+  }
+
+  .vc-mini-btn.danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--volt-danger);
+  }
+
+  .vc-mini-btn:hover:not(.active):not(.danger) {
+    background: var(--volt-bg-quaternary);
+  }
+}
+
+/* ── Header ── */
+.vc-main-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px;
+  height: 56px;
+  background: var(--volt-bg-secondary);
+  border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
+  color: var(--volt-text-primary);
+}
+
+.vc-main-title {
+  font-size: 16px;
+  font-weight: 700;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vc-active-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--volt-success);
+  background: rgba(34,197,94,0.12);
+  border: 1px solid rgba(34,197,94,0.3);
+  border-radius: 20px;
+  padding: 2px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vc-main-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.vc-main-actions .btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Voice Controls ── */
+.vc-main-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--volt-bg-tertiary);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.vc-controls-group {
+  display: flex;
+  gap: 8px;
+}
+
+.vc-control-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vc-control-btn:hover {
+  background: var(--volt-border);
+}
+
+.vc-control-btn.active {
+  background: var(--volt-danger);
+  color: white;
+}
+
+.vc-control-btn.active.danger {
+  background: var(--volt-danger);
+}
+
+.vc-control-btn:not(.active):hover {
+  background: var(--volt-bg-quaternary);
+}
+
+.vc-controls-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vc-participant-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.vc-info-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.vc-info-btn:hover {
+  background: var(--volt-border);
+  color: var(--volt-text-primary);
+}
+
+/* ── Body ── */
+.vc-main-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.vc-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--volt-text-muted);
+  text-align: center;
+}
+
+.vc-empty p {
+  font-size: 16px;
+  margin: 0;
+}
+
+/* ── Participants grid ── */
+.vc-participants-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  width: 100%;
+  align-items: start;
+}
+
+/* Bigger tiles when someone has video */
+.vc-participants-grid:has(.vc-tile.has-video) {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+/* ── Tile ── */
+.vc-tile {
+  background: var(--volt-bg-secondary);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  flex-direction: column;
+}
+
+.vc-tile:not(.has-video) {
+  aspect-ratio: unset;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+}
+
+.vc-tile.speaking {
+  border-color: var(--volt-success);
+  box-shadow: 0 0 0 2px rgba(34,197,94,0.25);
+}
+
+.vc-tile.muted {
+  opacity: 0.7;
+}
+
+.vc-tile.connecting {
+  opacity: 0.6;
+}
+
+.vc-tile-connecting-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.4);
+  color: var(--volt-warning);
+}
+
+.vc-tile-pending {
+  font-size: 11px;
+  color: var(--volt-warning);
+  font-style: italic;
+}
+
+/* Speaking ring animation */
+.vc-speaking-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 3px solid var(--volt-success);
+  animation: speaking-ring 1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes speaking-ring {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.05);
+  }
+}
+
+/* Screen share tile */
+.vc-tile.has-screen {
+  aspect-ratio: 16 / 9;
+  min-height: 180px;
+}
+
+.vc-tile-screen-share {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.vc-tile-screen-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0,0,0,0.7);
+  color: var(--volt-success);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Tile badges */
+.vc-tile-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vc-tile-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.5);
+}
+
+.vc-tile-badge.screen {
+  color: var(--volt-success);
+}
+
+.vc-tile-badge.video {
+  color: var(--volt-primary);
+}
+
+/* Video inside tile */
+.vc-tile-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Expand button */
+.vc-tile-expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  background: rgba(0,0,0,0.55);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.vc-tile:hover .vc-tile-expand {
+  opacity: 1;
+}
+
+/* Avatar tile */
+.vc-tile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vc-avatar {
+  border: 3px solid var(--volt-bg-quaternary);
+  border-radius: 50%;
+}
+
+.vc-tile.speaking .vc-avatar {
+  border-color: var(--volt-success);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.3);
+}
+
+/* Footer overlay */
+.vc-tile-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(0,0,0,0.5);
+  font-size: 13px;
+  color: #fff;
+}
+
+.vc-tile:not(.has-video) .vc-tile-footer {
+  background: none;
+  color: var(--volt-text-primary);
+}
+
+.vc-tile-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vc-tile-status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--volt-text-muted);
+}
+
+.vc-tile:not(.has-video) .vc-tile-footer {
+  position: static;
+  width: 100%;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 0 0;
+}
+
+/* ── Fullscreen overlay ── */
+.vc-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.95);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vc-fullscreen-inner {
+  position: relative;
+  width: 95vw;
+  height: 95vh;
+  max-width: 95vw;
+  max-height: 95vh;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.vc-fullscreen-video {
+  width: 95vw;
+  height: calc(95vh - 40px);
+  max-width: 95vw;
+  max-height: calc(95vh - 40px);
+  display: block;
+  object-fit: contain;
+  background: #000;
+}
+
+.vc-fullscreen-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  background: rgba(0,0,0,0.6);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.vc-fullscreen-label {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  text-align: center;
+}
+
+/* ── Selected voice channel in sidebar ── */
+.channel-item.voice.selected {
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-primary);
+}
+
+.voice-participant-list.expanded {
+  background: var(--volt-bg-tertiary);
+  border-radius: 0 0 6px 6px;
+  margin-top: -2px;
+}
+
+.vc-hint {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+  margin-top: 8px;
+}
+
+/* Bottom Controls Bar */
+.vc-main-bottom-controls {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  background: var(--volt-bg-secondary);
+  border-top: 1px solid var(--volt-border);
+  z-index: 10;
+}
+
+@media (max-width: 768px) {
+  .vc-main-bottom-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .vc-bottom-controls-left,
+  .vc-bottom-controls-right {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .vc-bottom-controls-center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .vc-bottom-participants {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--volt-text-secondary);
+  }
+
+  .vc-bottom-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: none;
+    background: var(--volt-bg-tertiary);
+    color: var(--volt-text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 56px;
+  }
+
+  .vc-bottom-btn span {
+    font-size: 10px;
+    font-weight: 500;
+  }
+
+  .vc-bottom-btn:active {
+    transform: scale(0.95);
+  }
+
+  .vc-bottom-btn.active {
+    background: var(--volt-primary);
+    color: white;
+  }
+
+  .vc-bottom-btn.active.danger {
+    background: var(--volt-danger);
+    color: white;
+  }
+
+  .vc-bottom-btn.danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--volt-danger);
+  }
+
+  .vc-bottom-btn:hover:not(.active):not(.danger) {
+    background: var(--volt-bg-quaternary);
+  }
+
+  .vc-main-body {
+    padding-bottom: 140px;
+  }
+}
+
+@media (min-width: 769px) {
+  .vc-main-bottom-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    padding: 16px 24px;
+    background: var(--volt-bg-tertiary);
+    border-top: 1px solid var(--volt-border);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .vc-bottom-controls-left,
+  .vc-bottom-controls-right {
+    display: flex;
+    gap: 8px;
+  }
+
+  .vc-bottom-controls-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+
+  .vc-bottom-participants {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--volt-text-secondary);
+  }
+
+  .vc-bottom-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--volt-bg-quaternary);
+    color: var(--volt-text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .vc-bottom-btn:hover {
+    background: var(--volt-border);
+  }
+
+  .vc-bottom-btn.active {
+    background: var(--volt-primary);
+    color: white;
+  }
+
+  .vc-bottom-btn.active.danger,
+  .vc-bottom-btn.danger {
+    background: var(--volt-danger);
+    color: white;
+  }
+
+  .vc-bottom-btn.danger:hover {
+    background: var(--volt-danger);
+  }
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .vc-main-view {
+    padding-bottom: var(--mobile-nav-height);
+  }
+
+  .vc-main-header {
+    padding: 0 12px;
+    height: 48px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .vc-main-title {
+    font-size: 14px;
+  }
+
+  .vc-active-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .vc-main-actions .btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .vc-main-controls {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .vc-controls-group {
+    order: 2;
+  }
+
+  .vc-controls-info {
+    order: 1;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .vc-main-body {
+    padding: 16px;
+  }
+
+  .vc-participants-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+
+  .vc-tile:not(.has-video) {
+    min-height: 100px;
+  }
+
+  .vc-tile-avatar .avatar {
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  .vc-empty {
+    padding: 40px 20px;
+  }
+
+  .vc-empty p {
+    font-size: 14px;
+  }
+
+  .vc-empty .btn {
+    margin-top: 12px;
+  }
+}
+
+/* Participant context menu */
+.vc-participant-menu,
+.voice-participant-menu {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 200px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.vpm-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+  padding: 8px;
+  border-bottom: 1px solid var(--volt-border);
+  margin-bottom: 8px;
+}
+
+.vpm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: var(--volt-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.vpm-item:hover {
+  background: var(--volt-hover);
+}
+
+.vpm-item.danger {
+  color: var(--volt-danger);
+}
+
+.vpm-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.vpm-volume span {
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  min-width: 50px;
+}
+
+.vpm-volume input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  background: var(--volt-bg-quaternary);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.vpm-volume input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--volt-primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.vpm-volume span:last-child {
+  text-align: right;
+  min-width: 40px;
+}
+
+.vpm-reset {
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}

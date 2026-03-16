@@ -1,0 +1,139 @@
+.server-events-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.server-events-summary,
+.server-events-composer,
+.server-events-list {
+  border: 1px solid var(--volt-border);
+  border-radius: 20px;
+  background: var(--volt-bg-secondary);
+  padding: 20px;
+}
+
+.server-events-kicker {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(90, 200, 250, 0.14);
+  color: #86d9ff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.server-events-summary h2 {
+  margin: 12px 0 6px;
+}
+
+.server-events-summary p {
+  margin: 0;
+  color: var(--volt-text-secondary);
+}
+
+.server-events-calendar-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.server-events-calendar-title,
+.server-events-calendar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--volt-border);
+}
+
+.server-events-calendar-pill strong {
+  font-size: 13px;
+}
+
+.server-events-calendar-pill span,
+.server-events-empty-inline {
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}
+
+.server-events-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.server-events-composer textarea {
+  resize: vertical;
+  min-height: 120px;
+  margin-bottom: 12px;
+}
+
+.server-events-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.server-events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.server-event-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  border: 1px solid var(--volt-border);
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.server-event-main strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.server-event-main p {
+  margin: 0 0 10px;
+  color: var(--volt-text-secondary);
+}
+
+.server-event-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.server-event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--volt-text-muted);
+  font-size: 13px;
+}
+
+.server-event-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.server-events-empty {
+  color: var(--volt-text-muted);
+  padding: 10px 0;
+}
+
+@media (max-width: 720px) {
+  .server-events-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

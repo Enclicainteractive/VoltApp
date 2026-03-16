@@ -1,0 +1,384 @@
+.colabcreate-daw {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  background: #f3f4f6;
+  color: #1f2937;
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+/* Top Bar */
+.colabcreate-daw .bg-white {
+  background-color: #ffffff;
+}
+
+.colabcreate-daw .border-b {
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: #e5e7eb;
+}
+
+.colabcreate-daw .p-4 {
+  padding: 1rem;
+}
+
+.colabcreate-daw .flex {
+  display: flex;
+}
+
+.colabcreate-daw .items-center {
+  align-items: center;
+}
+
+.colabcreate-daw .justify-between {
+  justify-content: space-between;
+}
+
+.colabcreate-daw .space-x-4 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-x-reverse: 0;
+  margin-right: calc(1rem * var(--tw-space-x-reverse));
+  margin-left: calc(1rem * (1 - var(--tw-space-x-reverse)));
+}
+
+.colabcreate-daw .space-x-2 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-x-reverse: 0;
+  margin-right: calc(0.5rem * var(--tw-space-x-reverse));
+  margin-left: calc(0.5rem * (1 - var(--tw-space-x-reverse)));
+}
+
+.colabcreate-daw .text-2xl {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.colabcreate-daw .font-bold {
+  font-weight: 700;
+}
+
+.colabcreate-daw .text-gray-800 {
+  color: #1f2937;
+}
+
+.colabcreate-daw button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.colabcreate-daw .p-2 {
+  padding: 0.5rem;
+}
+
+.colabcreate-daw .rounded {
+  border-radius: 0.25rem;
+}
+
+.colabcreate-daw button:hover {
+  background-color: #f3f4f6;
+}
+
+.colabcreate-daw .text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.colabcreate-daw .font-medium {
+  font-weight: 500;
+}
+
+.colabcreate-daw .w-20 {
+  width: 5rem;
+}
+
+.colabcreate-daw .px-2 {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.colabcreate-daw .py-1 {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.colabcreate-daw .border {
+  border-width: 1px;
+  border-style: solid;
+  border-color: #d1d5db;
+}
+
+.colabcreate-daw .text-gray-600 {
+  color: #4b5563;
+}
+
+/* Main Workspace */
+.colabcreate-daw .flex-1 {
+  flex: 1 1 0%;
+}
+
+.colabcreate-daw .overflow-hidden {
+  overflow: hidden;
+}
+
+/* Left Panel - Tools */
+.colabcreate-daw .w-16 {
+  width: 4rem;
+}
+
+.colabcreate-daw .bg-white {
+  background-color: #ffffff;
+}
+
+.colabcreate-daw .border-r {
+  border-right-width: 1px;
+  border-right-style: solid;
+  border-right-color: #e5e7eb;
+}
+
+.colabcreate-daw .flex-col {
+  flex-direction: column;
+}
+
+.colabcreate-daw .py-4 {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.colabcreate-daw .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(1.5rem * (1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(1.5rem * var(--tw-space-y-reverse));
+}
+
+.colabcreate-daw .p-1 {
+  padding: 0.25rem;
+}
+
+.colabcreate-daw .bg-blue-100 {
+  background-color: #dbeafe;
+}
+
+.colabcreate-daw .text-blue-600 {
+  color: #2563eb;
+}
+
+.colabcreate-daw .w-8 {
+  width: 2rem;
+}
+
+.colabcreate-daw .h-px {
+  height: 1px;
+}
+
+.colabcreate-daw .bg-gray-200 {
+  background-color: #e5e7eb;
+}
+
+/* Center Panel - Canvas */
+.colabcreate-daw .bg-gray-50 {
+  background-color: #f9fafb;
+}
+
+.colabcreate-daw .relative {
+  position: relative;
+}
+
+.colabcreate-daw canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.colabcreate-daw .absolute {
+  position: absolute;
+}
+
+.colabcreate-daw .top-0 {
+  top: 0;
+}
+
+.colabcreate-daw .left-0 {
+  left: 0;
+}
+
+.colabcreate-daw .bottom-4 {
+  bottom: 1rem;
+}
+
+.colabcreate-daw .right-4 {
+  right: 1rem;
+}
+
+.colabcreate-daw .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.colabcreate-daw .p-2 {
+  padding: 0.5rem;
+}
+
+.colabcreate-daw .cursor-grab {
+  cursor: grab;
+}
+
+.colabcreate-daw .active\:cursor-grabbing:active {
+  cursor: grabbing;
+}
+
+/* Right Panel - Mixer */
+.colabcreate-daw .w-64 {
+  width: 16rem;
+}
+
+.colabcreate-daw .border-l {
+  border-left-width: 1px;
+  border-left-style: solid;
+  border-left-color: #e5e7eb;
+}
+
+.colabcreate-daw .p-4 {
+  padding: 1rem;
+}
+
+.colabcreate-daw .border-b {
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: #e5e7eb;
+}
+
+.colabcreate-daw .text-lg {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+.colabcreate-daw .font-semibold {
+  font-weight: 600;
+}
+
+.colabcreate-daw .overflow-y-auto {
+  overflow-y: auto;
+}
+
+.colabcreate-daw .justify-between {
+  justify-content: space-between;
+}
+
+.colabcreate-daw .mb-2 {
+  margin-bottom: 0.5rem;
+}
+
+.colabcreate-daw .text-red-600 {
+  color: var(--volt-danger);
+}
+
+.colabcreate-daw .bg-red-100 {
+  background-color: #fee2e2;
+}
+
+.colabcreate-daw .w-full {
+  width: 100%;
+}
+
+.colabcreate-daw input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  outline: none;
+}
+
+.colabcreate-daw input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--volt-primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.colabcreate-daw input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--volt-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.colabcreate-daw .bg-blue-600 {
+  background-color: #2563eb;
+}
+
+.colabcreate-daw .text-white {
+  color: #ffffff;
+}
+
+.colabcreate-daw .hover\:bg-blue-700:hover {
+  background-color: #1d4ed8;
+}
+
+.colabcreate-daw .justify-center {
+  justify-content: center;
+}
+
+.colabcreate-daw .border-t {
+  border-top-width: 1px;
+  border-top-style: solid;
+  border-top-color: #e5e7eb;
+}
+
+/* Canvas Drawing */
+.colabcreate-daw canvas {
+  display: block;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .colabcreate-daw .w-64 {
+    width: 100%;
+    height: 200px;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+  }
+  
+  .colabcreate-daw .w-16 {
+    width: 100%;
+    height: 60px;
+    flex-direction: row;
+    justify-content: center;
+  }
+  
+  .colabcreate-daw .space-y-6 {
+    flex-direction: row;
+    gap: 1rem;
+  }
+}
+
+/* Custom Scrollbar */
+.colabcreate-daw ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.colabcreate-daw ::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.colabcreate-daw ::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.colabcreate-daw ::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

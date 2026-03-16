@@ -1,0 +1,369 @@
+.self-volt-panel {
+  padding: 20px;
+}
+
+.self-volt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.self-volt-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.self-volt-title h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--volt-text);
+}
+
+.self-volt-title svg {
+  color: var(--volt-primary);
+}
+
+.self-volt-desc {
+  color: var(--volt-text-secondary);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.self-volt-loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--volt-text-muted);
+}
+
+.self-volt-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .self-volt-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.self-volt-empty {
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--volt-bg-secondary);
+  border-radius: 12px;
+  border: 2px dashed var(--volt-border);
+  grid-column: 1 / -1;
+}
+
+.self-volt-empty svg {
+  color: var(--volt-text-muted);
+  margin-bottom: 16px;
+}
+
+.self-volt-empty p {
+  color: var(--volt-text-secondary);
+  margin-bottom: 20px;
+}
+
+.self-volt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.self-volt-card {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.self-volt-card:hover {
+  border-color: var(--volt-primary);
+}
+
+.self-volt-card.selected {
+  border-color: var(--volt-primary);
+  background: var(--volt-bg-tertiary);
+}
+
+.self-volt-card.OK {
+  border-left: 4px solid var(--volt-success);
+}
+
+.self-volt-card.ERROR {
+  border-left: 4px solid var(--volt-danger);
+}
+
+.self-volt-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.self-volt-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--volt-bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.self-volt-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.self-volt-icon svg {
+  color: var(--volt-text-muted);
+}
+
+.self-volt-info {
+  flex: 1;
+}
+
+.self-volt-info h3 {
+  margin: 0 0 2px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--volt-text);
+}
+
+.self-volt-url {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.self-volt-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.self-volt-status.OK {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--volt-success);
+}
+
+.self-volt-status.ERROR {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--volt-danger);
+}
+
+.self-volt-servers-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--volt-border);
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+}
+
+.self-volt-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--volt-border);
+}
+
+.self-volt-details {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.details-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.online {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--volt-success);
+}
+
+.status-badge.offline {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--volt-danger);
+}
+
+.status-badge.unknown {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--volt-text-muted);
+}
+
+.details-section {
+  margin-bottom: 20px;
+}
+
+.details-section h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--volt-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--volt-bg-primary);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.feature-item svg {
+  color: var(--volt-primary);
+}
+
+.feature-item span:first-of-type {
+  flex: 1;
+}
+
+.feature-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.feature-status.enabled {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--volt-success);
+}
+
+.hosted-servers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hosted-server-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: var(--volt-bg-primary);
+  border-radius: 8px;
+}
+
+.hosted-server-item .server-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--volt-bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hosted-server-item .server-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hosted-server-item .server-icon svg {
+  color: var(--volt-text-muted);
+  width: 16px;
+  height: 16px;
+}
+
+.hosted-server-item .server-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.hosted-server-item .server-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.hosted-server-item .server-members {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-actions .btn {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.self-volt-modal {
+  max-width: 500px;
+  width: 90vw;
+}
+
+.self-volt-form .form-group {
+  margin-bottom: 20px;
+}
+
+.self-volt-form .field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--volt-border);
+}

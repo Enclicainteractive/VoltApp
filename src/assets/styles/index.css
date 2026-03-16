@@ -1,0 +1,2106 @@
+/* Performance optimizations */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  /* Enable GPU acceleration globally */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+* {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Performance: promote frequently animated elements */
+.pulse, .fade-in, .loading-spinner, .slide-in-left, .slide-in-right, .slide-in-up {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* Performance: scrollable areas containment */
+.scroll-container, .message-list, .channel-sidebar, .member-sidebar, .server-sidebar {
+  contain: content;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Performance: reduce paint for lists */
+.message-list {
+  contain: strict;
+}
+
+svg {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+}
+
+* input,
+* textarea,
+* [contenteditable="true"],
+* .chat-input-editor,
+* .message-content,
+* .message-text,
+* .message-author,
+* .dm-message-author,
+* .dm-message-content,
+* .username,
+* .user-name,
+* .friend-name,
+* .channel-name,
+* .server-name,
+* .dm-recipient-name,
+* .participant-name,
+* .search-result-content,
+* .search-result-author,
+* .pinned-message-content,
+* .pinned-message-author,
+* .profile-display-name,
+* .profile-username,
+* .user-username,
+* .message-input,
+* .search-input,
+* [data-selectable="true"],
+* .selectable,
+* .form-hint,
+* .modal-title,
+* .modal-description,
+* .settings-label,
+* .server-settings-name {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+* input,
+* textarea,
+* [contenteditable="true"],
+* .chat-input-editor,
+* .message-content,
+* .message-text,
+* .username,
+* .channel-name,
+* .server-name,
+* .message-input,
+* .search-input,
+* [data-selectable="true"],
+.selectable {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+:root,
+[data-theme="dark"] {
+  --volt-primary: #1fb6ff;
+  --volt-primary-dark: #0b9edb;
+  --volt-primary-light: #5cd6ff;
+  --volt-success: #2dd4bf;
+  --volt-warning: #f5b400;
+  --volt-danger: #f57c71;
+  --volt-bg-primary: #0b1220;
+  --volt-bg-secondary: #0f1828;
+  --volt-bg-tertiary: #162138;
+  --volt-bg-quaternary: #1d2a42;
+  --volt-text-primary: #e8f0ff;
+  --volt-text-secondary: #b5c6e3;
+  --volt-text-muted: #7f8eaa;
+  --volt-border: #24324c;
+  --volt-hover: rgba(255, 255, 255, 0.05);
+  --volt-active: rgba(255, 255, 255, 0.08);
+  --volt-shadow: rgba(5, 12, 26, 0.35);
+  --server-accent: var(--volt-primary);
+  --server-banner: none;
+  --server-background: none;
+  --server-banner-position: cover;
+  --transition-fast: 0.15s ease;
+  --transition-medium: 0.25s ease;
+  --transition-slow: 0.4s ease;
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+
+  /* Semi-transparent backgrounds for background image mode */
+  --volt-bg-primary-transparent: rgba(11, 18, 32, 0.82);
+  --volt-bg-secondary-transparent: rgba(15, 24, 40, 0.78);
+  --volt-bg-tertiary-transparent: rgba(22, 33, 56, 0.75);
+  --volt-bg-quaternary-transparent: rgba(29, 42, 66, 0.72);
+}
+
+[data-theme="light"] {
+  --volt-primary: #1a8cff;
+  --volt-primary-dark: #0b6fda;
+  --volt-primary-light: #4db1ff;
+  --volt-success: #19b394;
+  --volt-warning: #e69a00;
+  --volt-danger: #e35d4a;
+  --volt-bg-primary: #f5f8fd;
+  --volt-bg-secondary: #e7eef9;
+  --volt-bg-tertiary: #d6e0f2;
+  --volt-bg-quaternary: #c4d2e8;
+  --volt-text-primary: #0f1c2f;
+  --volt-text-secondary: #324766;
+  --volt-text-muted: #607089;
+  --volt-border: #c5d2e2;
+  --volt-hover: rgba(0, 0, 0, 0.04);
+  --volt-active: rgba(0, 0, 0, 0.07);
+  --volt-shadow: rgba(10, 40, 80, 0.12);
+  --server-accent: #1a8cff;
+  --server-banner: none;
+  --server-background: none;
+  --server-banner-position: cover;
+
+  /* Semi-transparent backgrounds for background image mode */
+  --volt-bg-primary-transparent: rgba(245, 248, 253, 0.82);
+  --volt-bg-secondary-transparent: rgba(231, 238, 249, 0.78);
+  --volt-bg-tertiary-transparent: rgba(214, 224, 242, 0.75);
+  --volt-bg-quaternary-transparent: rgba(196, 210, 232, 0.72);
+}
+
+:root {
+  --mobile-nav-height: 64px;
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-safe-left: env(safe-area-inset-left, 0px);
+  --mobile-safe-right: env(safe-area-inset-right, 0px);
+  --mobile-nav-safe-height: calc(var(--mobile-nav-height) + var(--mobile-safe-bottom));
+  --sidebar-width: 240px;
+  --server-sidebar-width: 72px;
+  --member-sidebar-width: 240px;
+  --touch-target-size: 44px;
+  --mobile-breakpoint: 768px;
+  --tablet-breakpoint: 1024px;
+  
+  /* Font Variables */
+  --volt-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  --font-inter: 'Inter', sans-serif;
+  --font-roboto: 'Roboto', sans-serif;
+  --font-poppins: 'Poppins', sans-serif;
+  --font-montserrat: 'Montserrat', sans-serif;
+  --font-opensans: 'Open Sans', sans-serif;
+  --font-lato: 'Lato', sans-serif;
+  --font-nunito: 'Nunito', sans-serif;
+  --font-work-sans: 'Work Sans', sans-serif;
+  --font-manrope: 'Manrope', sans-serif;
+  --font-merriweather: 'Merriweather', serif;
+  --font-playfair: 'Playfair Display', serif;
+  --font-lora: 'Lora', serif;
+  --font-jetbrains: 'JetBrains Mono', monospace;
+  --font-fira-code: 'Fira Code', monospace;
+  --font-space-mono: 'Space Mono', monospace;
+  --font-dm-sans: 'DM Sans', sans-serif;
+  --font-quicksand: 'Quicksand', sans-serif;
+  --font-outfit: 'Outfit', sans-serif;
+  --font-plus-jakarta: 'Plus Jakarta Sans', sans-serif;
+  --font-cabin: 'Cabin', sans-serif;
+  --font-urbanist: 'Urbanist', sans-serif;
+
+  /* Motion tokens used globally by components/pages */
+  --volt-transition-fast: var(--transition-fast);
+  --volt-transition-medium: var(--transition-medium);
+  --volt-transition-slow: var(--transition-slow);
+
+  /* Legacy token aliases used across older components */
+  --primary: var(--volt-primary);
+  --primary-hover: var(--volt-primary-dark);
+  --accent-color: var(--volt-primary);
+  --success: var(--volt-success);
+  --warning: var(--volt-warning);
+  --danger: var(--volt-danger);
+  --bg-primary: var(--volt-bg-primary);
+  --bg-secondary: var(--volt-bg-secondary);
+  --bg-tertiary: var(--volt-bg-tertiary);
+  --bg-quaternary: var(--volt-bg-quaternary);
+  --surface: var(--volt-bg-secondary);
+  --surface-2: var(--volt-bg-tertiary);
+  --card-bg: var(--volt-bg-tertiary);
+  --modal-bg: var(--volt-bg-secondary);
+  --text-primary: var(--volt-text-primary);
+  --text-secondary: var(--volt-text-secondary);
+  --text-muted: var(--volt-text-muted);
+  --border-color: var(--volt-border);
+  --primary-rgb: var(--volt-primary-rgb, 31, 182, 255);
+  --success-rgb: var(--volt-success-rgb, 45, 212, 191);
+  --warning-rgb: var(--volt-warning-rgb, 245, 180, 0);
+  --danger-rgb: var(--volt-danger-rgb, 245, 124, 113);
+}
+
+body {
+  font-family: var(--volt-font);
+  background-color: var(--volt-bg-primary);
+  background-image: var(--volt-bg-gradient, none);
+  background-attachment: fixed;
+  background-size: cover;
+  color: var(--volt-text-primary);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Dynamic Theme Background - applied via pseudo-element to allow opacity control */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-color: var(--volt-bg-secondary);
+  background-image: none;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  opacity: 1;
+}
+
+/* Image background */
+body[data-bg-type="image"]::before {
+  background-image: var(--volt-bg-image, none);
+  opacity: calc(var(--volt-bg-opacity, 100) / 100);
+}
+
+/* Background overlay */
+body[data-bg-type="image"]::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: -1;
+  background-color: var(--volt-bg-overlay, #000000);
+  opacity: calc(var(--volt-bg-overlay-opacity, 30) / 100);
+}
+
+/* Gradient background */
+body[data-bg-type="gradient"]::before {
+  background-image: linear-gradient(
+    calc(var(--volt-bg-gradient-angle, 135) * 1deg),
+    var(--volt-bg-gradient-from, var(--volt-primary)),
+    var(--volt-bg-gradient-to, var(--volt-bg-secondary))
+  );
+  opacity: 1;
+}
+
+/* Pattern backgrounds */
+body[data-bg-type="pattern"]::before {
+  background-color: var(--volt-bg-secondary);
+  opacity: 1;
+}
+
+body[data-bg-type="pattern"][data-bg-pattern="dots"]::before {
+  background-image: radial-gradient(
+    circle,
+    var(--volt-border) 1px,
+    transparent 1px
+  );
+  background-size: 12px 12px;
+  opacity: calc(var(--volt-bg-pattern-opacity, 10) / 100);
+}
+
+body[data-bg-type="pattern"][data-bg-pattern="lines"]::before {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 10px,
+    var(--volt-border) 10px,
+    var(--volt-border) 11px
+  );
+  opacity: calc(var(--volt-bg-pattern-opacity, 10) / 100);
+}
+
+body[data-bg-type="pattern"][data-bg-pattern="grid"]::before {
+  background-image:
+    linear-gradient(var(--volt-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--volt-border) 1px, transparent 1px);
+  background-size: 20px 20px;
+  opacity: calc(var(--volt-bg-pattern-opacity, 10) / 100);
+}
+
+body[data-bg-type="pattern"][data-bg-pattern="noise"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: calc(var(--volt-bg-pattern-opacity, 10) / 100);
+}
+
+body[data-bg-type="pattern"][data-bg-pattern="cross"]::before {
+  background-image:
+    linear-gradient(45deg, transparent 48%, var(--volt-border) 49%, var(--volt-border) 51%, transparent 52%),
+    linear-gradient(-45deg, transparent 48%, var(--volt-border) 49%, var(--volt-border) 51%, transparent 52%);
+  background-size: 20px 20px;
+  opacity: calc(var(--volt-bg-pattern-opacity, 10) / 100);
+}
+
+body[data-bg-type="pattern"][data-bg-pattern="diagonal"]::before {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    var(--volt-border) 10px,
+    var(--volt-border) 11px
+  );
+  opacity: calc(var(--volt-bg-pattern-opacity, 10) / 100);
+}
+
+body[data-bg-type="pattern"][data-bg-pattern="waves"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20' viewBox='0 0 40 20'%3E%3Cpath d='M0 10 Q10 0 20 10 T40 10' stroke='%231e3a56' fill='none' stroke-width='1'/%3E%3C/svg%3E");
+  opacity: calc(var(--volt-bg-pattern-opacity, 10) / 100);
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#portal-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 99999;
+}
+
+#portal-root > * {
+  pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+  body {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #root {
+    height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+
+  html {
+    height: -webkit-fill-available;
+  }
+}
+
+button {
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input, textarea {
+  font-family: inherit;
+  border: none;
+  outline: none;
+}
+
+a {
+  color: var(--volt-primary-light);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--volt-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--volt-bg-quaternary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #31405c;
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: var(--border-radius-sm);
+  font-weight: 500;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary {
+  background: var(--volt-primary);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--volt-primary-dark);
+}
+
+.btn-secondary {
+  background: var(--volt-bg-quaternary);
+  color: var(--volt-text-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--volt-border);
+}
+
+.btn-success {
+  background: var(--volt-success);
+  color: white;
+}
+
+.btn-danger {
+  background: var(--volt-danger);
+  color: white;
+}
+
+.input {
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-primary);
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  width: 100%;
+  transition: background var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+.input:focus {
+  background: var(--volt-bg-quaternary);
+  border-color: var(--volt-primary);
+}
+
+.input::placeholder {
+  color: var(--volt-text-muted);
+}
+
+select.input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237f8eaa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+select.input:hover {
+  background-color: var(--volt-bg-quaternary);
+}
+
+select.input option {
+  background: var(--volt-bg-secondary);
+  color: var(--volt-text-primary);
+  padding: 10px;
+}
+
+.card {
+  background: var(--volt-bg-secondary);
+  border-radius: var(--border-radius-lg);
+  padding: 20px;
+  box-shadow: 0 2px 10px var(--volt-shadow);
+}
+
+.divider {
+  height: 1px;
+  background: var(--volt-border);
+  margin: 16px 0;
+}
+
+.pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--volt-text-secondary);
+  border-radius: var(--border-radius-sm);
+  transition: all var(--transition-fast);
+  padding: 0;
+}
+
+.icon-btn:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 16px;
+  font-size: 18px;
+  color: var(--volt-text-secondary);
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--volt-bg-tertiary);
+  border-top: 4px solid var(--volt-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--volt-bg-primary);
+  color: var(--volt-text-secondary);
+  text-align: center;
+  padding: 40px;
+}
+
+.empty-state.full {
+  width: 100%;
+}
+
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  opacity: 0.3;
+  color: var(--volt-text-muted);
+}
+
+.empty-state h2 {
+  font-size: 24px;
+  color: var(--volt-text-primary);
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  font-size: 16px;
+  color: var(--volt-text-secondary);
+}
+
+.mobile-only {
+  display: none !important;
+}
+
+.desktop-only {
+  display: flex !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-only {
+    display: flex !important;
+  }
+  
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+.touch-target {
+  min-width: var(--touch-target-size);
+  min-height: var(--touch-target-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slide-in-left {
+  animation: slideInLeft 0.3s ease forwards;
+}
+
+.slide-in-right {
+  animation: slideInRight 0.3s ease forwards;
+}
+
+.slide-in-up {
+  animation: slideInUp 0.3s ease forwards;
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeInMobile 0.2s ease forwards;
+}
+
+@keyframes fadeInMobile {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.touch-friendly {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.touch-friendly:active {
+  transform: scale(0.98);
+}
+
+.swipe-handle {
+  touch-action: pan-x;
+}
+
+.scroll-container {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.gesture-nav {
+  touch-action: pan-y pinch-zoom;
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.drawer-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Performance: blur is expensive, use solid semi-transparent backgrounds instead */
+.backdrop-blur {
+  /* Replaced blur with solid background for better performance on low-end devices */
+  background: var(--volt-bg-secondary);
+}
+
+/* Animation Settings - Global Styles */
+:root {
+  --volt-animation-speed: normal;
+  --volt-animation-duration: 0.3s;
+  --volt-entrance-animation: fade;
+  --volt-exit-animation: fade-out;
+  --volt-smooth-transitions: 1;
+  --volt-reduced-motion: 0;
+  --volt-stagger-children: 0;
+  --volt-parallax-effects: 0;
+}
+
+/* Reduced Motion Support */
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Smooth Transitions */
+[data-smooth-transitions="1"] * {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-smooth-transitions="0"] * {
+  transition-timing-function: linear !important;
+}
+
+/* Animation Speed Adjustments */
+[data-animation-speed="slow"] {
+  --transition-fast: 0.24s ease;
+  --transition-medium: 0.4s ease;
+  --transition-slow: 0.6s ease;
+}
+
+[data-animation-speed="normal"] {
+  --transition-fast: 0.15s ease;
+  --transition-medium: 0.25s ease;
+  --transition-slow: 0.4s ease;
+}
+
+[data-animation-speed="fast"] {
+  --transition-fast: 0.09s ease;
+  --transition-medium: 0.16s ease;
+  --transition-slow: 0.24s ease;
+}
+
+[data-animation-speed="instant"] {
+  --transition-fast: 0s linear;
+  --transition-medium: 0s linear;
+  --transition-slow: 0s linear;
+}
+
+[data-animation-speed="slow"] .fade-in,
+[data-animation-speed="slow"] .slide-in,
+[data-animation-speed="slow"] .scale-in {
+  animation-duration: calc(var(--volt-animation-duration) * 1.5);
+}
+
+[data-animation-speed="slow"] *,
+[data-animation-speed="slow"] *::before,
+[data-animation-speed="slow"] *::after {
+  transition-duration: 0.24s !important;
+}
+
+[data-animation-speed="fast"] .fade-in,
+[data-animation-speed="fast"] .slide-in,
+[data-animation-speed="fast"] .scale-in {
+  animation-duration: calc(var(--volt-animation-duration) * 0.6);
+}
+
+[data-animation-speed="fast"] *,
+[data-animation-speed="fast"] *::before,
+[data-animation-speed="fast"] *::after {
+  transition-duration: 0.09s !important;
+}
+
+[data-animation-speed="instant"] .fade-in,
+[data-animation-speed="instant"] .slide-in,
+[data-animation-speed="instant"] .scale-in {
+  animation-duration: 0s;
+}
+
+[data-animation-speed="instant"] *,
+[data-animation-speed="instant"] *::before,
+[data-animation-speed="instant"] *::after {
+  transition-duration: 0s !important;
+}
+
+/* Transition consistency across all components/pages */
+button,
+input,
+textarea,
+select,
+a,
+[role="button"],
+[class*="btn"],
+[class*="card"],
+[class*="item"],
+[class*="panel"],
+[class*="modal-content"],
+[class*="sidebar"],
+[class*="tile"] {
+  transition-duration: var(--transition-fast);
+  transition-timing-function: inherit;
+}
+
+/* Entrance Animations */
+.animating-fade {
+  animation: entranceFade var(--volt-animation-duration) ease forwards;
+}
+
+.animating-slide {
+  animation: entranceSlide var(--volt-animation-duration) ease forwards;
+}
+
+.animating-scale {
+  animation: entranceScale var(--volt-animation-duration) ease forwards;
+}
+
+.animating-bounce {
+  animation: entranceBounce var(--volt-animation-duration) cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+.animating-elastic {
+  animation: entranceElastic var(--volt-animation-duration) cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+.animating-flip {
+  animation: entranceFlip var(--volt-animation-duration) ease forwards;
+}
+
+.animating-glitch {
+  animation: entranceGlitch var(--volt-animation-duration) ease forwards;
+}
+
+@keyframes entranceFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes entranceSlide {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes entranceScale {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes entranceBounce {
+  0% { transform: translateY(20px); opacity: 0; }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes entranceElastic {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.05); }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes entranceFlip {
+  from { transform: perspective(400px) rotateY(90deg); opacity: 0; }
+  to { transform: perspective(400px) rotateY(0); opacity: 1; }
+}
+
+@keyframes entranceGlitch {
+  0% { transform: translate(0); opacity: 0; }
+  20% { transform: translate(-3px, 3px); opacity: 1; }
+  40% { transform: translate(3px, -3px); }
+  60% { transform: translate(-3px, -3px); }
+  80% { transform: translate(3px, 3px); }
+  100% { transform: translate(0); opacity: 1; }
+}
+
+/* Exit Animations */
+.exiting-fade-out {
+  animation: exitFade var(--volt-animation-duration) ease forwards;
+}
+
+.exiting-slide-down {
+  animation: exitSlideDown var(--volt-animation-duration) ease forwards;
+}
+
+.exiting-scale-out {
+  animation: exitScale var(--volt-animation-duration) ease forwards;
+}
+
+.exiting-slide-right {
+  animation: exitSlideRight var(--volt-animation-duration) ease forwards;
+}
+
+@keyframes exitFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes exitSlideDown {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(20px); opacity: 0; }
+}
+
+@keyframes exitScale {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(0.9); opacity: 0; }
+}
+
+@keyframes exitSlideRight {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(20px); opacity: 0; }
+}
+
+/* ============================================================================
+   BACKGROUND IMAGE TRANSPARENCY SUPPORT
+   When body.has-background-image is present, all major components use
+   semi-transparent backgrounds so the global background image shows through
+   ============================================================================ */
+
+/* Core layout components - transparent backgrounds when image is active */
+body.has-background-image .chat-area,
+body.has-background-image #root .chat-area {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .channel-sidebar,
+body.has-background-image #root .channel-sidebar {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .server-sidebar,
+body.has-background-image #root .server-sidebar {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .member-sidebar,
+body.has-background-image #root .member-sidebar {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary-transparent) !important;
+}
+
+/* DM components */
+body.has-background-image .dm-chat,
+body.has-background-image #root .dm-chat {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .dm-list,
+body.has-background-image #root .dm-list {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Input areas */
+body.has-background-image .message-input-container,
+body.has-background-image #root .message-input-container {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .chat-area-footer,
+body.has-background-image #root .chat-area-footer {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+/* Panels */
+body.has-background-image .user-panel,
+body.has-background-image #root .user-panel {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* ============================================================================
+   GLOBAL THEME INTEGRATION
+   Force core UI shells to always resolve from theme variables.
+   ============================================================================ */
+
+#root,
+.app,
+.chat-page,
+.chat-content-wrapper,
+.chat-area-wrapper {
+  color: var(--volt-text-primary);
+  background-color: var(--volt-bg-primary);
+}
+
+.chat-area,
+.dm-chat,
+.voice-channel-view,
+.vc-main-view,
+.vc-mini-view,
+.friends-page,
+.discovery-panel,
+.activities-panel {
+  color: var(--volt-text-primary) !important;
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary) !important;
+}
+
+.channel-sidebar,
+.member-sidebar,
+.dm-list,
+.settings-sidebar,
+.theme-settings-sidebar {
+  color: var(--volt-text-primary) !important;
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary) !important;
+}
+
+.server-sidebar {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary) !important;
+}
+
+.modal-content,
+[class*="modal-content"],
+[class$="-panel"],
+.card,
+.theme-preset-card,
+.customization-card {
+  color: var(--volt-text-primary);
+  border-color: var(--volt-border) !important;
+}
+
+input,
+textarea,
+select,
+button {
+  border-color: var(--volt-border);
+}
+
+input,
+textarea,
+select {
+  color: var(--volt-text-primary);
+  background-color: var(--volt-bg-tertiary);
+}
+
+.text-muted,
+.muted,
+.secondary-text {
+  color: var(--volt-text-muted) !important;
+}
+
+.success,
+.is-success,
+.status-success {
+  color: var(--volt-success) !important;
+}
+
+.warning,
+.is-warning,
+.status-warning {
+  color: var(--volt-warning) !important;
+}
+
+.danger,
+.error,
+.is-danger,
+.status-error {
+  color: var(--volt-danger) !important;
+}
+
+.theme-tint-primary {
+  background-color: color-mix(in srgb, var(--volt-primary) 18%, transparent) !important;
+}
+
+.theme-tint-success {
+  background-color: color-mix(in srgb, var(--volt-success) 18%, transparent) !important;
+}
+
+.theme-tint-warning {
+  background-color: color-mix(in srgb, var(--volt-warning) 18%, transparent) !important;
+}
+
+.theme-tint-danger {
+  background-color: color-mix(in srgb, var(--volt-danger) 18%, transparent) !important;
+}
+
+body.has-background-image .voice-panel,
+body.has-background-image #root .voice-panel {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Empty states */
+body.has-background-image .empty-state,
+body.has-background-image #root .empty-state {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+/* Voice components */
+body.has-background-image .voice-container,
+body.has-background-image #root .voice-container {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .voice-channel-view,
+body.has-background-image #root .voice-channel-view {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Modal and overlay transparency */
+body.has-background-image .modal-overlay,
+body.has-background-image #root .modal-overlay {
+  background: rgba(0, 0, 0, 0.65) !important;
+}
+
+body.has-background-image .modal-content,
+body.has-background-image #root .modal-content {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+body.has-background-image .modal-header,
+body.has-background-image #root .modal-header {
+  background: linear-gradient(to bottom, var(--volt-bg-tertiary-transparent), var(--volt-bg-secondary-transparent)) !important;
+}
+
+body.has-background-image .modal-footer,
+body.has-background-image #root .modal-footer {
+  background: linear-gradient(to top, var(--volt-bg-tertiary-transparent), var(--volt-bg-secondary-transparent)) !important;
+}
+
+/* Settings modal */
+body.has-background-image .settings-overlay,
+body.has-background-image #root .settings-overlay {
+  background: rgba(0, 0, 0, 0.65) !important;
+}
+
+body.has-background-image .settings-sidebar,
+body.has-background-image #root .settings-sidebar {
+  background: var(--volt-bg-gradient, none), var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .settings-content,
+body.has-background-image #root .settings-content {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Theme customizer specific */
+body.has-background-image .theme-customizer-modal,
+body.has-background-image #root .theme-customizer-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .theme-customizer-controls,
+body.has-background-image #root .theme-customizer-controls {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .theme-customizer-preview,
+body.has-background-image #root .theme-customizer-preview {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Cards and containers */
+body.has-background-image .card,
+body.has-background-image #root .card {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Server sidebar items */
+body.has-background-image .server-sidebar-item,
+body.has-background-image #root .server-sidebar-item {
+  background: transparent !important;
+}
+
+body.has-background-image .server-sidebar-item:hover,
+body.has-background-image #root .server-sidebar-item:hover {
+  background: var(--volt-hover) !important;
+}
+
+/* Message bubbles */
+body.has-background-image .message-bubble,
+body.has-background-image #root .message-bubble {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .message-bubble.own,
+body.has-background-image #root .message-bubble.own {
+  background: var(--volt-bg-quaternary-transparent) !important;
+}
+
+/* Context menus */
+body.has-background-image .context-menu,
+body.has-background-image #root .context-menu {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Tooltips */
+body.has-background-image .tooltip,
+body.has-background-image #root .tooltip {
+  background: var(--volt-bg-quaternary-transparent) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* Dropdowns */
+body.has-background-image .dropdown-menu,
+body.has-background-image #root .dropdown-menu {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Popovers */
+body.has-background-image .popover,
+body.has-background-image #root .popover {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Notification toasts */
+body.has-background-image .notification-toast,
+body.has-background-image #root .notification-toast {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Mobile nav */
+body.has-background-image .mobile-nav,
+body.has-background-image #root .mobile-nav {
+  background: var(--volt-bg-primary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Loading containers */
+body.has-background-image .loading-container,
+body.has-background-image #root .loading-container {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+/* Discovery panel */
+body.has-background-image .discovery-panel,
+body.has-background-image #root .discovery-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .discovery-server-card,
+body.has-background-image #root .discovery-server-card {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Friends page */
+body.has-background-image .friends-page,
+body.has-background-image #root .friends-page {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .friend-item,
+body.has-background-image #root .friend-item {
+  background: transparent !important;
+}
+
+body.has-background-image .friend-item:hover,
+body.has-background-image #root .friend-item:hover {
+  background: var(--volt-hover) !important;
+}
+
+/* Profile modals */
+body.has-background-image .profile-modal,
+body.has-background-image #root .profile-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .profile-header,
+body.has-background-image #root .profile-header {
+  background: linear-gradient(to bottom, var(--volt-bg-tertiary-transparent), var(--volt-bg-secondary-transparent)) !important;
+}
+
+/* Activities panel */
+body.has-background-image .activities-panel,
+body.has-background-image #root .activities-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Ensure root app container doesn't block background */
+body.has-background-image #root {
+  background: transparent !important;
+}
+
+/* App container */
+body.has-background-image .app-container,
+body.has-background-image #root .app-container {
+  background: transparent !important;
+}
+
+/* Main layout wrapper */
+body.has-background-image .app-layout,
+body.has-background-image #root .app-layout {
+  background: transparent !important;
+}
+
+/* Channel list items - transparent with hover effect */
+body.has-background-image .channel-list-item,
+body.has-background-image #root .channel-list-item {
+  background: transparent !important;
+}
+
+body.has-background-image .channel-list-item:hover,
+body.has-background-image .channel-list-item.active,
+body.has-background-image #root .channel-list-item:hover,
+body.has-background-image #root .channel-list-item.active {
+  background: var(--volt-hover) !important;
+}
+
+/* DM list items */
+body.has-background-image .dm-list-item,
+body.has-background-image #root .dm-list-item {
+  background: transparent !important;
+}
+
+body.has-background-image .dm-list-item:hover,
+body.has-background-image .dm-list-item.active,
+body.has-background-image #root .dm-list-item:hover,
+body.has-background-image #root .dm-list-item.active {
+  background: var(--volt-hover) !important;
+}
+
+/* Message list background */
+body.has-background-image .message-list,
+body.has-background-image #root .message-list {
+  background: transparent !important;
+}
+
+/* Chat header */
+body.has-background-image .chat-header,
+body.has-background-image #root .chat-header {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Server header */
+body.has-background-image .server-header,
+body.has-background-image #root .server-header {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Search results */
+body.has-background-image .search-results,
+body.has-background-image #root .search-results {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Pinned messages panel */
+body.has-background-image .pinned-messages-panel,
+body.has-background-image #root .pinned-messages-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Thread panel */
+body.has-background-image .thread-panel,
+body.has-background-image #root .thread-panel {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+/* Member list items */
+body.has-background-image .member-list-item,
+body.has-background-image #root .member-list-item {
+  background: transparent !important;
+}
+
+body.has-background-image .member-list-item:hover,
+body.has-background-image #root .member-list-item:hover {
+  background: var(--volt-hover) !important;
+}
+
+/* Role group headers */
+body.has-background-image .role-group-header,
+body.has-background-image #root .role-group-header {
+  background: transparent !important;
+}
+
+/* Emoji picker */
+body.has-background-image .emoji-picker,
+body.has-background-image #root .emoji-picker {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Command palette */
+body.has-background-image .command-palette,
+body.has-background-image #root .command-palette {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Status picker */
+body.has-background-image .status-picker,
+body.has-background-image #root .status-picker {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* User popout */
+body.has-background-image .user-popout,
+body.has-background-image #root .user-popout {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Quick switcher */
+body.has-background-image .quick-switcher,
+body.has-background-image #root .quick-switcher {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* ============================================================================
+   ADDITIONAL COMPONENT TRANSPARENCY RULES
+   ============================================================================ */
+
+/* Chat input area */
+body.has-background-image .chat-input-container,
+body.has-background-image #root .chat-input-container {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .chat-input-wrapper,
+body.has-background-image #root .chat-input-wrapper {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .chat-input-editor,
+body.has-background-image #root .chat-input-editor {
+  background: transparent !important;
+}
+
+/* DM specific components */
+body.has-background-image .dm-chat-header,
+body.has-background-image #root .dm-chat-header {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .dm-messages,
+body.has-background-image #root .dm-messages {
+  background: transparent !important;
+}
+
+body.has-background-image .dm-message,
+body.has-background-image #root .dm-message {
+  background: transparent !important;
+}
+
+body.has-background-image .dm-message-content,
+body.has-background-image #root .dm-message-content {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .dm-input-container,
+body.has-background-image #root .dm-input-container {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .dm-input-wrapper,
+body.has-background-image #root .dm-input-wrapper {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Server components */
+body.has-background-image .server-header,
+body.has-background-image #root .server-header {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .server-dropdown,
+body.has-background-image #root .server-dropdown {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .server-list,
+body.has-background-image #root .server-list {
+  background: transparent !important;
+}
+
+body.has-background-image .server-item,
+body.has-background-image #root .server-item {
+  background: transparent !important;
+}
+
+body.has-background-image .server-item:hover,
+body.has-background-image #root .server-item:hover {
+  background: var(--volt-hover) !important;
+}
+
+/* Channel components */
+body.has-background-image .channel-list,
+body.has-background-image #root .channel-list {
+  background: transparent !important;
+}
+
+body.has-background-image .channel-item,
+body.has-background-image #root .channel-item {
+  background: transparent !important;
+}
+
+body.has-background-image .channel-item:hover,
+body.has-background-image .channel-item.active,
+body.has-background-image #root .channel-item:hover,
+body.has-background-image #root .channel-item.active {
+  background: var(--volt-hover) !important;
+}
+
+body.has-background-image .channel-category,
+body.has-background-image #root .channel-category {
+  background: transparent !important;
+}
+
+body.has-background-image .channel-header,
+body.has-background-image #root .channel-header {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Member components */
+body.has-background-image .member-list,
+body.has-background-image #root .member-list {
+  background: transparent !important;
+}
+
+body.has-background-image .member-item,
+body.has-background-image #root .member-item {
+  background: transparent !important;
+}
+
+body.has-background-image .member-item:hover,
+body.has-background-image #root .member-item:hover {
+  background: var(--volt-hover) !important;
+}
+
+body.has-background-image .member-section,
+body.has-background-image #root .member-section {
+  background: transparent !important;
+}
+
+/* Voice channel components */
+body.has-background-image .voice-channel-view,
+body.has-background-image #root .voice-channel-view {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .voice-panel,
+body.has-background-image #root .voice-panel {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .voice-header,
+body.has-background-image #root .voice-header {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .voice-controls,
+body.has-background-image #root .voice-controls {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .voice-participants,
+body.has-background-image #root .voice-participants {
+  background: transparent !important;
+}
+
+body.has-background-image .voice-participant-tile,
+body.has-background-image #root .voice-participant-tile {
+  background: var(--volt-bg-quaternary-transparent) !important;
+}
+
+body.has-background-image .voice-channel-mini,
+body.has-background-image #root .voice-channel-mini {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Message components */
+body.has-background-image .message,
+body.has-background-image #root .message {
+  background: transparent !important;
+}
+
+body.has-background-image .message-content,
+body.has-background-image #root .message-content {
+  background: transparent !important;
+}
+
+body.has-background-image .message-header,
+body.has-background-image #root .message-header {
+  background: transparent !important;
+}
+
+body.has-background-image .message-embed,
+body.has-background-image #root .message-embed {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .message-reactions,
+body.has-background-image #root .message-reactions {
+  background: transparent !important;
+}
+
+body.has-background-image .message-reply-ref,
+body.has-background-image #root .message-reply-ref {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Modal components */
+body.has-background-image .profile-modal,
+body.has-background-image #root .profile-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .profile-content,
+body.has-background-image #root .profile-content {
+  background: transparent !important;
+}
+
+body.has-background-image .profile-section,
+body.has-background-image #root .profile-section {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .profile-tabs-content,
+body.has-background-image #root .profile-tabs-content {
+  background: transparent !important;
+}
+
+body.has-background-image .settings-modal,
+body.has-background-image #root .settings-modal {
+  background: transparent !important;
+}
+
+body.has-background-image .settings-container,
+body.has-background-image #root .settings-container {
+  background: transparent !important;
+}
+
+body.has-background-image .settings-panel,
+body.has-background-image #root .settings-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .settings-section,
+body.has-background-image #root .settings-section {
+  background: transparent !important;
+}
+
+body.has-background-image .user-profile-card,
+body.has-background-image #root .user-profile-card {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Theme customizer specific */
+body.has-background-image .theme-customizer,
+body.has-background-image #root .theme-customizer {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .theme-customizer-content,
+body.has-background-image #root .theme-customizer-content {
+  background: transparent !important;
+}
+
+body.has-background-image .theme-card,
+body.has-background-image #root .theme-card {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .theme-preset-card,
+body.has-background-image #root .theme-preset-card {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .theme-preview,
+body.has-background-image #root .theme-preview {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .theme-preview-box,
+body.has-background-image #root .theme-preview-box {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .customization-card,
+body.has-background-image #root .customization-card {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* System message panel */
+body.has-background-image .sysmsg-panel,
+body.has-background-image #root .sysmsg-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .sysmsg-card,
+body.has-background-image #root .sysmsg-card {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .sysmsg-list,
+body.has-background-image #root .sysmsg-list {
+  background: transparent !important;
+}
+
+/* Discovery components */
+body.has-background-image .discovery-panel,
+body.has-background-image #root .discovery-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .discovery-server-card,
+body.has-background-image #root .discovery-server-card {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .server-profile-modal,
+body.has-background-image #root .server-profile-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .server-profile-content,
+body.has-background-image #root .server-profile-content {
+  background: transparent !important;
+}
+
+/* Friends page */
+body.has-background-image .friends-page,
+body.has-background-image #root .friends-page {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+/* Incoming call modal */
+body.has-background-image .incoming-call-modal,
+body.has-background-image #root .incoming-call-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Screen share picker */
+body.has-background-image .screen-picker-modal,
+body.has-background-image #root .screen-picker-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Activities panel */
+body.has-background-image .activities-panel,
+body.has-background-image #root .activities-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .activities-modal,
+body.has-background-image #root .activities-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .activities-item,
+body.has-background-image #root .activities-item {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Activity strip */
+body.has-background-image .activity-strip,
+body.has-background-image #root .activity-strip {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .activity-tile,
+body.has-background-image #root .activity-tile {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Status selector */
+body.has-background-image .status-selector,
+body.has-background-image #root .status-selector {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Voice channel UIVAS */
+body.has-background-image .voice-channel-uivas,
+body.has-background-image #root .voice-channel-uivas {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .vc-main-view,
+body.has-background-image #root .vc-main-view {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .vc-mini-view,
+body.has-background-image #root .vc-mini-view {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Chat page wrapper */
+body.has-background-image .chat-page,
+body.has-background-image #root .chat-page {
+  background: transparent !important;
+}
+
+body.has-background-image .chat-content-wrapper,
+body.has-background-image #root .chat-content-wrapper {
+  background: transparent !important;
+}
+
+body.has-background-image .chat-area-wrapper,
+body.has-background-image #root .chat-area-wrapper {
+  background: transparent !important;
+}
+
+/* Server selector */
+body.has-background-image .server-selector,
+body.has-background-image #root .server-selector {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .server-selector-content,
+body.has-background-image #root .server-selector-content {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+/* Admin and moderation panels */
+body.has-background-image .admin-config-modal,
+body.has-background-image #root .admin-config-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .age-verification-modal,
+body.has-background-image #root .age-verification-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Federation panel */
+body.has-background-image .federation-panel,
+body.has-background-image #root .federation-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Bot panel */
+body.has-background-image .bot-panel,
+body.has-background-image #root .bot-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Self volt panel */
+body.has-background-image .self-volt-panel,
+body.has-background-image #root .self-volt-panel {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Channel settings modal */
+body.has-background-image .channel-settings-modal,
+body.has-background-image #root .channel-settings-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .channel-settings-sidebar,
+body.has-background-image #root .channel-settings-sidebar {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .channel-settings-content,
+body.has-background-image #root .channel-settings-content {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Server settings modal */
+body.has-background-image .server-settings-modal,
+body.has-background-image #root .server-settings-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* DM call components */
+body.has-background-image .dm-call-view,
+body.has-background-image #root .dm-call-view {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+body.has-background-image .dm-call-controls,
+body.has-background-image #root .dm-call-controls {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .dm-call-participant,
+body.has-background-image #root .dm-call-participant {
+  background: var(--volt-bg-quaternary-transparent) !important;
+}
+
+/* Join server modal */
+body.has-background-image .join-server-modal,
+body.has-background-image #root .join-server-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Discovery submit form */
+body.has-background-image .discovery-submit-form,
+body.has-background-image #root .discovery-submit-form {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Animations settings modal */
+body.has-background-image .animation-settings-modal,
+body.has-background-image #root .animation-settings-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Font selector modal */
+body.has-background-image .font-selector-modal,
+body.has-background-image #root .font-selector-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Profile effects */
+body.has-background-image .profile-effects-modal,
+body.has-background-image #root .profile-effects-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Color customizer */
+body.has-background-image .color-customizer-modal,
+body.has-background-image #root .color-customizer-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Profile preview */
+body.has-background-image .profile-preview-container,
+body.has-background-image #root .profile-preview-container {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .profile-preview-card,
+body.has-background-image #root .profile-preview-card {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* User profile modal */
+body.has-background-image .user-profile-modal,
+body.has-background-image #root .user-profile-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Theme settings modal */
+body.has-background-image .theme-settings-modal,
+body.has-background-image #root .theme-settings-modal {
+  background: var(--volt-bg-secondary-transparent) !important;
+  backdrop-filter: blur(12px);
+}
+
+body.has-background-image .theme-settings-sidebar,
+body.has-background-image #root .theme-settings-sidebar {
+  background: var(--volt-bg-primary-transparent) !important;
+}
+
+body.has-background-image .theme-settings-content,
+body.has-background-image #root .theme-settings-content {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Ensure all inputs and textareas maintain readability */
+body.has-background-image input,
+body.has-background-image textarea,
+body.has-background-image #root input,
+body.has-background-image #root textarea {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Search inputs should be more opaque for readability */
+body.has-background-image input[type="search"],
+body.has-background-image .search-input,
+body.has-background-image #root input[type="search"],
+body.has-background-image #root .search-input {
+  background: var(--volt-bg-quaternary-transparent) !important;
+}
+
+/* Welcome hero and home screens */
+body.has-background-image .welcome-hero,
+body.has-background-image #root .welcome-hero {
+  background: transparent !important;
+}
+
+body.has-background-image .simple-home,
+body.has-background-image #root .simple-home {
+  background: transparent !important;
+}
+
+body.has-background-image .simple-welcome,
+body.has-background-image #root .simple-welcome {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Encryption and security badges */
+body.has-background-image .encryption-status-badge,
+body.has-background-image #root .encryption-status-badge {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+body.has-background-image .voice-encryption-status,
+body.has-background-image #root .voice-encryption-status {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* Loading states */
+body.has-background-image .loading-spinner,
+body.has-background-image #root .loading-spinner {
+  background: transparent !important;
+}
+
+/* Drag and drop overlays */
+body.has-background-image .chat-area.dragging::after,
+body.has-background-image #root .chat-area.dragging::after {
+  background: rgba(31, 182, 255, 0.3) !important;
+}
+
+/* All generic modal content wrappers */
+body.has-background-image [class*="modal-content"],
+body.has-background-image #root [class*="modal-content"] {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* All generic panels */
+body.has-background-image [class$="-panel"],
+body.has-background-image #root [class$="-panel"] {
+  background: var(--volt-bg-secondary-transparent) !important;
+}
+
+/* Specific panel exceptions for nested components */
+body.has-background-image .voice-panel-header,
+body.has-background-image #root .voice-panel-header {
+  background: transparent !important;
+}
+
+body.has-background-image .user-panel,
+body.has-background-image #root .user-panel {
+  background: var(--volt-bg-tertiary-transparent) !important;
+}

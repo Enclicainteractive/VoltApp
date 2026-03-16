@@ -1,0 +1,359 @@
+/**
+ * ModalAnimations.css
+ * Feature 2: Comprehensive modal animation styles
+ */
+
+/* Base animated modal styles */
+.modal-animated {
+  transition-property: transform, opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.modal-animating {
+  pointer-events: none;
+}
+
+/* Entrance Animations */
+
+/* Fade Enter */
+.modal-fade-enter {
+  opacity: 0;
+}
+
+.modal-entering.modal-fade-enter {
+  animation: modalFadeEnter var(--modal-animation-duration, 300ms) ease forwards;
+}
+
+@keyframes modalFadeEnter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Slide Enter */
+.modal-slide-enter {
+  transform: translateY(30px);
+  opacity: 0;
+}
+
+.modal-entering.modal-slide-enter {
+  animation: modalSlideEnter var(--modal-animation-duration, 400ms) ease forwards;
+}
+
+@keyframes modalSlideEnter {
+  from { 
+    transform: translateY(30px); 
+    opacity: 0; 
+  }
+  to { 
+    transform: translateY(0); 
+    opacity: 1; 
+  }
+}
+
+/* Bounce Enter */
+.modal-bounce-enter {
+  transform: translateY(50px) scale(0.9);
+  opacity: 0;
+}
+
+.modal-entering.modal-bounce-enter {
+  animation: modalBounceEnter var(--modal-animation-duration, 500ms) cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+@keyframes modalBounceEnter {
+  0% { 
+    transform: translateY(50px) scale(0.9); 
+    opacity: 0; 
+  }
+  50% { 
+    transform: translateY(-10px) scale(1.02); 
+  }
+  70% { 
+    transform: translateY(5px) scale(0.99); 
+  }
+  100% { 
+    transform: translateY(0) scale(1); 
+    opacity: 1; 
+  }
+}
+
+/* Scale Enter */
+.modal-scale-enter {
+  transform: scale(0.8);
+  opacity: 0;
+}
+
+.modal-entering.modal-scale-enter {
+  animation: modalScaleEnter var(--modal-animation-duration, 350ms) cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes modalScaleEnter {
+  from { 
+    transform: scale(0.8); 
+    opacity: 0; 
+  }
+  to { 
+    transform: scale(1); 
+    opacity: 1; 
+  }
+}
+
+/* Elastic Enter */
+.modal-elastic-enter {
+  transform: scale(0.3);
+  opacity: 0;
+}
+
+.modal-entering.modal-elastic-enter {
+  animation: modalElasticEnter var(--modal-animation-duration, 600ms) cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+@keyframes modalElasticEnter {
+  0% { 
+    transform: scale(0.3); 
+    opacity: 0; 
+  }
+  40% { 
+    transform: scale(1.1); 
+  }
+  60% { 
+    transform: scale(0.95); 
+  }
+  80% { 
+    transform: scale(1.02); 
+  }
+  100% { 
+    transform: scale(1); 
+    opacity: 1; 
+  }
+}
+
+/* Flip Enter */
+.modal-flip-enter {
+  transform: perspective(400px) rotateX(-90deg);
+  opacity: 0;
+}
+
+.modal-entering.modal-flip-enter {
+  animation: modalFlipEnter var(--modal-animation-duration, 500ms) ease forwards;
+}
+
+@keyframes modalFlipEnter {
+  from { 
+    transform: perspective(400px) rotateX(-90deg); 
+    opacity: 0; 
+  }
+  to { 
+    transform: perspective(400px) rotateX(0); 
+    opacity: 1; 
+  }
+}
+
+/* Glitch Enter */
+.modal-glitch-enter {
+  opacity: 0;
+  clip-path: inset(50% 50% 50% 50%);
+}
+
+.modal-entering.modal-glitch-enter {
+  animation: modalGlitchEnter var(--modal-animation-duration, 400ms) steps(5) forwards;
+}
+
+@keyframes modalGlitchEnter {
+  0% { 
+    opacity: 0; 
+    clip-path: inset(50% 50% 50% 50%);
+    transform: translate(0);
+  }
+  20% { 
+    clip-path: inset(20% 0 60% 0);
+    transform: translate(-5px);
+  }
+  40% { 
+    clip-path: inset(40% 0 20% 0);
+    transform: translate(5px);
+  }
+  60% { 
+    clip-path: inset(10% 0 70% 0);
+    transform: translate(-3px);
+  }
+  80% { 
+    clip-path: inset(60% 0 10% 0);
+    transform: translate(3px);
+  }
+  100% { 
+    opacity: 1; 
+    clip-path: inset(0 0 0 0);
+    transform: translate(0);
+  }
+}
+
+/* Exit Animations */
+
+/* Fade Exit */
+.modal-exiting.modal-fade-out-exit {
+  animation: modalFadeExit var(--modal-animation-duration, 300ms) ease forwards;
+}
+
+@keyframes modalFadeExit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Slide Down Exit */
+.modal-exiting.modal-slide-down-exit {
+  animation: modalSlideDownExit var(--modal-animation-duration, 300ms) ease forwards;
+}
+
+@keyframes modalSlideDownExit {
+  from { 
+    transform: translateY(0); 
+    opacity: 1; 
+  }
+  to { 
+    transform: translateY(30px); 
+    opacity: 0; 
+  }
+}
+
+/* Scale Out Exit */
+.modal-exiting.modal-scale-out-exit {
+  animation: modalScaleOutExit var(--modal-animation-duration, 300ms) ease forwards;
+}
+
+@keyframes modalScaleOutExit {
+  from { 
+    transform: scale(1); 
+    opacity: 1; 
+  }
+  to { 
+    transform: scale(0.8); 
+    opacity: 0; 
+  }
+}
+
+/* Slide Right Exit */
+.modal-exiting.modal-slide-right-exit {
+  animation: modalSlideRightExit var(--modal-animation-duration, 300ms) ease forwards;
+}
+
+@keyframes modalSlideRightExit {
+  from { 
+    transform: translateX(0); 
+    opacity: 1; 
+  }
+  to { 
+    transform: translateX(50px); 
+    opacity: 0; 
+  }
+}
+
+/* Overlay Animations */
+.modal-overlay-animated {
+  transition: background-color var(--modal-animation-duration, 300ms) ease;
+}
+
+.modal-overlay-entering {
+  animation: overlayFadeIn var(--modal-animation-duration, 300ms) ease forwards;
+}
+
+.modal-overlay-exiting {
+  animation: overlayFadeOut var(--modal-animation-duration, 300ms) ease forwards;
+}
+
+@keyframes overlayFadeIn {
+  from { background-color: rgba(0, 0, 0, 0); }
+  to { background-color: rgba(0, 0, 0, 0.85); }
+}
+
+@keyframes overlayFadeOut {
+  from { background-color: rgba(0, 0, 0, 0.85); }
+  to { background-color: rgba(0, 0, 0, 0); }
+}
+
+/* Content-specific animations */
+.modal-content-animated {
+  animation: modalContentEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalContentEnter {
+  from {
+    transform: translateY(20px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Stagger animations for lists */
+.modal-stagger-children > * {
+  opacity: 0;
+  animation: staggerFadeIn 0.3s ease forwards;
+}
+
+.modal-stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.modal-stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.modal-stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.modal-stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.modal-stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.modal-stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+.modal-stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+.modal-stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+
+@keyframes staggerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .modal-animated,
+  .modal-entering,
+  .modal-exiting {
+    animation: none !important;
+    transition: opacity 0.1s ease !important;
+  }
+  
+  .modal-stagger-children > * {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
+
+/* Mobile slide-up animation */
+@media (max-width: 768px) {
+  .modal-mobile-slide-up {
+    animation: modalMobileSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  @keyframes modalMobileSlideUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  
+  .modal-mobile-slide-down {
+    animation: modalMobileSlideDown 0.3s ease forwards;
+  }
+  
+  @keyframes modalMobileSlideDown {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(100%);
+    }
+  }
+}

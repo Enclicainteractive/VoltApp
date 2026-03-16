@@ -1,0 +1,474 @@
+.bot-panel {
+  padding: 0;
+}
+
+.token-reveal {
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-warning);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.token-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--volt-warning);
+  margin-bottom: 6px;
+}
+
+.token-warning {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+  margin: 0 0 8px;
+}
+
+.token-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--volt-bg-primary);
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.token-value code {
+  flex: 1;
+  font-size: 12px;
+  color: var(--volt-primary);
+  word-break: break-all;
+}
+
+.bot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bot-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.bot-item:hover {
+  border-color: var(--volt-primary);
+}
+
+.bot-item.selected {
+  border-color: var(--volt-primary);
+  background: rgba(31, 182, 255, 0.05);
+}
+
+.bot-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--volt-bg-quaternary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--volt-primary);
+  flex-shrink: 0;
+}
+
+.bot-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bot-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--volt-text-primary);
+}
+
+.bot-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--volt-text-muted);
+  margin-top: 2px;
+}
+
+.bot-status {
+  font-weight: 500;
+}
+
+.bot-status.online { color: var(--volt-success); }
+.bot-status.offline { color: #8a8f9e; }
+
+.bot-editor {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+}
+
+.bot-editor h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+  margin: 0 0 14px;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--volt-text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-secondary);
+  color: var(--volt-text-primary);
+  font-size: 13px;
+  resize: vertical;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--volt-primary);
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.btn-warning {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--volt-warning);
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-warning:hover {
+  background: rgba(251, 191, 36, 0.25);
+}
+
+.empty-icon {
+  color: var(--volt-text-muted);
+  margin-bottom: 8px;
+}
+
+/* ── Bot status colours ─────────────────────────────────────────────────────── */
+
+.bot-status.idle   { color: var(--volt-warning); }
+.bot-status.dnd    { color: var(--volt-danger); }
+
+.bot-custom-status {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+/* ── Wire SDK docs section ──────────────────────────────────────────────────── */
+
+.wire-docs {
+  margin-top: 24px;
+  border-top: 1px solid var(--volt-border);
+  padding-top: 20px;
+}
+
+.wire-docs-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--volt-primary);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.wire-docs-intro {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+/* Install command bar */
+.wire-install-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--volt-bg-primary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.wire-install-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--volt-text-muted);
+  flex-shrink: 0;
+}
+
+.wire-install-block code {
+  flex: 1;
+  color: var(--volt-primary);
+  font-size: 13px;
+}
+
+.wire-code-copy-inline {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--volt-text-muted);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.wire-code-copy-inline:hover {
+  color: var(--volt-text-primary);
+}
+
+.wire-install-note {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  margin: 0 0 14px;
+}
+
+/* Collapsible doc section */
+.wire-doc-section {
+  border: 1px solid var(--volt-border);
+  border-radius: 7px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.wire-doc-section.open {
+  border-color: rgba(31, 182, 255, 0.35);
+}
+
+.wire-doc-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--volt-bg-tertiary);
+  border: none;
+  cursor: pointer;
+  color: var(--volt-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.wire-doc-toggle:hover {
+  background: var(--volt-hover, rgba(255,255,255,0.05));
+}
+
+.wire-doc-toggle-icon {
+  color: var(--volt-primary);
+  display: flex;
+  align-items: center;
+}
+
+.wire-doc-toggle-title {
+  flex: 1;
+}
+
+.wire-doc-body {
+  padding: 12px 14px;
+  background: var(--volt-bg-secondary);
+}
+
+.wire-doc-desc {
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  margin: 0 0 10px;
+  line-height: 1.55;
+}
+
+/* Code block inside doc sections */
+.wire-code-block {
+  position: relative;
+  background: var(--volt-bg-primary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.wire-code-block pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.wire-code-block code {
+  font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+  color: #c9d1d9;
+  white-space: pre;
+}
+
+.wire-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--volt-text-muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.wire-code-copy:hover {
+  color: var(--volt-text-primary);
+  background: var(--volt-hover, rgba(255,255,255,0.08));
+}
+
+/* Status pills */
+.wire-status-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.wire-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.2px;
+}
+
+.wire-pill.online  { background: rgba(34, 197, 94, 0.15);  color: var(--volt-success); }
+.wire-pill.idle    { background: rgba(245, 158, 11, 0.15); color: var(--volt-warning); }
+.wire-pill.dnd     { background: rgba(239, 68, 68, 0.15);  color: var(--volt-danger); }
+.wire-pill.offline { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
+
+/* Docs footer link */
+.wire-docs-footer {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--volt-border);
+}
+
+.wire-docs-footer a {
+  color: var(--volt-primary);
+  text-decoration: none;
+}
+
+.wire-docs-footer a:hover {
+  text-decoration: underline;
+}
+
+/* Panel section spacing */
+.panel-section {
+  margin-bottom: 4px;
+}
+
+.panel-section .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panel-section .section-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+  margin: 0;
+}
+
+.section-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.loading-state,
+.empty-state-small {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--volt-text-muted);
+  font-size: 13px;
+  text-align: center;
+  gap: 6px;
+}

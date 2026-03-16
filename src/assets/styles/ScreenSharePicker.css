@@ -1,0 +1,312 @@
+.screen-picker-modal {
+  background: var(--volt-bg-secondary);
+  border-radius: 8px;
+  width: 700px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.screen-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.screen-picker-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.screen-picker-header .close-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.screen-picker-header .close-btn:hover {
+  color: #fff;
+}
+
+.screen-picker-error {
+  padding: 12px 20px;
+  background: rgba(239, 68, 68, 0.2);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--volt-danger);
+  font-size: 14px;
+  text-align: center;
+}
+
+.screen-picker-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #999;
+}
+
+.screen-picker-loading .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--volt-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.screen-picker-section {
+  padding: 16px 20px;
+}
+
+.screen-picker-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.screen-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.screen-picker-item {
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.screen-picker-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.screen-picker-item.selected {
+  border-color: var(--volt-primary);
+  background: rgba(124, 58, 237, 0.15);
+}
+
+.screen-picker-item img {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  display: block;
+}
+
+.screen-picker-item-name {
+  padding: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.screen-picker-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: var(--volt-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: white;
+}
+
+.screen-picker-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.screen-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.screen-picker-audio-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.screen-picker-audio-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--volt-primary);
+}
+
+.screen-picker-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.screen-picker-actions button {
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.screen-picker-actions .btn-secondary {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.screen-picker-actions .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.screen-picker-actions .btn-primary {
+  background: var(--volt-primary);
+  border: none;
+  color: #fff;
+}
+
+.screen-picker-actions .btn-primary:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+.screen-picker-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Type tabs */
+.screen-picker-type-tabs {
+  display: flex;
+  padding: 12px 20px;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.screen-picker-type-tabs button {
+  padding: 8px 16px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: #999;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.screen-picker-type-tabs button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.screen-picker-type-tabs button.active {
+  background: var(--volt-primary);
+  color: #fff;
+}
+
+/* Native picker */
+.screen-picker-native {
+  padding: 30px 20px;
+  text-align: center;
+}
+
+.screen-picker-native .btn-primary {
+  padding: 12px 32px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: var(--volt-primary);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.screen-picker-native .btn-primary:hover {
+  background: #6d28d9;
+}
+
+.native-picker-info {
+  margin-bottom: 24px;
+}
+
+.native-picker-info p {
+  color: #999;
+  margin-bottom: 20px;
+}
+
+.screen-type-selector {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.screen-type-selector label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 14px;
+}
+
+.screen-type-selector input {
+  accent-color: var(--volt-primary);
+}
+
+/* Source type badge */
+.screen-picker-item-type {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 3px;
+  font-size: 10px;
+  color: #aaa;
+  text-transform: uppercase;
+}
+
+.screen-picker-empty {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.screen-picker-empty p {
+  color: #999;
+  margin-bottom: 16px;
+}

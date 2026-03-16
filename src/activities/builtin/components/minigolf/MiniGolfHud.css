@@ -1,0 +1,553 @@
+.mgx-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
+  gap: 16px;
+  height: 100%;
+  padding: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(122, 196, 255, 0.22), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(255, 153, 93, 0.16), transparent 25%),
+    linear-gradient(180deg, #09111f 0%, #060b13 100%);
+  color: #eff6ff;
+}
+
+.mgx-stage {
+  position: relative;
+  min-height: 640px;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(191, 219, 254, 0.16);
+  background: linear-gradient(180deg, rgba(14, 24, 40, 0.94), rgba(7, 11, 19, 0.98));
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.34);
+}
+
+.mgx-scene {
+  width: 100%;
+  height: 100%;
+}
+
+.mgx-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.mgx-card {
+  border-radius: 20px;
+  border: 1px solid rgba(191, 219, 254, 0.12);
+  background: rgba(10, 16, 27, 0.9);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
+  padding: 16px;
+}
+
+.mgx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mgx-header h2,
+.mgx-card h3,
+.mgx-card h4,
+.mgx-card p {
+  margin: 0;
+}
+
+.mgx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mgx-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.mgx-lobby-stats,
+.mgx-lobby-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+}
+
+.mgx-stat-tile {
+  min-width: 120px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.mgx-stat-tile span {
+  display: block;
+  color: #9fb1c8;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mgx-stat-tile strong {
+  font-size: 15px;
+}
+
+.mgx-course-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mgx-course-button,
+.mgx-action-button,
+.mgx-player-button {
+  border: 0;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.mgx-course-button {
+  text-align: left;
+  padding: 14px;
+  color: #ecfeff;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  display: grid;
+  gap: 10px;
+}
+
+.mgx-course-button.selected {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(251, 146, 60, 0.18));
+  border-color: rgba(125, 211, 252, 0.42);
+}
+
+.mgx-course-button.leading {
+  border-color: rgba(250, 204, 21, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.1);
+}
+
+.mgx-course-button.my-vote {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.18), rgba(14, 165, 233, 0.12));
+}
+
+.mgx-course-button.locked {
+  cursor: default;
+  opacity: 0.78;
+}
+
+.mgx-course-button:hover,
+.mgx-action-button:hover,
+.mgx-player-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.26);
+}
+
+.mgx-course-meta,
+.mgx-inline-meta,
+.mgx-score-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: #bfd1e5;
+}
+
+.mgx-course-header,
+.mgx-course-header-meta,
+.mgx-featured-stats,
+.mgx-featured-badges,
+.mgx-vote-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mgx-course-rating-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mgx-featured-course {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(251, 146, 60, 0.12));
+}
+
+.mgx-featured-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.mgx-course-badge,
+.mgx-vote-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mgx-course-badge {
+  background: rgba(148, 163, 184, 0.16);
+  color: #dbeafe;
+}
+
+.mgx-course-badge.is-leading,
+.mgx-vote-pill.leading {
+  background: rgba(250, 204, 21, 0.16);
+  color: #fde68a;
+}
+
+.mgx-course-badge.is-selected,
+.mgx-vote-pill.selected {
+  background: rgba(56, 189, 248, 0.18);
+  color: #bae6fd;
+}
+
+.mgx-course-badge.is-locked {
+  background: rgba(71, 85, 105, 0.46);
+  color: #cbd5e1;
+}
+
+.mgx-vote-pill {
+  background: rgba(15, 23, 42, 0.88);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.mgx-vote-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.mgx-vote-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.mgx-vote-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #f59e0b);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.22);
+}
+
+.mgx-action-button {
+  padding: 12px 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+}
+
+.mgx-action-button.secondary {
+  background: rgba(30, 41, 59, 0.88);
+}
+
+.mgx-action-button.warning {
+  background: linear-gradient(135deg, #ef4444, #fb923c);
+}
+
+.mgx-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.mgx-player-list,
+.mgx-scoreboard {
+  display: grid;
+  gap: 10px;
+}
+
+.mgx-player-row,
+.mgx-score-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.mgx-player-row.active,
+.mgx-score-row.active {
+  background: rgba(14, 165, 233, 0.18);
+  outline: 1px solid rgba(125, 211, 252, 0.34);
+}
+
+.mgx-player-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+}
+
+.mgx-player-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.mgx-player-copy strong,
+.mgx-score-row strong {
+  font-size: 14px;
+}
+
+.mgx-muted {
+  color: #9fb1c8;
+  font-size: 13px;
+}
+
+.mgx-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.mgx-drag-guide {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(14, 165, 233, 0.08));
+  border: 1px solid rgba(125, 211, 252, 0.16);
+}
+
+.mgx-drag-guide strong,
+.mgx-drag-guide p {
+  margin: 0;
+}
+
+.mgx-power-readout,
+.mgx-ball-picker,
+.mgx-tip-card {
+  display: grid;
+  gap: 10px;
+}
+
+.mgx-power-track {
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.mgx-power-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e 0%, #facc15 60%, #f97316 100%);
+  box-shadow: 0 0 22px rgba(249, 115, 22, 0.3);
+}
+
+.mgx-color-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mgx-color-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.92) 0 18%, transparent 20%),
+    linear-gradient(180deg, #ffffff 0 34%, var(--mgx-ball-color) 35% 64%, #ffffff 65% 100%);
+  box-shadow: inset 0 -10px 16px rgba(15, 23, 42, 0.12), 0 8px 18px rgba(2, 6, 23, 0.18);
+  cursor: pointer;
+}
+
+.mgx-color-swatch.selected {
+  transform: translateY(-1px) scale(1.04);
+  border-color: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.24), inset 0 -10px 16px rgba(15, 23, 42, 0.12), 0 12px 26px rgba(2, 6, 23, 0.24);
+}
+
+.mgx-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.mgx-empty {
+  color: #9fb1c8;
+  font-size: 14px;
+}
+
+@media (max-width: 1280px) {
+  .mgx-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mgx-stage {
+    min-height: 540px;
+  }
+
+  .mgx-course-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .mgx-shell {
+    padding: 12px;
+  }
+
+  .mgx-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mgx-lobby-stats,
+  .mgx-lobby-actions {
+    justify-content: flex-start;
+  }
+
+  .mgx-course-grid,
+  .mgx-color-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .mgx-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .mgx-stage {
+    min-height: 520px;
+  }
+
+  .mgx-course-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mgx-stars {
+  display: flex;
+  gap: 2px;
+}
+
+.mgx-star {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mgx-star.filled {
+  color: #fbbf24;
+}
+
+.mgx-star.empty {
+  color: #475569;
+}
+
+.mgx-course-button {
+  position: relative;
+}
+
+.mgx-course-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.mgx-course-button.locked {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.mgx-course-button.locked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.mgx-lock-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mgx-lock-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.mgx-unlock-hint {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  font-size: 11px;
+  text-align: center;
+}
+
+.mgx-course-stars-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mgx-hole-stars {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.mgx-finish-reward {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(251, 191, 36, 0.1));
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.mgx-finish-reward p {
+  color: #86efac;
+  margin: 0;
+  font-weight: 600;
+  text-align: center;
+}

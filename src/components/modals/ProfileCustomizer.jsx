@@ -1,0 +1,417 @@
+/**
+ * ProfileCustomizer.jsx
+ *
+ * Full profile customization panel. Lets users:
+ *  - Pick from preset profile templates
+ *  - Write custom profile CSS (shown to everyone who views their profile)
+ *  - Set banner effects, layout, badge style, accent color
+ *  - All changes sync to the backend
+ */
+
+import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { X, Check, Code, Palette, Layout, Sparkles, RotateCcw, Download, Upload, Eye } from 'lucide-react'
+import { PROFILE_TEMPLATES, getTemplateById } from '../../theme/profileTemplates'
+import { apiService } from '../../services/apiService'
+import { useAuth } from '../../contexts/AuthContext'
+import './ProfileCustomizer.css'
+
+const MAX_PROFILE_CSS = 20 * 1024 // 20 KB
+
+const BANNER_EFFECTS = [
+  { value: 'none', label: 'None' },
+  { value: 'gradient-shift', label: 'Gradient Shift' },
+  { value: 'pulse', label: 'Pulse' },
+  { value: 'wave', label: 'Wave' },
+  { value: 'aurora', label: 'Aurora' },
+  { value: 'shimmer', label: 'Shimmer' },
+  { value: 'particles', label: 'Particles' },
+]
+
+const LAYOUT_OPTIONS = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'compact', label: 'Compact' },
+  { value: 'expanded', label: 'Expanded' },
+  { value: 'card', label: 'Card' },
+]
+
+const BADGE_STYLES = [
+  { value: 'default', label: 'Default' },
+  { value: 'glow', label: 'Glow' },
+  { value: 'bordered', label: 'Bordered' },
+  { value: 'minimal', label: 'Minimal' },
+  { value: '3d', label: '3D' },
+]
+
+const TABS = [
+  { id: 'templates', label: 'Templates', icon: Layout },
+  { id: 'css', label: 'Profile CSS', icon: Code },
+  { id: 'effects', label: 'Effects', icon: Sparkles },
+]
+
+const DEBOUNCE_MS = 500
+
+const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
+  const { user, refreshUser } = useAuth()
+
+  const [activeTab, setActiveTab] = useState('templates')
+  const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState('')
+  const [selectedTemplate, setSelectedTemplate] = useState(
+    () => user?.profileTemplate || 'default'
+  )
+  const [profileCSS, setProfileCSS] = useState(
+    () => user?.profileCSS || ''
+  )
+  const [bannerEffect, setBannerEffect] = useState(
+    () => settings?.bannerEffect || user?.bannerEffect || 'none'
+  )
+  const [profileLayout, setProfileLayout] = useState(
+    () => settings?.profileLayout || user?.profileLayout || 'standard'
+  )
+  const [badgeStyle, setBadgeStyle] = useState(
+    () => settings?.badgeStyle || user?.badgeStyle || 'default'
+  )
+  const [accentColor, setAccentColor] = useState(
+    () => user?.accentColor || ''
+  )
+  const [previewCSS, setPreviewCSS] = useState('')
+
+  const debounceRef = useRef(null)
+  const fileInputRef = useRef(null)
+
+  // Apply template immediately for preview
+  const applyTemplatePreview = useCallback((templateId) => {
+    const tpl = getTemplateById(templateId)
+    if (!tpl) return
+    setPreviewCSS(tpl.profileCSS)
+  }, [])
+
+  useEffect(() => {
+    applyTemplatePreview(selectedTemplate)
+  }, [selectedTemplate, applyTemplatePreview])
+
+  const handleTemplateSelect = (id) => {
+    setSelectedTemplate(id)
+    const tpl = getTemplateById(id)
+    if (tpl) {
+      if (tpl.settings.bannerEffect) setBannerEffect(tpl.settings.bannerEffect)
+      if (tpl.settings.profileLayout) setProfileLayout(tpl.settings.profileLayout)
+      if (tpl.settings.accentColor) setAccentColor(tpl.settings.accentColor || '')
+      // Auto-fill profileCSS from template if user hasn't overridden it
+      if (tpl.profileCSS && !profileCSS) {
+        setProfileCSS(tpl.profileCSS.trim())
+      }
+    }
+  }
+
+  const handleProfileCSSChange = (value) => {
+    setProfileCSS(value)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setPreviewCSS(value)
+    }, DEBOUNCE_MS)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveStatus('')
+    clearTimeout(debounceRef.current)
+    const cleanCSS = profileCSS.slice(0, MAX_PROFILE_CSS)
+    try {
+      await apiService.updateProfile({
+        profileTemplate: selectedTemplate,
+        profileCSS: cleanCSS,
+        bannerEffect,
+        profileLayout,
+        badgeStyle,
+        accentColor: accentColor || null,
+      })
+      await refreshUser?.()
+      setSaveStatus('saved')
+      onSettingsChange?.({ bannerEffect, profileLayout, badgeStyle })
+    } catch (err) {
+      setSaveStatus('error')
+      console.error('[ProfileCustomizer] Save failed:', err)
+    } finally {
+      setSaving(false)
+      setTimeout(() => setSaveStatus(''), 3000)
+    }
+  }
+
+  const handleExportCSS = () => {
+    const blob = new Blob([profileCSS], { type: 'text/css' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'my-profile.css'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImportCSS = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => handleProfileCSSChange(ev.target.result)
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  const handleResetCSS = () => {
+    if (!confirm('Reset profile CSS to the selected template default?')) return
+    const tpl = getTemplateById(selectedTemplate)
+    handleProfileCSSChange(tpl?.profileCSS?.trim() || '')
+  }
+
+  const byteCount = new TextEncoder().encode(profileCSS).length
+  const maxKB = (MAX_PROFILE_CSS / 1024).toFixed(0)
+  const usedKB = (byteCount / 1024).toFixed(1)
+
+  return (
+    <div className="profile-customizer">
+      {/* Header */}
+      <div className="pc-header">
+        <div className="pc-header-left">
+          <Palette size={20} />
+          <h3>Profile Customization</h3>
+        </div>
+        <div className="pc-header-actions">
+          {saveStatus === 'saved' && (
+            <span className="pc-save-status success"><Check size={14} /> Saved</span>
+          )}
+          {saveStatus === 'error' && (
+            <span className="pc-save-status error">Save failed</span>
+          )}
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+          {onClose && (
+            <button className="pc-close-btn" onClick={onClose}>
+              <X size={18} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="pc-tabs">
+        {TABS.map(tab => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              className={`pc-tab ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Tab content */}
+      <div className="pc-body">
+        {/* Templates tab */}
+        {activeTab === 'templates' && (
+          <div className="pc-templates">
+            <p className="pc-hint">
+              Choose a preset template. Templates apply CSS styling that everyone sees when viewing your profile.
+              Selecting one will also update the CSS tab — you can then customize it further.
+            </p>
+            <div className="pc-template-grid">
+              {PROFILE_TEMPLATES.map(tpl => (
+                <button
+                  key={tpl.id}
+                  className={`pc-template-card ${selectedTemplate === tpl.id ? 'selected' : ''}`}
+                  onClick={() => handleTemplateSelect(tpl.id)}
+                >
+                  <div
+                    className="pc-template-preview"
+                    style={{ background: tpl.preview.banner }}
+                  >
+                    {tpl.preview.accent && (
+                      <div
+                        className="pc-template-accent-dot"
+                        style={{ background: tpl.preview.accent }}
+                      />
+                    )}
+                    {selectedTemplate === tpl.id && (
+                      <div className="pc-template-check"><Check size={16} /></div>
+                    )}
+                  </div>
+                  <div className="pc-template-info">
+                    <span className="pc-template-name">{tpl.name}</span>
+                    <span className="pc-template-desc">{tpl.description}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Profile CSS tab */}
+        {activeTab === 'css' && (
+          <div className="pc-css-tab">
+            <div className="pc-css-header">
+              <div>
+                <h4>Profile CSS</h4>
+                <p className="pc-hint">
+                  CSS written here is shown to <strong>everyone</strong> who views your profile.
+                  It is scoped to <code>.profile-modal-container</code> automatically.
+                  Max {maxKB} KB.
+                </p>
+              </div>
+              <div className="pc-css-actions">
+                <span className={`pc-byte-counter ${byteCount > MAX_PROFILE_CSS * 0.8 ? 'warning' : ''}`}>
+                  {usedKB} / {maxKB} KB
+                </span>
+                <button className="cce-icon-btn" onClick={handleExportCSS} title="Export CSS">
+                  <Download size={15} />
+                </button>
+                <button className="cce-icon-btn" onClick={() => fileInputRef.current?.click()} title="Import CSS">
+                  <Upload size={15} />
+                </button>
+                <button className="cce-icon-btn danger" onClick={handleResetCSS} title="Reset to template">
+                  <RotateCcw size={15} />
+                </button>
+                <input ref={fileInputRef} type="file" accept=".css,text/css" style={{ display: 'none' }} onChange={handleImportCSS} />
+              </div>
+            </div>
+
+            <p className="pc-css-scope-hint">
+              <code>.profile-modal-container {'{'} /* your CSS here */ {'}'}</code>
+            </p>
+
+            <div className="pc-css-editor-wrapper">
+              <textarea
+                className="pc-css-textarea"
+                value={profileCSS}
+                onChange={e => handleProfileCSSChange(e.target.value)}
+                placeholder={`/* Customize how your profile looks to others */\n\n.profile-display-name {\n  color: var(--volt-primary);\n  text-shadow: 0 0 20px currentColor;\n}\n\n.profile-banner-bg {\n  background: linear-gradient(135deg, #1a0030, #0d001a) !important;\n}`}
+                spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
+                wrap="off"
+              />
+            </div>
+
+            <div className="pc-usage-bar">
+              <div
+                className="pc-usage-fill"
+                style={{
+                  width: `${Math.min(100, (byteCount / MAX_PROFILE_CSS) * 100)}%`,
+                  background: byteCount > MAX_PROFILE_CSS * 0.8 ? 'var(--volt-warning)' : 'var(--volt-primary)'
+                }}
+              />
+            </div>
+
+            <div className="pc-css-snippets-row">
+              <span className="pc-snippets-label">Quick targets:</span>
+              {['.profile-display-name', '.profile-banner-bg', '.profile-avatar-img', '.profile-section', '.profile-tab-btn.active'].map(sel => (
+                <button
+                  key={sel}
+                  className="pc-snippet-chip"
+                  onClick={() => handleProfileCSSChange(profileCSS + `\n\n${sel} {\n  \n}`)}
+                >
+                  {sel}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Effects tab */}
+        {activeTab === 'effects' && (
+          <div className="pc-effects-tab">
+            <div className="form-group">
+              <label>Accent Color</label>
+              <p className="pc-hint">Shown on your profile header.</p>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <input
+                  type="color"
+                  className="input"
+                  style={{ width: 56, height: 36, padding: 2, cursor: 'pointer', borderRadius: 8 }}
+                  value={accentColor || '#1fb6ff'}
+                  onChange={e => setAccentColor(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="input"
+                  style={{ width: 110, fontFamily: 'monospace', fontSize: 13 }}
+                  value={accentColor}
+                  placeholder="#1fb6ff"
+                  onChange={e => setAccentColor(e.target.value)}
+                  maxLength={7}
+                />
+                {accentColor && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => setAccentColor('')}>
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Banner Effect</label>
+              <p className="pc-hint">Animated effect overlaid on your profile banner.</p>
+              <div className="pc-effect-grid">
+                {BANNER_EFFECTS.map(e => (
+                  <button
+                    key={e.value}
+                    className={`pc-effect-card ${bannerEffect === e.value ? 'selected' : ''}`}
+                    onClick={() => setBannerEffect(e.value)}
+                  >
+                    <div className={`pc-effect-preview banner-effect-${e.value}`} />
+                    <span>{e.label}</span>
+                    {bannerEffect === e.value && <Check size={12} className="pc-effect-check" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Profile Layout</label>
+              <p className="pc-hint">Changes the overall structure of your profile.</p>
+              <div className="pc-layout-grid">
+                {LAYOUT_OPTIONS.map(l => (
+                  <button
+                    key={l.value}
+                    className={`pc-layout-card ${profileLayout === l.value ? 'selected' : ''}`}
+                    onClick={() => setProfileLayout(l.value)}
+                  >
+                    {l.label}
+                    {profileLayout === l.value && <Check size={12} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Badge Style</label>
+              <p className="pc-hint">How role and status badges look on your profile.</p>
+              <div className="pc-layout-grid">
+                {BADGE_STYLES.map(b => (
+                  <button
+                    key={b.value}
+                    className={`pc-layout-card ${badgeStyle === b.value ? 'selected' : ''}`}
+                    onClick={() => setBadgeStyle(b.value)}
+                  >
+                    {b.label}
+                    {badgeStyle === b.value && <Check size={12} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default ProfileCustomizer

@@ -1,0 +1,218 @@
+.voice-recorder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.voice-recorder.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.voice-recorder-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.voice-recorder-btn:hover {
+  color: var(--volt-text);
+  background: var(--volt-bg-hover);
+}
+
+.voice-recorder-btn.record {
+  color: var(--volt-text-muted);
+}
+
+.voice-recorder-btn.record:hover {
+  color: var(--volt-primary);
+  background: var(--volt-bg-hover);
+}
+
+.voice-recorder-btn.record.active {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.voice-recorder-btn.record.active:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.voice-recorder-btn.cancel {
+  color: var(--volt-text-muted);
+}
+
+.voice-recorder-btn.cancel:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.voice-recorder-btn.send {
+  color: var(--volt-primary);
+  background: var(--volt-primary);
+  color: white;
+}
+
+.voice-recorder-btn.send:hover {
+  background: var(--volt-primary-dark);
+}
+
+.voice-recorder-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voice-recorder-timer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ef4444;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.recording-indicator {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recording-pulse {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.3);
+  animation: recording-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.voice-recorder-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 8px;
+  min-width: 200px;
+}
+
+.voice-recorder-preview-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.voice-recorder-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+}
+
+.wave-bar {
+  width: 3px;
+  height: 100%;
+  background: var(--volt-primary);
+  border-radius: 2px;
+  animation: wave 0.5s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(1) { animation-delay: 0s; height: 40%; }
+.wave-bar:nth-child(2) { animation-delay: 0.1s; height: 70%; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; height: 100%; }
+.wave-bar:nth-child(4) { animation-delay: 0.3s; height: 70%; }
+.wave-bar:nth-child(5) { animation-delay: 0.4s; height: 40%; }
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.5); }
+}
+
+.voice-recorder-duration {
+  color: var(--volt-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.voice-recorder-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-recorder-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.voice-recorder-error {
+  position: absolute;
+  bottom: -20px;
+  left: 0;
+  font-size: 12px;
+  color: #ef4444;
+}
+
+.voice-recorder.recording .voice-recorder-btn.record {
+  animation: record-btn-pulse 1s ease-in-out infinite;
+}
+
+@keyframes record-btn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+
+@media (max-width: 768px) {
+  .voice-recorder-btn {
+    width: 44px;
+    height: 44px;
+  }
+  
+  .voice-recorder-preview {
+    min-width: 150px;
+    padding: 10px 12px;
+  }
+}

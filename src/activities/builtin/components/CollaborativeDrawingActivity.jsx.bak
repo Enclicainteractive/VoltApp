@@ -1,0 +1,1392 @@
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { ArrowDownTrayIcon, TrashIcon, UsersIcon, SwatchIcon } from '@heroicons/react/24/outline'
+
+const CURSOR_DEBOUNCE_MS = 50
+const STROKE_DEBOUNCE_MS = 100
+const SYNC_REQUEST_DEBOUNCE_MS = 2000
+const RECONNECT_CHECK_INTERVAL_MS = 3000
+const MAX_COMPRESSED_POINTS = 256
+
+const PRESET_COLORS = [
+  '#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff',
+  '#ff8800', '#8800ff', '#ff0088', '#88ff00', '#0088ff', '#ff8888', '#88ff88', '#8888ff'
+]
+
+const EXTENDED_COLORS = [
+  '#111827', '#374151', '#6b7280', '#d1d5db', '#f3f4f6', '#ef4444', '#f97316', '#f59e0b',
+  '#eab308', '#84cc16', '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
+  '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e'
+]
+
+const BRUSH_TYPES = {
+  PEN: 'pen',
+  BRUSH: 'brush',
+  SPRAY: 'spray',
+  HIGHLIGHTER: 'highlighter'
+}
+
+const BRUSH_PRESETS = [
+  { type: BRUSH_TYPES.PEN, name: 'Pen', icon: '✏️' },
+  { type: BRUSH_TYPES.BRUSH, name: 'Brush', icon: '🖌️' },
+  { type: BRUSH_TYPES.SPRAY, name: 'Spray', icon: '💨' },
+  { type: BRUSH_TYPES.HIGHLIGHTER, name: 'Highlight', icon: '🖍️' }
+]
+
+const TOOL_TYPES = {
+  FREEHAND: 'freehand',
+  LINE: 'line',
+  RECTANGLE: 'rectangle',
+  CIRCLE: 'circle',
+  TRIANGLE: 'triangle',
+  ELLIPSE: 'ellipse',
+  POLYGON: 'polygon',
+  TEXT: 'text',
+  FILL: 'fill',
+  EYEDROPPER: 'eyedropper',
+  BLUR: 'blur',
+  GRADIENT: 'gradient',
+  PAN: 'pan',
+  SELECT: 'select'
+}
+
+const TOOL_PRESETS = [
+  { type: TOOL_TYPES.FREEHAND, name: 'Freehand', icon: '✏️' },
+  { type: TOOL_TYPES.LINE, name: 'Line', icon: '／' },
+  { type: TOOL_TYPES.RECTANGLE, name: 'Rectangle', icon: '▭' },
+  { type: TOOL_TYPES.CIRCLE, name: 'Circle', icon: '◯' },
+  { type: TOOL_TYPES.TRIANGLE, name: 'Triangle', icon: '△' },
+  { type: TOOL_TYPES.ELLIPSE, name: 'Ellipse', icon: '⬭' },
+  { type: TOOL_TYPES.POLYGON, name: 'Polygon', icon: '⬡' },
+  { type: TOOL_TYPES.TEXT, name: 'Text', icon: 'T' },
+  { type: TOOL_TYPES.FILL, name: 'Fill', icon: '🪣' },
+  { type: TOOL_TYPES.EYEDROPPER, name: 'Eyedropper', icon: '💉' },
+  { type: TOOL_TYPES.BLUR, name: 'Blur', icon: '💧' },
+  { type: TOOL_TYPES.GRADIENT, name: 'Gradient', icon: '🌈' },
+  { type: TOOL_TYPES.PAN, name: 'Pan', icon: '✋' },
+  { type: TOOL_TYPES.SELECT, name: 'Select', icon: '⬚' }
+]
+
+const SHAPE_FILL_MODES = {
+  STROKE: 'stroke',
+  FILL: 'fill',
+  BOTH: 'both'
+}
+
+const MAX_CURSOR_AGE_MS = 10000
+const MAX_CURSOR_USERS = 64
+const MAX_HISTORY_STROKES = 6000
+const MAX_STROKE_POINTS = 5000
+const MAX_CANVAS_DIMENSION = 5000
+
+const compressPoints = (points) => {
+  if (!points || points.length <= MAX_COMPRESSED_POINTS) return points
+  const step = Math.ceil(points.length / MAX_COMPRESSED_POINTS)
+  return points.filter((_, i) => i % step === 0)
+}
+
+const decompressPoints = (compressed, originalLength) => {
+  if (!compressed || compressed.length === originalLength) return compressed
+  return compressed
+}
+
+const compressStroke = (stroke) => {
+  if (!stroke || !stroke.points) return stroke
+  return {
+    ...stroke,
+    points: compressPoints(stroke.points)
+  }
+}
+
+const clampPercent = (value) => Math.max(0, Math.min(100, value))
+
+const isFiniteNumber = (value) => Number.isFinite(value)
+
+const isValidPoint = (point) => (
+  point &&
+  isFiniteNumber(point.x) &&
+  isFiniteNumber(point.y) &&
+  Math.abs(point.x) <= MAX_CANVAS_DIMENSION &&
+  Math.abs(point.y) <= MAX_CANVAS_DIMENSION
+)
+
+const normalizeStroke = (stroke) => {
+  if (!stroke || typeof stroke !== 'object' || !Array.isArray(stroke.points)) return null
+  const points = stroke.points
+    .filter(isValidPoint)
+    .slice(0, MAX_STROKE_POINTS)
+    .map((p) => ({ x: p.x, y: p.y }))
+
+  const tool = Object.values(TOOL_TYPES).includes(stroke.tool) ? stroke.tool : TOOL_TYPES.FREEHAND
+  if (points.length < 2 && tool !== TOOL_TYPES.TEXT) return null
+
+  const sizeRaw = Number(stroke.size)
+  const size = isFiniteNumber(sizeRaw) ? Math.max(1, Math.min(60, sizeRaw)) : 3
+  const brushType = Object.values(BRUSH_TYPES).includes(stroke.brushType) ? stroke.brushType : BRUSH_TYPES.PEN
+  const color = typeof stroke.color === 'string' ? stroke.color : '#000000'
+  const secondaryColor = typeof stroke.secondaryColor === 'string' ? stroke.secondaryColor : '#ffffff'
+  const opacityRaw = Number(stroke.opacity)
+  const opacity = isFiniteNumber(opacityRaw) ? Math.max(1, Math.min(100, opacityRaw)) : 100
+  const fillMode = Object.values(SHAPE_FILL_MODES).includes(stroke.fillMode) ? stroke.fillMode : SHAPE_FILL_MODES.STROKE
+
+  return {
+    ...stroke,
+    points,
+    tool,
+    size,
+    brushType,
+    color,
+    secondaryColor,
+    opacity,
+    fillMode,
+    timestamp: Number(stroke.timestamp) || Date.now(),
+    userId: stroke.userId || null
+  }
+}
+
+const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
+  if (!sdk) {
+    return <div className="builtin-activity-loading"><div className="loading-spinner" /><p>Loading Drawing Board...</p></div>
+  }
+
+  const canvasRef = useRef(null)
+  const containerRef = useRef(null)
+  const drawingRef = useRef(false)
+  const currentStroke = useRef([])
+  const historyRef = useRef([])
+  const redoStackRef = useRef([])
+  const lastCursorEmitRef = useRef(0)
+  const isInitializedRef = useRef(false)
+  const pendingStrokeRef = useRef(null)
+  const lastStrokeTimeRef = useRef(0)
+  const selectedColorRef = useRef('#000000')
+  const secondaryColorRef = useRef('#ffffff')
+  const opacityRef = useRef(100)
+  const fillModeRef = useRef(SHAPE_FILL_MODES.STROKE)
+  const isEraserRef = useRef(false)
+
+  const [selectedColor, setSelectedColor] = useState('#000000')
+  const [secondaryColor, setSecondaryColor] = useState('#ffffff')
+  const [brushSize, setBrushSize] = useState(3)
+  const [brushOpacity, setBrushOpacity] = useState(100)
+  const [brushType, setBrushType] = useState(BRUSH_TYPES.PEN)
+  const [toolType, setToolType] = useState(TOOL_TYPES.FREEHAND)
+  const [isEraser, setIsEraser] = useState(false)
+  const [fillMode, setFillMode] = useState(SHAPE_FILL_MODES.STROKE)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const [showSecondaryColorPicker, setShowSecondaryColorPicker] = useState(false)
+  const [showOptionsPanel, setShowOptionsPanel] = useState(false)
+  const [smoothLines, setSmoothLines] = useState(true)
+  const [gridEnabled, setGridEnabled] = useState(false)
+  const [gridSize, setGridSize] = useState(20)
+  const [cursors, setCursors] = useState({})
+  const [participants, setParticipants] = useState([])
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState('connected')
+  const allColors = useMemo(() => [...new Set([...PRESET_COLORS, ...EXTENDED_COLORS])], [])
+
+  const debouncedStrokeRef = useRef(null)
+  const cursorThrottleRef = useRef(0)
+  const syncRequestedRef = useRef(false)
+  const isReconnectingRef = useRef(false)
+  const lastSyncTimeRef = useRef(0)
+
+  useEffect(() => {
+    selectedColorRef.current = selectedColor
+  }, [selectedColor])
+
+  useEffect(() => {
+    secondaryColorRef.current = secondaryColor
+  }, [secondaryColor])
+
+  useEffect(() => {
+    opacityRef.current = brushOpacity
+  }, [brushOpacity])
+
+  useEffect(() => {
+    fillModeRef.current = fillMode
+  }, [fillMode])
+
+  useEffect(() => {
+    isEraserRef.current = isEraser
+  }, [isEraser])
+
+  useEffect(() => {
+    if (!showColorPicker) return undefined
+
+    const handlePointerDown = (event) => {
+      const colorRoot = containerRef.current?.querySelector('.color-section')
+      if (colorRoot && !colorRoot.contains(event.target)) {
+        setShowColorPicker(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [showColorPicker])
+
+  // Stable cursor key generator
+  const getCursorKey = useCallback((userId, index) => `cursor-${userId}-${index}`, [])
+
+  // Get peer ID from SDK for filtering local cursor
+  const peerIdRef = useRef(null)
+  useEffect(() => {
+    if (sdk?.getP2PStatus) {
+      const status = sdk.getP2PStatus()
+      peerIdRef.current = status?.peerId
+    }
+  }, [sdk])
+
+  // Initialize canvas
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    isInitializedRef.current = true
+  }, [])
+
+  // Debounced stroke broadcast
+  const broadcastStrokeDebounced = useCallback((stroke) => {
+    if (debouncedStrokeRef.current) {
+      clearTimeout(debouncedStrokeRef.current)
+    }
+    debouncedStrokeRef.current = setTimeout(() => {
+      const compressed = compressStroke(stroke)
+      sdk.emitEvent('drawing:stroke', { stroke: compressed }, { serverRelay: true })
+    }, STROKE_DEBOUNCE_MS)
+  }, [sdk])
+
+  // Request sync from peers
+  const requestCanvasSync = useCallback(() => {
+    const now = Date.now()
+    if (now - lastSyncTimeRef.current > SYNC_REQUEST_DEBOUNCE_MS) {
+      lastSyncTimeRef.current = now
+      sdk.emitEvent('drawing:sync-request', {}, { serverRelay: true })
+    }
+  }, [sdk])
+
+  // Handle peer reconnection
+  const handlePeerReconnect = useCallback(() => {
+    isReconnectingRef.current = true
+    setConnectionStatus('reconnecting')
+    
+    setTimeout(() => {
+      requestCanvasSync()
+      sdk.emitEvent('drawing:join', {
+        user: { 
+          id: currentUser?.id, 
+          username: currentUser?.username || 'Anonymous', 
+          color: selectedColorRef.current
+        }
+      }, { serverRelay: true })
+      
+      isReconnectingRef.current = false
+      setConnectionStatus('connected')
+    }, 500)
+  }, [sdk, currentUser, requestCanvasSync])
+
+  // Subscribe to P2P events
+  useEffect(() => {
+    if (!sdk) return
+
+    requestCanvasSync()
+
+    const offEvent = sdk.on('event', (evt) => {
+      if (!evt || typeof evt !== 'object') return
+      const { eventType, payload, userId } = evt
+      const fromPeerId = evt.fromPeerId || userId
+
+      switch (eventType) {
+        case 'drawing:stroke':
+          // Accept strokes from other users
+          if (fromPeerId !== currentUser?.id) {
+            const stroke = normalizeStroke(payload?.stroke)
+            if (!stroke) break
+            drawRemoteStroke(stroke)
+            // Add to history without triggering sync
+            pushHistoryStroke({ ...stroke, synced: true })
+            updateUndoRedoState()
+          }
+          break
+
+        case 'drawing:cursor':
+          if (
+            fromPeerId &&
+            fromPeerId !== currentUser?.id &&
+            fromPeerId !== peerIdRef.current &&
+            payload &&
+            isFiniteNumber(Number(payload.x)) &&
+            isFiniteNumber(Number(payload.y))
+          ) {
+            setCursors(prev => {
+              // Use a Map-like approach with stable keys
+              const next = { ...prev }
+              // Clean up old cursors (older than 10 seconds)
+              Object.keys(next).forEach(key => {
+                if (Date.now() - (next[key]?.timestamp || 0) > MAX_CURSOR_AGE_MS) {
+                  delete next[key]
+                }
+              })
+              const now = Date.now()
+              if (!next[fromPeerId] && Object.keys(next).length >= MAX_CURSOR_USERS) {
+                const oldest = Object.keys(next).sort((a, b) => (next[a]?.timestamp || 0) - (next[b]?.timestamp || 0))[0]
+                if (oldest) delete next[oldest]
+              }
+              next[fromPeerId] = {
+                x: clampPercent(Number(payload.x)),
+                y: clampPercent(Number(payload.y)),
+                username: typeof payload.username === 'string' ? payload.username : 'User',
+                color: payload.color, 
+                timestamp: now
+              }
+              return next
+            })
+          }
+          break
+
+        case 'drawing:clear':
+          // Only clear if the clear is from another user and is legitimate
+          if (fromPeerId !== currentUser?.id) {
+            clearCanvasLocal(true)
+          }
+          break
+
+        case 'drawing:sync':
+          // Receive full canvas state from another peer
+          if (Array.isArray(payload?.strokes) && fromPeerId !== currentUser?.id) {
+            restoreCanvas(payload.strokes)
+          }
+          break
+
+        case 'drawing:sync-response':
+          // Receive full canvas state as response to our sync request
+          if (Array.isArray(payload?.strokes)) {
+            restoreCanvas(payload.strokes)
+          }
+          break
+
+        case 'drawing:user-joined':
+          // Add participant
+          if (payload?.user?.id && payload.user.id !== currentUser?.id) {
+            setParticipants(prev => {
+              const exists = prev.find(p => p.id === payload.user.id)
+              if (exists) return prev
+              const username = typeof payload.user.username === 'string' ? payload.user.username : 'Anonymous'
+              const color = typeof payload.user.color === 'string' ? payload.user.color : '#666'
+              return [...prev, { id: payload.user.id, username, color }]
+            })
+            
+            // Send current canvas state to new joiner
+            if (historyRef.current.length > 0) {
+              sdk.emitEvent('drawing:sync-response', { 
+                strokes: historyRef.current 
+              }, { serverRelay: false, targetPeerId: payload.user.id })
+            }
+          }
+          break
+
+        case 'drawing:user-left':
+          if (!payload?.userId) break
+          setParticipants(prev => prev.filter(p => p.id !== payload.userId))
+          setCursors(prev => {
+            const next = { ...prev }
+            delete next[payload.userId]
+            return next
+          })
+          break
+
+        case 'drawing:undo':
+          if (fromPeerId !== currentUser?.id) {
+            undoRemote(Number(payload?.strokeIndex))
+          }
+          break
+
+        case 'drawing:redo':
+          if (fromPeerId !== currentUser?.id) {
+            redoRemote(payload?.stroke)
+          }
+          break
+      }
+    })
+
+    // Send join event
+    sdk.emitEvent('drawing:join', {
+      user: { 
+        id: currentUser?.id, 
+        username: currentUser?.username || 'Anonymous', 
+        color: selectedColor 
+      }
+    }, { serverRelay: true })
+
+    // Cursor tracking with rate limiting
+    const handleMouseMove = (e) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      
+      const now = Date.now()
+      if (now - lastCursorEmitRef.current < 80) return
+      lastCursorEmitRef.current = now
+      
+      const rect = canvas.getBoundingClientRect()
+      const x = clampPercent(((e.clientX - rect.left) / rect.width) * 100)
+      const y = clampPercent(((e.clientY - rect.top) / rect.height) * 100)
+
+      sdk.emitEvent('drawing:cursor', { 
+        x, y, 
+        username: currentUser?.username, 
+        color: isEraserRef.current ? '#ffffff' : selectedColorRef.current
+      }, { serverRelay: true })
+    }
+
+    const canvas = canvasRef.current
+    if (canvas) {
+      canvas.addEventListener('mousemove', handleMouseMove, { passive: true })
+    }
+
+    return () => {
+      offEvent?.()
+      if (canvas) canvas.removeEventListener('mousemove', handleMouseMove)
+      sdk.emitEvent('drawing:leave', { userId: currentUser?.id }, { serverRelay: true })
+    }
+  }, [sdk, currentUser?.id, currentUser?.username])
+
+  // Remove stale cursors periodically.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now()
+      setCursors((prev) => {
+        let changed = false
+        const next = {}
+        Object.entries(prev).forEach(([id, cursor]) => {
+          if (now - (cursor?.timestamp || 0) <= MAX_CURSOR_AGE_MS) {
+            next[id] = cursor
+          } else {
+            changed = true
+          }
+        })
+        return changed ? next : prev
+      })
+    }, 3000)
+
+    return () => clearInterval(timer)
+  }, [])
+
+  const getCanvasPoint = (clientX, clientY) => {
+    const canvas = canvasRef.current
+    if (!canvas) return { x: 0, y: 0 }
+    const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = (clientX - rect.left) * scaleX
+    const y = (clientY - rect.top) * scaleY
+    return {
+      x: Math.max(0, Math.min(canvas.width, x)),
+      y: Math.max(0, Math.min(canvas.height, y))
+    }
+  }
+
+  const drawStrokeOnCanvas = (ctx, stroke) => {
+    if (!stroke?.points?.length || stroke.points.length < 2) return
+
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity / 100 : 1
+
+    const effectiveColor = stroke.color || '#000'
+    const secondaryColor = stroke.secondaryColor || '#fff'
+    const fillMode = stroke.fillMode || SHAPE_FILL_MODES.STROKE
+    const start = stroke.points[0]
+    const end = stroke.points[stroke.points.length - 1]
+
+    if (stroke.tool === TOOL_TYPES.LINE) {
+      ctx.lineWidth = stroke.size || 3
+      ctx.strokeStyle = effectiveColor
+      ctx.beginPath()
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
+      ctx.stroke()
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.RECTANGLE) {
+      ctx.lineWidth = stroke.size || 3
+      ctx.strokeStyle = effectiveColor
+      ctx.fillStyle = secondaryColor
+      if (fillMode === SHAPE_FILL_MODES.FILL || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y)
+      }
+      if (fillMode === SHAPE_FILL_MODES.STROKE || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y)
+      }
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.CIRCLE) {
+      const radius = Math.hypot(end.x - start.x, end.y - start.y)
+      ctx.lineWidth = stroke.size || 3
+      ctx.strokeStyle = effectiveColor
+      ctx.fillStyle = secondaryColor
+      ctx.beginPath()
+      ctx.arc(start.x, start.y, radius, 0, Math.PI * 2)
+      if (fillMode === SHAPE_FILL_MODES.FILL || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.fill()
+      }
+      if (fillMode === SHAPE_FILL_MODES.STROKE || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.stroke()
+      }
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.TRIANGLE) {
+      ctx.lineWidth = stroke.size || 3
+      ctx.strokeStyle = effectiveColor
+      ctx.fillStyle = secondaryColor
+      const width = end.x - start.x
+      const height = end.y - start.y
+      ctx.beginPath()
+      ctx.moveTo(start.x + width / 2, start.y)
+      ctx.lineTo(start.x + width, start.y + height)
+      ctx.lineTo(start.x, start.y + height)
+      ctx.closePath()
+      if (fillMode === SHAPE_FILL_MODES.FILL || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.fill()
+      }
+      if (fillMode === SHAPE_FILL_MODES.STROKE || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.stroke()
+      }
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.ELLIPSE) {
+      const radiusX = Math.abs(end.x - start.x) / 2
+      const radiusY = Math.abs(end.y - start.y) / 2
+      const centerX = start.x + (end.x - start.x) / 2
+      const centerY = start.y + (end.y - start.y) / 2
+      ctx.lineWidth = stroke.size || 3
+      ctx.strokeStyle = effectiveColor
+      ctx.fillStyle = secondaryColor
+      ctx.beginPath()
+      ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2)
+      if (fillMode === SHAPE_FILL_MODES.FILL || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.fill()
+      }
+      if (fillMode === SHAPE_FILL_MODES.STROKE || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.stroke()
+      }
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.POLYGON) {
+      ctx.lineWidth = stroke.size || 3
+      ctx.strokeStyle = effectiveColor
+      ctx.fillStyle = secondaryColor
+      const sides = 6
+      const centerX = (start.x + end.x) / 2
+      const centerY = (start.y + end.y) / 2
+      const radius = Math.hypot(end.x - start.x, end.y - start.y) / 2
+      ctx.beginPath()
+      for (let i = 0; i <= sides; i++) {
+        const angle = (i * 2 * Math.PI) / sides - Math.PI / 2
+        const x = centerX + radius * Math.cos(angle)
+        const y = centerY + radius * Math.sin(angle)
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      ctx.closePath()
+      if (fillMode === SHAPE_FILL_MODES.FILL || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.fill()
+      }
+      if (fillMode === SHAPE_FILL_MODES.STROKE || fillMode === SHAPE_FILL_MODES.BOTH) {
+        ctx.stroke()
+      }
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.GRADIENT) {
+      const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y)
+      gradient.addColorStop(0, effectiveColor)
+      gradient.addColorStop(1, secondaryColor)
+      ctx.lineWidth = stroke.size || 3
+      ctx.strokeStyle = gradient
+      ctx.beginPath()
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
+      ctx.stroke()
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.TEXT && stroke.text) {
+      ctx.font = `${(stroke.size || 3) * 4}px sans-serif`
+      ctx.fillStyle = effectiveColor
+      ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity / 100 : 1
+      ctx.fillText(stroke.text, start.x, start.y)
+      ctx.globalAlpha = 1
+      return
+    }
+
+    if (stroke.tool === TOOL_TYPES.BLUR) {
+      ctx.globalAlpha = 0.3
+      ctx.lineWidth = (stroke.size || 3) * 2
+      ctx.strokeStyle = effectiveColor
+      ctx.filter = 'blur(5px)'
+      ctx.beginPath()
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
+      for (let i = 1; i < stroke.points.length; i++) {
+        ctx.lineTo(stroke.points[i].x, stroke.points[i].y)
+      }
+      ctx.stroke()
+      ctx.filter = 'none'
+      ctx.globalAlpha = 1
+      return
+    }
+
+    // Apply brush type effects
+    switch (stroke.brushType) {
+      case BRUSH_TYPES.HIGHLIGHTER:
+        ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity / 100 : 1) * 0.4
+        ctx.lineWidth = (stroke.size || 3) * 3
+        ctx.strokeStyle = stroke.color || '#ffff00'
+        break
+      case BRUSH_TYPES.SPRAY:
+        ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity / 100 : 1) * 0.6
+        ctx.lineWidth = (stroke.size || 3) * 2
+        ctx.strokeStyle = stroke.color || '#000'
+        stroke.points.forEach(point => {
+          for (let i = 0; i < 5; i++) {
+            const offsetX = (Math.random() - 0.5) * 20
+            const offsetY = (Math.random() - 0.5) * 20
+            ctx.fillStyle = stroke.color || '#000'
+            ctx.fillRect(point.x + offsetX, point.y + offsetY, 1, 1)
+          }
+        })
+        ctx.globalAlpha = 1
+        return
+      case BRUSH_TYPES.BRUSH:
+        ctx.lineWidth = (stroke.size || 3) * 1.5
+        ctx.strokeStyle = stroke.color || '#000'
+        ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity / 100 : 1) * 0.8
+        break
+      case BRUSH_TYPES.PEN:
+      default:
+        ctx.lineWidth = stroke.size || 3
+        ctx.strokeStyle = stroke.color || '#000'
+        ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity / 100 : 1
+        break
+    }
+
+    ctx.beginPath()
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
+    
+    // Use quadratic curves for smoother lines
+    for (let i = 1; i < stroke.points.length - 1; i++) {
+      const midX = (stroke.points[i].x + stroke.points[i + 1].x) / 2
+      const midY = (stroke.points[i].y + stroke.points[i + 1].y) / 2
+      ctx.quadraticCurveTo(stroke.points[i].x, stroke.points[i].y, midX, midY)
+    }
+    
+    // Last point
+    if (stroke.points.length > 1) {
+      const last = stroke.points[stroke.points.length - 1]
+      ctx.lineTo(last.x, last.y)
+    }
+    
+    ctx.stroke()
+    ctx.globalAlpha = 1
+  }
+
+  const drawRemoteStroke = (stroke) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    drawStrokeOnCanvas(ctx, stroke)
+  }
+
+  const pushHistoryStroke = useCallback((stroke) => {
+    const normalized = normalizeStroke(stroke)
+    if (!normalized) return null
+    historyRef.current.push(normalized)
+    if (historyRef.current.length > MAX_HISTORY_STROKES) {
+      historyRef.current = historyRef.current.slice(historyRef.current.length - MAX_HISTORY_STROKES)
+    }
+    return normalized
+  }, [])
+
+  const updateUndoRedoState = useCallback(() => {
+    setCanUndo(historyRef.current.length > 0)
+    setCanRedo(redoStackRef.current.length > 0)
+  }, [])
+
+  const redrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    
+    historyRef.current.forEach(stroke => drawStrokeOnCanvas(ctx, stroke))
+  }, [])
+
+  const restoreCanvas = useCallback((strokes) => {
+    if (!strokes || !Array.isArray(strokes)) return
+
+    const normalized = strokes
+      .map(normalizeStroke)
+      .filter(Boolean)
+      .slice(-MAX_HISTORY_STROKES)
+
+    historyRef.current = normalized.map(s => ({ ...s, synced: true }))
+    redoStackRef.current = []
+    redrawCanvas()
+    updateUndoRedoState()
+  }, [redrawCanvas, updateUndoRedoState])
+
+  const clearCanvasLocal = useCallback((skipSync = false) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    historyRef.current = []
+    redoStackRef.current = []
+    updateUndoRedoState()
+  }, [updateUndoRedoState])
+
+  const handleMouseDown = (e) => {
+    if (toolType === TOOL_TYPES.EYEDROPPER) {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const point = getCanvasPoint(e.clientX, e.clientY)
+      const pixel = ctx.getImageData(point.x, point.y, 1, 1).data
+      const hex = '#' + [pixel[0], pixel[1], pixel[2]].map(x => x.toString(16).padStart(2, '0')).join('')
+      setSelectedColor(hex)
+      setIsEraser(false)
+      return
+    }
+
+    if (toolType === TOOL_TYPES.TEXT) {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const point = getCanvasPoint(e.clientX, e.clientY)
+      const text = prompt('Enter text:')
+      if (text) {
+        ctx.font = `${brushSize * 4}px sans-serif`
+        ctx.fillStyle = selectedColor
+        ctx.globalAlpha = brushOpacity / 100
+        ctx.fillText(text, point.x, point.y)
+        ctx.globalAlpha = 1
+        const stroke = {
+          points: [point, { x: point.x + ctx.measureText(text).width, y: point.y }],
+          color: selectedColor,
+          size: brushSize,
+          tool: toolType,
+          brushType: brushType,
+          opacity: brushOpacity,
+          text: text,
+          timestamp: Date.now(),
+          userId: currentUser?.id
+        }
+        pushHistoryStroke({ ...normalizeStroke(stroke), synced: false })
+        redoStackRef.current = []
+        updateUndoRedoState()
+        sdk.emitEvent('drawing:stroke', { stroke: normalizeStroke(stroke) }, { serverRelay: true })
+      }
+      return
+    }
+    
+    if (toolType === TOOL_TYPES.PAN || toolType === TOOL_TYPES.SELECT) {
+      return
+    }
+    
+    drawingRef.current = true
+    const point = getCanvasPoint(e.clientX, e.clientY)
+    currentStroke.current = [{ x: point.x, y: point.y }]
+  }
+
+  const handleMouseMove = (e) => {
+    if (!drawingRef.current) return
+    
+    const point = getCanvasPoint(e.clientX, e.clientY)
+    if (toolType === TOOL_TYPES.FREEHAND || toolType === TOOL_TYPES.BLUR || toolType === TOOL_TYPES.GRADIENT) {
+      currentStroke.current.push({ x: point.x, y: point.y })
+    } else if (toolType === TOOL_TYPES.PAN) {
+      return
+    } else {
+      currentStroke.current = [currentStroke.current[0], { x: point.x, y: point.y }]
+    }
+    
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    const points = currentStroke.current
+    
+    if (points.length > 1) {
+      if (toolType !== TOOL_TYPES.FREEHAND && toolType !== TOOL_TYPES.BLUR && toolType !== TOOL_TYPES.GRADIENT) {
+        redrawCanvas()
+        drawStrokeOnCanvas(ctx, {
+          points,
+          tool: toolType,
+          color: isEraser ? '#ffffff' : selectedColor,
+          secondaryColor: secondaryColor,
+          size: brushSize,
+          brushType,
+          opacity: brushOpacity,
+          fillMode
+        })
+        return
+      }
+
+      const last = points[points.length - 2]
+      const curr = points[points.length - 1]
+      
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.globalAlpha = brushOpacity / 100
+      
+      if (toolType === TOOL_TYPES.BLUR) {
+        ctx.filter = 'blur(5px)'
+        ctx.lineWidth = brushSize * 2
+        ctx.strokeStyle = isEraser ? '#ffffff' : selectedColor
+        ctx.beginPath()
+        ctx.moveTo(last.x, last.y)
+        ctx.lineTo(curr.x, curr.y)
+        ctx.stroke()
+        ctx.filter = 'none'
+        ctx.globalAlpha = 1
+        return
+      }
+      
+      if (brushType === BRUSH_TYPES.HIGHLIGHTER) {
+        ctx.globalAlpha = (brushOpacity / 100) * 0.4
+        ctx.lineWidth = brushSize * 3
+        ctx.strokeStyle = isEraser ? '#ffffff' : selectedColor
+      } else if (brushType === BRUSH_TYPES.SPRAY) {
+        ctx.globalAlpha = (brushOpacity / 100) * 0.6
+        for (let i = 0; i < 3; i++) {
+          const offsetX = (Math.random() - 0.5) * 15
+          const offsetY = (Math.random() - 0.5) * 15
+          ctx.fillStyle = isEraser ? '#ffffff' : selectedColor
+          ctx.fillRect(curr.x + offsetX, curr.y + offsetY, 1, 1)
+        }
+        ctx.globalAlpha = 1
+        return
+      } else if (brushType === BRUSH_TYPES.BRUSH) {
+        ctx.lineWidth = brushSize * 1.5
+        ctx.strokeStyle = isEraser ? '#ffffff' : selectedColor
+        ctx.globalAlpha = (brushOpacity / 100) * 0.8
+      } else if (toolType === TOOL_TYPES.GRADIENT) {
+        const gradient = ctx.createLinearGradient(last.x, last.y, curr.x, curr.y)
+        gradient.addColorStop(0, isEraser ? '#ffffff' : selectedColor)
+        gradient.addColorStop(1, secondaryColor)
+        ctx.strokeStyle = gradient
+        ctx.lineWidth = brushSize
+      } else {
+        ctx.lineWidth = brushSize
+        ctx.strokeStyle = isEraser ? '#ffffff' : selectedColor
+      }
+      
+      ctx.beginPath()
+      ctx.moveTo(last.x, last.y)
+      ctx.lineTo(curr.x, curr.y)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+  }
+
+  const handleMouseUp = useCallback(() => {
+    if (!drawingRef.current) return
+    drawingRef.current = false
+    
+    if (currentStroke.current.length < 2) {
+      currentStroke.current = []
+      return
+    }
+    
+    // Rate limit stroke emission (max 1 stroke per 50ms)
+    const now = Date.now()
+    if (now - lastStrokeTimeRef.current < 50) {
+      // Queue the stroke for later
+      pendingStrokeRef.current = {
+        points: [...currentStroke.current],
+        color: isEraser ? '#ffffff' : selectedColor,
+        secondaryColor: secondaryColor,
+        size: brushSize,
+        tool: toolType,
+        brushType: brushType,
+        opacity: brushOpacity,
+        fillMode: fillMode,
+        timestamp: now,
+        userId: currentUser?.id
+      }
+      setTimeout(() => {
+        if (pendingStrokeRef.current) {
+          const stroke = pendingStrokeRef.current
+          pendingStrokeRef.current = null
+          finalizeStroke(stroke)
+        }
+      }, 50)
+      return
+    }
+    
+    const stroke = {
+      points: [...currentStroke.current],
+      color: isEraser ? '#ffffff' : selectedColor,
+      secondaryColor: secondaryColor,
+      size: brushSize,
+      tool: toolType,
+      brushType: brushType,
+      opacity: brushOpacity,
+      fillMode: fillMode,
+      timestamp: now,
+      userId: currentUser?.id
+    }
+    
+    finalizeStroke(stroke)
+    currentStroke.current = []
+  }, [selectedColor, secondaryColor, brushSize, brushType, toolType, brushOpacity, fillMode, isEraser, currentUser?.id, redrawCanvas])
+
+  const finalizeStroke = useCallback((stroke) => {
+    const normalized = normalizeStroke(stroke)
+    if (!normalized) return
+
+    // Add to local history
+    pushHistoryStroke({ ...normalized, synced: false })
+    redoStackRef.current = []
+    updateUndoRedoState()
+    
+    // Send to other users via P2P (not server relay for faster delivery)
+    sdk.emitEvent('drawing:stroke', { stroke: normalized }, { serverRelay: true })
+    
+    lastStrokeTimeRef.current = Date.now()
+  }, [sdk, pushHistoryStroke, updateUndoRedoState])
+
+  const clearCanvas = useCallback(() => {
+    clearCanvasLocal()
+    sdk.emitEvent('drawing:clear', {}, { serverRelay: true })
+  }, [sdk, clearCanvasLocal])
+
+  const undo = useCallback(() => {
+    if (historyRef.current.length === 0) return
+    
+    const removedStroke = historyRef.current.pop()
+    redoStackRef.current.push(removedStroke)
+    redrawCanvas()
+    updateUndoRedoState()
+    
+    sdk.emitEvent('drawing:undo', { strokeIndex: historyRef.current.length }, { serverRelay: true })
+  }, [sdk, redrawCanvas, updateUndoRedoState])
+
+  const redo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return
+    
+    const stroke = normalizeStroke(redoStackRef.current.pop())
+    if (!stroke) {
+      updateUndoRedoState()
+      return
+    }
+    pushHistoryStroke(stroke)
+    
+    const canvas = canvasRef.current
+    if (canvas) {
+      const ctx = canvas.getContext('2d')
+      drawStrokeOnCanvas(ctx, stroke)
+    }
+    
+    updateUndoRedoState()
+    sdk.emitEvent('drawing:redo', { stroke }, { serverRelay: true })
+  }, [sdk, pushHistoryStroke, updateUndoRedoState])
+
+  const undoRemote = useCallback((strokeIndex) => {
+    if (Number.isInteger(strokeIndex) && strokeIndex >= 0 && strokeIndex < historyRef.current.length) {
+      historyRef.current.splice(strokeIndex, 1)
+    }
+    redrawCanvas()
+    updateUndoRedoState()
+  }, [redrawCanvas, updateUndoRedoState])
+
+  const redoRemote = useCallback((stroke) => {
+    const normalized = normalizeStroke(stroke)
+    if (normalized) {
+      pushHistoryStroke(normalized)
+      const canvas = canvasRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        drawStrokeOnCanvas(ctx, normalized)
+      }
+      updateUndoRedoState()
+    }
+  }, [pushHistoryStroke, updateUndoRedoState])
+
+  const exportImage = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    
+    const link = document.createElement('a')
+    link.download = `drawing-${Date.now()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  }, [])
+
+  const exportProject = useCallback(() => {
+    const project = {
+      version: '1.0',
+      created: Date.now(),
+      strokes: historyRef.current,
+      participants: participants.map(p => p.username)
+    }
+    
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.download = `drawing-project-${Date.now()}.json`
+    link.href = url
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [participants])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          redo()
+        } else {
+          undo()
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault()
+        redo()
+      }
+    }
+    
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [undo, redo])
+
+  const cursorEntries = useMemo(() => Object.entries(cursors), [cursors])
+  const activeColor = isEraser ? '#ffffff' : selectedColor
+  const isShapeTool = [TOOL_TYPES.RECTANGLE, TOOL_TYPES.CIRCLE, TOOL_TYPES.TRIANGLE, TOOL_TYPES.ELLIPSE, TOOL_TYPES.POLYGON].includes(toolType)
+  const isFreehandTool = toolType === TOOL_TYPES.FREEHAND
+  const isAdvancedTool = [TOOL_TYPES.BLUR, TOOL_TYPES.GRADIENT].includes(toolType)
+
+  return (
+    <div className="builtin-activity-body collaborative-drawing">
+      <div className="drawing-toolbar">
+        <div className="tool-group drawing-tools-group">
+          {TOOL_PRESETS.slice(0, 4).map((tool) => (
+            <button
+              key={tool.type}
+              className={`tool-btn ${!isEraser && toolType === tool.type ? 'active' : ''}`}
+              onClick={() => { setIsEraser(false); setToolType(tool.type) }}
+              title={tool.name}
+            >
+              {tool.icon}
+            </button>
+          ))}
+        </div>
+
+        <div className="tool-group shape-tools-group">
+          {TOOL_PRESETS.slice(4, 7).map((tool) => (
+            <button
+              key={tool.type}
+              className={`tool-btn ${!isEraser && toolType === tool.type ? 'active' : ''}`}
+              onClick={() => { setIsEraser(false); setToolType(tool.type) }}
+              title={tool.name}
+            >
+              {tool.icon}
+            </button>
+          ))}
+        </div>
+
+        <div className="tool-group special-tools-group">
+          {TOOL_PRESETS.slice(7).map((tool) => (
+            <button
+              key={tool.type}
+              className={`tool-btn ${!isEraser && toolType === tool.type ? 'active' : ''}`}
+              onClick={() => { setIsEraser(false); setToolType(tool.type) }}
+              title={tool.name}
+            >
+              {tool.icon}
+            </button>
+          ))}
+          <button
+            className={`tool-btn ${isEraser ? 'active' : ''}`}
+            onClick={() => setIsEraser(true)}
+            title="Eraser"
+          >
+            🧹
+          </button>
+        </div>
+
+        <div className="tool-group brush-style-group">
+          {BRUSH_PRESETS.map((preset) => (
+            <button
+              key={preset.type}
+              className={`tool-btn ${!isEraser && brushType === preset.type ? 'active' : ''}`}
+              onClick={() => { setIsEraser(false); setBrushType(preset.type) }}
+              title={preset.name}
+              disabled={!isFreehandTool && !isAdvancedTool}
+            >
+              {preset.icon}
+            </button>
+          ))}
+        </div>
+
+        <div className="color-section">
+          <button 
+            className="color-picker-toggle"
+            onClick={() => setShowColorPicker(!showColorPicker)}
+            style={{ backgroundColor: activeColor }}
+            title="Primary Color"
+          >
+            <SwatchIcon width={16} style={{ color: activeColor === '#ffffff' ? '#111' : '#fff' }} />
+          </button>
+          
+          {showColorPicker && (
+            <div className="color-picker-dropdown">
+              <div className="selected-color-row">
+                <div className="selected-color-preview" style={{ backgroundColor: selectedColor }} />
+                <input
+                  className="selected-color-value"
+                  type="text"
+                  value={selectedColor.toUpperCase()}
+                  maxLength={7}
+                  onChange={(e) => {
+                    const next = e.target.value.trim()
+                    if (/^#[0-9a-fA-F]{6}$/.test(next)) {
+                      setSelectedColor(next.toLowerCase())
+                      setIsEraser(false)
+                    }
+                  }}
+                />
+              </div>
+              <div className="color-palette">
+                {allColors.map(color => (
+                  <button
+                    key={color}
+                    className={`color-swatch ${selectedColor === color && !isEraser ? 'active' : ''}`}
+                    style={{ backgroundColor: color, border: color === '#ffffff' ? '1px solid #ccc' : 'none' }}
+                    onClick={() => { setSelectedColor(color); setIsEraser(false); setShowColorPicker(false) }}
+                  />
+                ))}
+              </div>
+              <div className="custom-color">
+                <label>Picker</label>
+                <input
+                  type="color"
+                  value={selectedColor}
+                  onChange={(e) => { setSelectedColor(e.target.value); setIsEraser(false) }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="color-section secondary-color-section">
+          <button 
+            className="color-picker-toggle"
+            onClick={() => setShowSecondaryColorPicker(!showSecondaryColorPicker)}
+            style={{ backgroundColor: secondaryColor }}
+            title="Secondary Color (Gradient/Fill)"
+          >
+            <SwatchIcon width={16} style={{ color: secondaryColor === '#ffffff' ? '#111' : '#fff' }} />
+          </button>
+          
+          {showSecondaryColorPicker && (
+            <div className="color-picker-dropdown">
+              <div className="selected-color-row">
+                <div className="selected-color-preview" style={{ backgroundColor: secondaryColor }} />
+                <input
+                  className="selected-color-value"
+                  type="text"
+                  value={secondaryColor.toUpperCase()}
+                  maxLength={7}
+                  onChange={(e) => {
+                    const next = e.target.value.trim()
+                    if (/^#[0-9a-fA-F]{6}$/.test(next)) {
+                      setSecondaryColor(next.toLowerCase())
+                    }
+                  }}
+                />
+              </div>
+              <div className="color-palette">
+                {allColors.map(color => (
+                  <button
+                    key={color}
+                    className={`color-swatch ${secondaryColor === color ? 'active' : ''}`}
+                    style={{ backgroundColor: color, border: color === '#ffffff' ? '1px solid #ccc' : 'none' }}
+                    onClick={() => { setSecondaryColor(color); setShowSecondaryColorPicker(false) }}
+                  />
+                ))}
+              </div>
+              <div className="custom-color">
+                <label>Picker</label>
+                <input
+                  type="color"
+                  value={secondaryColor}
+                  onChange={(e) => setSecondaryColor(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {isShapeTool && (
+          <div className="tool-group fill-mode-group">
+            <button
+              className={`tool-btn ${fillMode === SHAPE_FILL_MODES.STROKE ? 'active' : ''}`}
+              onClick={() => setFillMode(SHAPE_FILL_MODES.STROKE)}
+              title="Stroke Only"
+            >
+              ✏️
+            </button>
+            <button
+              className={`tool-btn ${fillMode === SHAPE_FILL_MODES.FILL ? 'active' : ''}`}
+              onClick={() => setFillMode(SHAPE_FILL_MODES.FILL)}
+              title="Fill Only"
+            >
+              🪣
+            </button>
+            <button
+              className={`tool-btn ${fillMode === SHAPE_FILL_MODES.BOTH ? 'active' : ''}`}
+              onClick={() => setFillMode(SHAPE_FILL_MODES.BOTH)}
+              title="Stroke & Fill"
+            >
+              🎨
+            </button>
+          </div>
+        )}
+
+        <div className="brush-controls">
+          <label title="Brush Size">Size:</label>
+          <input
+            type="range"
+            min={1}
+            max={50}
+            value={brushSize}
+            onChange={(e) => setBrushSize(parseInt(e.target.value))}
+          />
+          <span>{brushSize}px</span>
+        </div>
+
+        <div className="brush-controls opacity-control">
+          <label title="Brush Opacity">Opacity:</label>
+          <input
+            type="range"
+            min={1}
+            max={100}
+            value={brushOpacity}
+            onChange={(e) => setBrushOpacity(parseInt(e.target.value))}
+          />
+          <span>{brushOpacity}%</span>
+        </div>
+
+        <button
+          className={`tool-btn options-toggle ${showOptionsPanel ? 'active' : ''}`}
+          onClick={() => setShowOptionsPanel(!showOptionsPanel)}
+          title="More Options"
+        >
+          ⚙️
+        </button>
+
+        {showOptionsPanel && (
+          <div className="options-panel">
+            <div className="option-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={smoothLines}
+                  onChange={(e) => setSmoothLines(e.target.checked)}
+                />
+                Smooth Lines
+              </label>
+            </div>
+            <div className="option-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={gridEnabled}
+                  onChange={(e) => setGridEnabled(e.target.checked)}
+                />
+                Show Grid
+              </label>
+            </div>
+            {gridEnabled && (
+              <div className="option-row">
+                <label>Grid Size:</label>
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  value={gridSize}
+                  onChange={(e) => setGridSize(parseInt(e.target.value))}
+                />
+                <span>{gridSize}px</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="action-buttons">
+          <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">↶</button>
+          <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)">↷</button>
+          <button onClick={clearCanvas} title="Clear All">
+            <TrashIcon width={18} />
+          </button>
+          <button onClick={exportImage} title="Export as PNG">
+            <ArrowDownTrayIcon width={18} />
+          </button>
+        </div>
+
+        <div className="participants-indicator">
+          <UsersIcon width={18} />
+          <span>{participants.length + 1}</span>
+        </div>
+      </div>
+
+      <div className="drawing-canvas-wrapper" ref={containerRef}>
+        <canvas
+          ref={canvasRef}
+          width={1200}
+          height={700}
+          className="drawing-canvas"
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        />
+        
+        {cursorEntries.map(([userId, cursor]) => (
+          <div
+            key={userId}
+            className="remote-cursor"
+            style={{
+              left: `${cursor.x}%`,
+              top: `${cursor.y}%`,
+            }}
+          >
+            <div style={{ color: cursor.color || '#666', fontSize: 14 }}>✥</div>
+            <span className="cursor-label" style={{ backgroundColor: cursor.color || '#666' }}>
+              {cursor.username || 'User'}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="drawing-status">
+        <span>Draw together! • {historyRef.current.length} strokes</span>
+        <span className="keyboard-hints">
+          Ctrl+Z: Undo • Ctrl+Y: Redo • {isEraser ? 'eraser' : toolType} • {toolType === TOOL_TYPES.FREEHAND ? `${brushType} stroke` : 'shape'} • {brushSize}px
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export default CollaborativeDrawingActivity

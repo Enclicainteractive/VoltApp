@@ -1,0 +1,381 @@
+/**
+ * ColorCustomizer.css
+ */
+.color-customizer {
+  width: 100%;
+}
+
+/* Simple Mode */
+.color-customizer.simple {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.color-picker-main {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.color-input-native {
+  width: 50px;
+  height: 50px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  background: none;
+}
+
+.color-input-native::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-input-native::-webkit-color-swatch {
+  border: 3px solid var(--volt-border);
+  border-radius: 10px;
+}
+
+.color-value-display {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+}
+
+.color-hex-input {
+  flex: 1;
+  background: var(--volt-bg-quaternary);
+  border: 1px solid var(--volt-border);
+  padding: 12px 16px;
+  border-radius: 10px;
+  color: var(--volt-text-primary);
+  font-size: 14px;
+  font-family: monospace;
+  text-transform: uppercase;
+}
+
+.color-hex-input:focus {
+  outline: none;
+  border-color: var(--volt-primary);
+}
+
+.color-copy-btn {
+  background: var(--volt-bg-quaternary);
+  border: 1px solid var(--volt-border);
+  color: var(--volt-text-secondary);
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.color-copy-btn:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.color-presets {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 6px;
+}
+
+.color-preset {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.color-preset:hover {
+  transform: scale(1.1);
+}
+
+.color-preset.active {
+  border-color: white;
+  box-shadow: 0 0 0 2px var(--volt-primary);
+}
+
+/* Full Mode */
+.color-customizer.full {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.color-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--volt-border);
+  padding-bottom: 12px;
+}
+
+.color-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  color: var(--volt-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.color-tab:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.color-tab.active {
+  background: var(--volt-primary);
+  color: white;
+}
+
+/* Picker Tab */
+.color-picker-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.color-preview-large {
+  height: 100px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.color-preview-large::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent);
+}
+
+.color-preview-text {
+  font-size: 24px;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  position: relative;
+}
+
+.color-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.color-input-native.large {
+  width: 60px;
+  height: 60px;
+}
+
+.color-input-group {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+}
+
+.color-presets-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.color-presets-grid h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+  margin: 0;
+}
+
+.presets-row {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 6px;
+}
+
+/* Gradient Section */
+.gradient-section {
+  background: var(--volt-bg-quaternary);
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.gradient-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--volt-text-primary);
+}
+
+.gradient-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--volt-primary);
+}
+
+.gradient-controls {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gradient-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gradient-preset {
+  width: 60px;
+  height: 40px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.gradient-preset:hover {
+  transform: scale(1.05);
+  border-color: white;
+}
+
+.gradient-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gradient-color-inputs {
+  display: flex;
+  gap: 12px;
+}
+
+.gradient-color-inputs input[type="color"] {
+  flex: 1;
+  height: 40px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.gradient-angle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gradient-angle label {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  min-width: 50px;
+}
+
+.gradient-angle input[type="range"] {
+  flex: 1;
+  accent-color: var(--volt-primary);
+}
+
+.gradient-angle span {
+  font-size: 13px;
+  color: var(--volt-text-primary);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* Variables Tab */
+.variables-tab {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.variables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.variable-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: var(--volt-bg-quaternary);
+  border-radius: 12px;
+}
+
+.variable-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.variable-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--volt-text-primary);
+}
+
+.variable-desc {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.variable-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.variable-input input[type="color"] {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.variable-input input[type="text"] {
+  width: 90px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--volt-text-primary);
+  font-size: 12px;
+  font-family: monospace;
+}
+
+@media (max-width: 640px) {
+  .color-presets,
+  .presets-row {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  
+  .color-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .color-input-group {
+    width: 100%;
+  }
+}

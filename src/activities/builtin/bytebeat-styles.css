@@ -1,0 +1,1111 @@
+/* ============================================================
+   BYTEBEAT ACTIVITY STYLES
+   ============================================================ */
+
+.bytebeat-activity {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--volt-bg-primary, #0d0d14);
+  color: var(--volt-text-primary, #e0e0e0);
+  padding: 16px;
+  gap: 16px;
+  overflow: auto;
+}
+
+.bytebeat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.bytebeat-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--volt-text-primary, #e0e0e0);
+}
+
+.bytebeat-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bytebeat-actions .btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  color: var(--volt-text-primary, #e0e0e0);
+}
+
+.bytebeat-actions .btn:hover {
+  background: var(--volt-bg-quaternary, #252540);
+}
+
+.bytebeat-actions .btn.play {
+  background: #00c853;
+  color: #fff;
+}
+
+.bytebeat-actions .btn.play:hover {
+  background: #00e676;
+}
+
+.bytebeat-actions .btn.stop {
+  background: #ff5252;
+  color: #fff;
+}
+
+.bytebeat-actions .btn.stop:hover {
+  background: #ff7043;
+}
+
+.bytebeat-actions .btn.export {
+  background: #2196f3;
+  color: #fff;
+}
+
+.bytebeat-actions .btn.export:hover {
+  background: #42a5f5;
+}
+
+.bytebeat-actions .btn.active {
+  background: var(--volt-primary, #7c4dff);
+  color: #fff;
+}
+
+.bytebeat-info-panel,
+.bytebeat-library-panel {
+  background: var(--volt-bg-secondary, #14141f);
+  border-radius: 8px;
+  padding: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.bytebeat-info-panel h3,
+.bytebeat-library-panel h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  color: var(--volt-primary, #7c4dff);
+}
+
+.bytebeat-info-panel h4 {
+  margin: 12px 0 6px 0;
+  font-size: 0.875rem;
+  color: var(--volt-text-primary, #e0e0e0);
+}
+
+.bytebeat-info-panel p {
+  margin: 0 0 8px 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--volt-text-secondary, #a0a0a0);
+}
+
+.bytebeat-info-panel ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.8125rem;
+  color: var(--volt-text-secondary, #a0a0a0);
+}
+
+.bytebeat-info-panel li {
+  margin-bottom: 4px;
+}
+
+.bytebeat-info-panel code {
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.8125rem;
+  color: #00e676;
+}
+
+.history-note {
+  margin-top: 12px !important;
+  font-size: 0.75rem !important;
+  color: var(--volt-text-muted, #707070) !important;
+  font-style: italic;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.library-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 10px;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.library-item:hover {
+  background: var(--volt-bg-quaternary, #252540);
+  border-color: var(--volt-primary, #7c4dff);
+}
+
+.library-item.active {
+  background: var(--volt-primary, #7c4dff);
+  border-color: var(--volt-primary, #7c4dff);
+}
+
+.library-item .item-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--volt-text-primary, #e0e0e0);
+}
+
+.library-item .item-mode {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--volt-text-muted, #707070);
+  margin-top: 2px;
+}
+
+.library-item .item-desc {
+  font-size: 0.6875rem;
+  color: var(--volt-text-muted, #707070);
+  margin-top: 4px;
+  line-height: 1.3;
+}
+
+.bytebeat-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editor-controls {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-group label {
+  font-size: 0.8125rem;
+  color: var(--volt-text-secondary, #a0a0a0);
+}
+
+.control-group select {
+  padding: 6px 10px;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border: 1px solid var(--volt-border, #2a2a4a);
+  border-radius: 4px;
+  color: var(--volt-text-primary, #e0e0e0);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.control-group select:hover {
+  border-color: var(--volt-primary, #7c4dff);
+}
+
+.control-group input[type="range"] {
+  width: 100px;
+  height: 4px;
+  -webkit-appearance: none;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--volt-primary, #7c4dff);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.control-group span {
+  font-size: 0.75rem;
+  color: var(--volt-text-muted, #707070);
+  min-width: 40px;
+}
+
+.editor-container {
+  display: flex;
+  background: var(--volt-bg-secondary, #14141f);
+  border-radius: 8px;
+  border: 1px solid var(--volt-border, #2a2a4a);
+  overflow: hidden;
+}
+
+.line-numbers {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 8px;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border-right: 1px solid var(--volt-border, #2a2a4a);
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--volt-text-muted, #505060);
+  user-select: none;
+  min-width: 32px;
+  text-align: right;
+}
+
+.code-highlight {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 12px 12px 12px 48px !important;
+  font-family: 'Fira Code', 'Consolas', monospace !important;
+  font-size: 14px !important;
+  line-height: 18px !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  z-index: 1;
+  background: transparent !important;
+}
+
+.code-editor {
+  flex: 1;
+  min-height: 120px;
+  max-height: 200px;
+  padding: 12px 12px 12px 48px;
+  background: transparent;
+  border: none;
+  color: transparent;
+  caret-color: #00e676;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 14px;
+  line-height: 18px;
+  resize: vertical;
+  outline: none;
+  overflow: auto;
+  position: relative;
+  z-index: 2;
+}
+
+.code-editor::placeholder {
+  color: var(--volt-text-muted, #505060);
+}
+
+.code-editor:focus {
+  outline: none;
+}
+
+/* Syntax highlighting simulation */
+.code-editor::before {
+  content: attr(value);
+  position: absolute;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Remote cursor styles */
+.remote-cursor {
+  animation: cursorBlink 1s infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Cursor info display */
+.cursor-info {
+  display: flex;
+  gap: 16px;
+  padding: 8px 12px;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--volt-text-muted, #707070);
+}
+
+.cursor-info span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.error-display {
+  padding: 10px 14px;
+  background: rgba(255, 82, 82, 0.1);
+  border: 1px solid #ff5252;
+  border-radius: 6px;
+  color: #ff5252;
+  font-size: 0.8125rem;
+  font-family: 'Fira Code', monospace;
+}
+
+.bytebeat-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bytebeat-preview canvas {
+  width: 100%;
+  max-width: 800px;
+  height: 150px;
+  border-radius: 8px;
+  background: #0d0d14;
+  border: 1px solid var(--volt-border, #2a2a4a);
+}
+
+.preview-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.preview-controls label {
+  font-size: 0.8125rem;
+  color: var(--volt-text-secondary, #a0a0a0);
+}
+
+.preview-controls select {
+  padding: 6px 10px;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border: 1px solid var(--volt-border, #2a2a4a);
+  border-radius: 4px;
+  color: var(--volt-text-primary, #e0e0e0);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.preview-controls select:hover {
+  border-color: var(--volt-primary, #7c4dff);
+}
+
+.preview-label {
+  font-size: 0.75rem;
+  color: var(--volt-text-muted, #707070);
+}
+
+/* Help Panel */
+.bytebeat-help-panel {
+  background: var(--volt-bg-secondary, #14141f);
+  border-radius: 8px;
+  padding: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.bytebeat-help-panel h3 {
+  margin: 0 0 16px 0;
+  font-size: 1rem;
+  color: var(--volt-primary, #7c4dff);
+}
+
+.bytebeat-help-panel section {
+  margin-bottom: 16px;
+}
+
+.bytebeat-help-panel h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.875rem;
+  color: var(--volt-text-primary, #e0e0e0);
+  border-bottom: 1px solid var(--volt-border, #2a2a4a);
+  padding-bottom: 4px;
+}
+
+.bytebeat-help-panel p {
+  margin: 0 0 8px 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--volt-text-secondary, #a0a0a0);
+}
+
+.bytebeat-help-panel ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.8125rem;
+  color: var(--volt-text-secondary, #a0a0a0);
+}
+
+.bytebeat-help-panel li {
+  margin-bottom: 4px;
+}
+
+.bytebeat-help-panel code {
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.75rem;
+  color: #00e676;
+}
+
+/* Library Categories */
+.library-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.category h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.8125rem;
+  color: var(--volt-text-muted, #707070);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.library-search {
+  margin-bottom: 16px;
+}
+
+.library-search select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border: 1px solid var(--volt-border, #2a2a4a);
+  border-radius: 6px;
+  color: var(--volt-text-primary, #e0e0e0);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.library-search select:hover {
+  border-color: var(--volt-primary, #7c4dff);
+}
+
+.library-item .item-meta {
+  font-size: 0.6875rem;
+  color: var(--volt-text-muted, #707070);
+  margin-top: 2px;
+}
+
+/* Playback status indicator */
+.playback-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--volt-bg-tertiary, #1a1a2e);
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.playback-status.playing {
+  color: #00e676;
+}
+
+.playback-status.stopped {
+  color: var(--volt-text-muted, #707070);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Improved textarea styling for better UX */
+.code-editor {
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Auto-resize textarea to fit content */
+.code-editor {
+  height: auto;
+  min-height: 120px;
+}
+
+/* Mobile responsive */
+@media (max-width: 600px) {
+  .editor-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .control-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .bytebeat-preview canvas {
+    height: 100px;
+  }
+}
+
+/* ============================================================
+   BYTEBEAT LAB ACTIVITY (NEW LAYOUT)
+   ============================================================ */
+
+.bytebeat-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: var(--volt-bg-primary);
+  color: var(--volt-text-primary);
+  min-height: 0;
+  overflow: auto;
+}
+
+.bytebeat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.bytebeat-title h1 {
+  margin: 0 0 4px 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--volt-text-primary);
+}
+
+.bytebeat-subtitle {
+  font-size: 0.875rem;
+  color: var(--volt-text-muted);
+}
+
+.bytebeat-status {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-secondary);
+}
+
+.bytebeat-status.playing {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--volt-success);
+}
+
+.bytebeat-status.paused {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--volt-warning);
+}
+
+.bytebeat-status.compiled,
+.bytebeat-status.compile {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--volt-primary);
+}
+
+.bytebeat-participants {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 20px;
+  font-size: 0.8125rem;
+}
+
+.participant-count {
+  color: var(--volt-text-secondary);
+  font-weight: 500;
+}
+
+.participant-avatars {
+  display: flex;
+  gap: 4px;
+}
+
+.participant-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  border: 2px solid var(--volt-bg-primary);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.participant-avatar.active {
+  transform: scale(1.1);
+  box-shadow: 0 0 8px var(--cursor-color, currentColor);
+}
+
+.bytebeat-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.bytebeat-vis-selector {
+  display: flex;
+  gap: 4px;
+  background: var(--volt-bg-secondary);
+  padding: 4px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--volt-border);
+}
+
+.bytebeat-vis-selector button {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text-secondary);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  transition: all 0.15s ease;
+}
+
+.bytebeat-vis-selector button:hover {
+  color: var(--volt-text-primary);
+  background: var(--volt-hover);
+}
+
+.bytebeat-vis-selector button.active {
+  background: var(--volt-primary);
+  color: white;
+}
+
+.bytebeat-diagram-mode {
+  display: flex;
+  gap: 4px;
+  background: var(--volt-bg-secondary);
+  padding: 4px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--volt-border);
+}
+
+.bytebeat-diagram-mode button {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text-secondary);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  transition: all 0.15s ease;
+}
+
+.bytebeat-diagram-mode button:hover {
+  color: var(--volt-text-primary);
+  background: var(--volt-hover);
+}
+
+.bytebeat-diagram-mode button.active {
+  background: var(--volt-primary);
+  color: white;
+}
+
+.bytebeat-time-display {
+  padding: 8px 14px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: var(--border-radius-md);
+  color: var(--volt-text-primary);
+  font-family: 'Fira Code', monospace;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bytebeat-time-display:hover {
+  border-color: var(--volt-primary);
+  background: var(--volt-hover);
+}
+
+.bytebeat-visualizers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.bytebeat-canvas {
+  width: 100%;
+  height: 200px;
+  background: var(--volt-bg-primary);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--volt-border);
+  display: block;
+}
+
+.bytebeat-diagram-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.bytebeat-canvas-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.bytebeat-canvas-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.bytebeat-canvas-wrapper:hover .bytebeat-canvas-overlay {
+  opacity: 1;
+}
+
+.canvas-play-btn {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid white;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  font-size: 2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.canvas-play-btn:hover {
+  background: var(--volt-primary);
+  border-color: var(--volt-primary);
+  transform: scale(1.1);
+}
+
+.canvas-play-btn.playing {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.bytebeat-time-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 80, 80, 0.8);
+  pointer-events: none;
+  transition: left 0.1s linear;
+}
+
+.bytebeat-diagram {
+  width: 100%;
+  height: 400px;
+}
+
+.bytebeat-diagram-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--volt-text-muted);
+}
+
+.bytebeat-transport {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bytebeat-transport button {
+  padding: 10px 18px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-primary);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.bytebeat-transport button:hover {
+  background: var(--volt-hover);
+  border-color: var(--volt-primary);
+}
+
+.bytebeat-transport button.primary {
+  background: var(--volt-primary);
+  border-color: var(--volt-primary);
+  color: white;
+}
+
+.bytebeat-transport button.primary:hover {
+  opacity: 0.9;
+}
+
+.bytebeat-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.bytebeat-controls select {
+  padding: 10px 14px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: var(--border-radius-md);
+  color: var(--volt-text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  min-width: 140px;
+  transition: box-shadow 0.15s ease-out, border-color 0.15s ease-out;
+}
+
+.bytebeat-controls select:hover {
+  border-color: var(--volt-primary);
+}
+
+.bytebeat-controls input[type="number"] {
+  padding: 10px 14px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: var(--border-radius-md);
+  color: var(--volt-text-primary);
+  font-size: 0.875rem;
+  width: 100px;
+  transition: box-shadow 0.15s ease-out, border-color 0.15s ease-out;
+}
+
+.bytebeat-controls input[type="number"]:focus {
+  outline: none;
+  border-color: var(--volt-primary);
+}
+
+.bytebeat-controls input[type="range"] {
+  flex: 1;
+  min-width: 100px;
+  height: 6px;
+  -webkit-appearance: none;
+  background: var(--volt-bg-tertiary);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.bytebeat-controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--volt-primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.bytebeat-volume {
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  color: var(--volt-text-muted);
+  min-width: 45px;
+}
+
+.bytebeat-library {
+  padding: 14px;
+  background: var(--volt-bg-secondary);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--volt-border);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.bytebeat-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.bytebeat-library-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 12px;
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.bytebeat-library-grid button:hover {
+  background: var(--volt-hover);
+  border-color: var(--volt-primary);
+}
+
+.bytebeat-library-grid .preset-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--volt-text-primary);
+}
+
+.bytebeat-library-grid .preset-mode {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--volt-text-muted);
+  margin-top: 4px;
+}
+
+.bytebeat-editor {
+  width: 100%;
+  min-height: 180px;
+  padding: 14px;
+  background: var(--volt-bg-primary);
+  color: var(--volt-text-primary);
+  border: 1px solid var(--volt-border);
+  border-radius: var(--border-radius-md);
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  resize: vertical;
+  transition: box-shadow 0.15s ease-out;
+}
+
+.bytebeat-editor:focus {
+  outline: none;
+  border-color: var(--volt-primary);
+}
+
+.bytebeat-error {
+  padding: 12px;
+  border-radius: var(--border-radius-md);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--volt-error);
+  font-family: monospace;
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.bytebeat-help {
+  font-size: 0.8125rem;
+  color: var(--volt-text-muted);
+  line-height: 1.5;
+}
+
+/* Library Modal */
+.bytebeat-library-modal {
+  max-width: 700px !important;
+  width: 90vw;
+}
+
+.bytebeat-library-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.bytebeat-library-modal .modal-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  color: var(--volt-text-primary);
+}
+
+.bytebeat-library-modal .modal-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--volt-text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.bytebeat-library-modal .modal-close:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+}
+
+.bytebeat-library-content {
+  padding: 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.bytebeat-library-credits {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--volt-border);
+  text-align: center;
+}
+
+.bytebeat-library-credits a {
+  color: var(--volt-text-muted);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  transition: color 0.15s ease;
+}
+
+.bytebeat-library-credits a:hover {
+  color: var(--volt-primary);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .bytebeat-visualizers {
+    grid-template-columns: 1fr;
+  }
+  
+  .bytebeat-canvas {
+    height: 160px;
+  }
+  
+  .bytebeat-diagram {
+    height: 250px;
+  }
+  
+  .bytebeat-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .bytebeat-controls input[type="range"] {
+    width: 100%;
+  }
+}

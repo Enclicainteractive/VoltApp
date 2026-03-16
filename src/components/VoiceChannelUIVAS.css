@@ -1,0 +1,228 @@
+.voice-channel-uivas {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voice-channel-uivas[data-safe="false"] {
+  opacity: 0.85;
+}
+
+.voice-channel-uivas[data-context="voice"] {
+  --voice-color: var(--volt-success);
+  --voice-bg: rgba(34, 197, 94, 0.1);
+}
+
+.voice-channel-uivas[data-context="call"] {
+  --voice-color: var(--volt-primary);
+  --voice-bg: rgba(59, 130, 246, 0.1);
+}
+
+.uivas-voice-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--voice-bg);
+  border: 1px solid rgba(121, 154, 210, 0.2);
+  transition: all 0.2s ease;
+}
+
+.uivas-voice-indicator.voice-active {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.uivas-voice-indicator.voice-inactive {
+  background: rgba(100, 100, 120, 0.1);
+  border-color: rgba(100, 100, 120, 0.2);
+}
+
+@keyframes voice-pulse {
+  0%, 100% { 
+    box-shadow: inset 0 0 0 rgba(34, 197, 94, 0.08); 
+    transform: scale(1); 
+  }
+  50% { 
+    box-shadow: inset 0 0 24px rgba(34, 197, 94, 0.18); 
+    transform: scale(1.05); 
+  }
+}
+
+@keyframes voice-wave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes voice-connect {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes voice-disconnect {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.8); }
+}
+
+@keyframes voice-mute {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.95); }
+}
+
+@keyframes voice-deafen {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.9); }
+}
+
+@keyframes voice-join {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes voice-leave {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+@keyframes voice-reconnect {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes voice-quality {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes voice-error {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+@keyframes voice-fx {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.voice-channel-uivas .animating {
+  animation-fill-mode: both;
+}
+
+.voice-channel-uivas .voicePulse {
+  animation: voice-pulse 0.8s ease-in-out infinite;
+}
+
+.voice-channel-uivas .voiceWave {
+  animation: voice-wave 0.6s ease-in-out;
+}
+
+.voice-channel-uivas .voiceConnect {
+  animation: voice-connect 0.5s ease-out;
+}
+
+.voice-channel-uivas .voiceDisconnect {
+  animation: voice-disconnect 0.3s ease-in;
+}
+
+.voice-channel-uivas .voiceMute {
+  animation: voice-mute 0.2s ease-in-out;
+}
+
+.voice-channel-uivas .voiceDeafen {
+  animation: voice-deafen 0.25s ease-out;
+}
+
+.voice-channel-uivas .voiceJoin {
+  animation: voice-join 0.4s ease-out;
+}
+
+.voice-channel-uivas .voiceLeave {
+  animation: voice-leave 0.3s ease-in;
+}
+
+.voice-channel-uivas .voiceReconnect {
+  animation: voice-reconnect 1s linear infinite;
+}
+
+.voice-channel-uivas .voiceQuality {
+  animation: voice-quality 1.5s ease-in-out infinite;
+}
+
+.voice-channel-uivas .voiceError {
+  animation: voice-error 0.4s ease-in-out;
+}
+
+.voice-channel-uivas .voiceFX {
+  animation: voice-fx 1.2s ease-in-out infinite;
+}
+
+.voice-channel-uivas-security {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.voice-channel-uivas-security.safe {
+  color: #86efac;
+  background: rgba(20, 83, 45, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.voice-channel-uivas-security.warning {
+  color: #fde68a;
+  background: rgba(120, 78, 8, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.voice-channel-uivas-security.danger {
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.voice-channel-uivas-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.voice-channel-uivas-status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #9fb2d0;
+}
+
+.voice-channel-uivas-status-item.connected {
+  color: #86efac;
+}
+
+.voice-channel-uivas-status-item.disconnected {
+  color: #fca5a5;
+}
+
+.voice-channel-uivas-status-item.reconnecting {
+  color: #fde68a;
+}
+
+.voice-channel-uivas-status-item .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.voice-channel-uivas-status-item .dot.pulse {
+  animation: voice-pulse 1s ease-in-out infinite;
+}
