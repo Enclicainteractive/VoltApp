@@ -70,6 +70,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const [importError, setImportError] = useState('')
   const [importSuccess, setImportSuccess] = useState('')
   const [importTemplateCode, setImportTemplateCode] = useState('')
+  const [guildTag, setGuildTag] = useState('')
   
   useEffect(() => {
     setServerData({
@@ -87,11 +88,32 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     if (server?.id) {
       loadDiscoveryStatus()
       loadDiscoveryCategories()
+      loadGuildTag()
       // Check encryption status when modal opens
       console.log('[ServerSettingsModal] Checking encryption status for server:', server.id)
       getServerEncryptionStatus(server.id)
     }
   }, [server?.id, getServerEncryptionStatus])
+
+  const loadGuildTag = async () => {
+    try {
+      const res = await apiService.getServerGuildTag(server.id)
+      setGuildTag(res.data?.guildTag || '')
+    } catch (err) {
+      console.error('Failed to load guild tag:', err)
+    }
+  }
+
+  const handleSaveGuildTag = async () => {
+    if (!isAdmin) return
+    try {
+      await apiService.setServerGuildTag(server.id, guildTag)
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Failed to save guild tag')
+    }
+  }
 
   const loadDiscoveryStatus = async () => {
     try {
@@ -1046,14 +1068,41 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                   />
                 </div>
 
+                <div className="form-group">
+                  <label>Guild Tag</label>
+                  <p className="form-hint">A short tag shown next to members' names (e.g., "Volt", "VTC"). Max 5 characters. No emojis allowed.</p>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ color: 'var(--volt-text-muted)', fontSize: 18 }}>#</span>
+                    <input
+                      type="text"
+                      className="input"
+                      value={guildTag}
+                      onChange={e => setGuildTag(e.target.value.toUpperCase().slice(0, 5))}
+                      placeholder="TAG"
+                      disabled={!isAdmin}
+                      maxLength={5}
+                      style={{ width: 100, textTransform: 'uppercase' }}
+                    />
+                  </div>
+                </div>
+
                 {isAdmin && (
-                  <button 
-                    className="btn btn-primary"
-                    onClick={handleSaveOverview}
-                    disabled={saving}
-                  >
-                    {saving ? t('common.saving', 'Saving...') : t('serverSettings.saveChanges', 'Save Changes')}
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button 
+                      className="btn btn-primary"
+                      onClick={handleSaveOverview}
+                      disabled={saving}
+                    >
+                      {saving ? t('common.saving', 'Saving...') : t('serverSettings.saveChanges', 'Save Changes')}
+                    </button>
+                    <button 
+                      className="btn btn-secondary"
+                      onClick={handleSaveGuildTag}
+                      disabled={saving}
+                    >
+                      Save Guild Tag
+                    </button>
+                  </div>
                 )}
               </div>
             )}

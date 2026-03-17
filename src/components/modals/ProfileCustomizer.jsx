@@ -5,11 +5,12 @@
  *  - Pick from preset profile templates
  *  - Write custom profile CSS (shown to everyone who views their profile)
  *  - Set banner effects, layout, badge style, accent color
- *  - All changes sync to the backend
+ *  - Set profile theme, background, font, animation, background type/opacity
+ *  - All changes sync to the backend via /theme/settings
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { X, Check, Code, Palette, Layout, Sparkles, RotateCcw, Download, Upload, Eye } from 'lucide-react'
+import { X, Check, Code, Palette, Layout, Sparkles, RotateCcw, Download, Upload, Eye, Image } from 'lucide-react'
 import { PROFILE_TEMPLATES, getTemplateById } from '../../theme/profileTemplates'
 import { apiService } from '../../services/apiService'
 import { useAuth } from '../../contexts/AuthContext'
@@ -42,10 +43,41 @@ const BADGE_STYLES = [
   { value: '3d', label: '3D' },
 ]
 
+const PROFILE_FONTS = [
+  { value: 'default', label: 'Default' },
+  { value: 'system', label: 'System' },
+  { value: 'inter', label: 'Inter' },
+  { value: 'roboto', label: 'Roboto' },
+  { value: 'poppins', label: 'Poppins' },
+  { value: 'open-sans', label: 'Open Sans' },
+  { value: 'lato', label: 'Lato' },
+  { value: 'montserrat', label: 'Montserrat' },
+  { value: 'source-code-pro', label: 'Source Code Pro' },
+  { value: 'fira-code', label: 'Fira Code' },
+  { value: 'jetbrains-mono', label: 'JetBrains Mono' },
+]
+
+const PROFILE_ANIMATIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'fade', label: 'Fade In' },
+  { value: 'slide', label: 'Slide Up' },
+  { value: 'bounce', label: 'Bounce' },
+  { value: 'pulse', label: 'Pulse' },
+  { value: 'wave', label: 'Wave' },
+]
+
+const PROFILE_BG_TYPES = [
+  { value: 'solid', label: 'Solid Color' },
+  { value: 'gradient', label: 'Gradient' },
+  { value: 'image', label: 'Image URL' },
+  { value: 'blur', label: 'Blur' },
+]
+
 const TABS = [
   { id: 'templates', label: 'Templates', icon: Layout },
   { id: 'css', label: 'Profile CSS', icon: Code },
   { id: 'effects', label: 'Effects', icon: Sparkles },
+  { id: 'background', label: 'Background', icon: Image },
 ]
 
 const DEBOUNCE_MS = 500
@@ -55,7 +87,10 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
 
   const [activeTab, setActiveTab] = useState('templates')
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState('')
+
+  // Template / CSS / Effects
   const [selectedTemplate, setSelectedTemplate] = useState(
     () => user?.profileTemplate || 'default'
   )
@@ -76,8 +111,43 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
   )
   const [previewCSS, setPreviewCSS] = useState('')
 
+  // Profile theme fields (saved via /theme/settings)
+  const [profileTheme, setProfileTheme] = useState(null)
+  const [profileAccentColor, setProfileAccentColor] = useState('')
+  const [profileFont, setProfileFont] = useState('default')
+  const [profileAnimation, setProfileAnimation] = useState('none')
+  const [profileBackground, setProfileBackground] = useState('')
+  const [profileBackgroundType, setProfileBackgroundType] = useState('solid')
+  const [profileBackgroundOpacity, setProfileBackgroundOpacity] = useState(100)
+
   const debounceRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  // Load saved theme settings on mount
+  useEffect(() => {
+    const loadThemeSettings = async () => {
+      try {
+        const res = await apiService.getProfileTheme()
+        const data = res.data
+        if (data) {
+          if (data.profileTheme !== undefined) setProfileTheme(data.profileTheme)
+          if (data.profileAccentColor !== undefined && data.profileAccentColor !== null) setProfileAccentColor(data.profileAccentColor)
+          if (data.profileFont !== undefined && data.profileFont !== null) setProfileFont(data.profileFont || 'default')
+          if (data.profileAnimation !== undefined && data.profileAnimation !== null) setProfileAnimation(data.profileAnimation || 'none')
+          if (data.profileBackground !== undefined && data.profileBackground !== null) setProfileBackground(data.profileBackground || '')
+          if (data.profileBackgroundType !== undefined && data.profileBackgroundType !== null) setProfileBackgroundType(data.profileBackgroundType || 'solid')
+          if (data.profileBackgroundOpacity !== undefined && data.profileBackgroundOpacity !== null) setProfileBackgroundOpacity(data.profileBackgroundOpacity ?? 100)
+          // Also load app-level accent if no profile-specific one
+          if (!data.profileAccentColor && data.accentColor) setAccentColor(data.accentColor)
+        }
+      } catch (err) {
+        console.error('[ProfileCustomizer] Failed to load theme settings:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadThemeSettings()
+  }, [])
 
   // Apply template immediately for preview
   const applyTemplatePreview = useCallback((templateId) => {
@@ -118,6 +188,7 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
     clearTimeout(debounceRef.current)
     const cleanCSS = profileCSS.slice(0, MAX_PROFILE_CSS)
     try {
+      // Save profile CSS / template / effects via updateProfile
       await apiService.updateProfile({
         profileTemplate: selectedTemplate,
         profileCSS: cleanCSS,
@@ -126,6 +197,18 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
         badgeStyle,
         accentColor: accentColor || null,
       })
+
+      // Save profile theme fields via /theme/settings
+      await apiService.updateProfileTheme({
+        profileTheme: profileTheme || null,
+        profileAccentColor: profileAccentColor || null,
+        profileFont: profileFont !== 'default' ? profileFont : null,
+        profileAnimation: profileAnimation !== 'none' ? profileAnimation : null,
+        profileBackground: profileBackground || null,
+        profileBackgroundType: profileBackground ? profileBackgroundType : null,
+        profileBackgroundOpacity: profileBackgroundOpacity,
+      })
+
       await refreshUser?.()
       setSaveStatus('saved')
       onSettingsChange?.({ bannerEffect, profileLayout, badgeStyle })
@@ -166,6 +249,27 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
   const byteCount = new TextEncoder().encode(profileCSS).length
   const maxKB = (MAX_PROFILE_CSS / 1024).toFixed(0)
   const usedKB = (byteCount / 1024).toFixed(1)
+
+  if (loading) {
+    return (
+      <div className="profile-customizer">
+        <div className="pc-header">
+          <div className="pc-header-left">
+            <Palette size={20} />
+            <h3>Profile Customization</h3>
+          </div>
+          {onClose && (
+            <button className="pc-close-btn" onClick={onClose}>
+              <X size={18} />
+            </button>
+          )}
+        </div>
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--volt-text-muted)' }}>
+          Loading settings...
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="profile-customizer">
@@ -329,8 +433,36 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
         {activeTab === 'effects' && (
           <div className="pc-effects-tab">
             <div className="form-group">
-              <label>Accent Color</label>
-              <p className="pc-hint">Shown on your profile header.</p>
+              <label>Profile Accent Color</label>
+              <p className="pc-hint">Overrides the accent color shown on your profile (separate from your app accent).</p>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <input
+                  type="color"
+                  className="input"
+                  style={{ width: 56, height: 36, padding: 2, cursor: 'pointer', borderRadius: 8 }}
+                  value={profileAccentColor || '#1fb6ff'}
+                  onChange={e => setProfileAccentColor(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="input"
+                  style={{ width: 110, fontFamily: 'monospace', fontSize: 13 }}
+                  value={profileAccentColor}
+                  placeholder="#1fb6ff"
+                  onChange={e => setProfileAccentColor(e.target.value)}
+                  maxLength={7}
+                />
+                {profileAccentColor && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => setProfileAccentColor('')}>
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>App Accent Color</label>
+              <p className="pc-hint">Shown on your profile header (fallback if no profile accent set).</p>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <input
                   type="color"
@@ -353,6 +485,41 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
                     Reset
                   </button>
                 )}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Profile Font</label>
+              <p className="pc-hint">Font used on your profile page.</p>
+              <div className="pc-layout-grid">
+                {PROFILE_FONTS.map(f => (
+                  <button
+                    key={f.value}
+                    className={`pc-layout-card ${profileFont === f.value ? 'selected' : ''}`}
+                    onClick={() => setProfileFont(f.value)}
+                    style={f.value !== 'default' ? { fontFamily: f.value } : {}}
+                  >
+                    {f.label}
+                    {profileFont === f.value && <Check size={12} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Profile Entrance Animation</label>
+              <p className="pc-hint">Animation when your profile modal opens.</p>
+              <div className="pc-layout-grid">
+                {PROFILE_ANIMATIONS.map(a => (
+                  <button
+                    key={a.value}
+                    className={`pc-layout-card ${profileAnimation === a.value ? 'selected' : ''}`}
+                    onClick={() => setProfileAnimation(a.value)}
+                  >
+                    {a.label}
+                    {profileAnimation === a.value && <Check size={12} />}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -407,6 +574,104 @@ const ProfileCustomizer = ({ onClose, settings, onSettingsChange }) => {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Background tab */}
+        {activeTab === 'background' && (
+          <div className="pc-effects-tab">
+            <div className="form-group">
+              <label>Background Type</label>
+              <p className="pc-hint">How the profile background is rendered.</p>
+              <div className="pc-layout-grid">
+                {PROFILE_BG_TYPES.map(t => (
+                  <button
+                    key={t.value}
+                    className={`pc-layout-card ${profileBackgroundType === t.value ? 'selected' : ''}`}
+                    onClick={() => setProfileBackgroundType(t.value)}
+                  >
+                    {t.label}
+                    {profileBackgroundType === t.value && <Check size={12} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>
+                {profileBackgroundType === 'image' ? 'Image URL' :
+                 profileBackgroundType === 'gradient' ? 'CSS Gradient' :
+                 profileBackgroundType === 'blur' ? 'Blur (leave blank to use default)' :
+                 'Background Color (hex or CSS)'}
+              </label>
+              <p className="pc-hint">
+                {profileBackgroundType === 'image' && 'Enter a direct image URL (https://...).'}
+                {profileBackgroundType === 'gradient' && 'Enter a CSS gradient, e.g. linear-gradient(135deg, #1a0030, #0d001a)'}
+                {profileBackgroundType === 'solid' && 'Enter a hex color, e.g. #1a0030'}
+                {profileBackgroundType === 'blur' && 'Blur effect uses the opacity slider below.'}
+              </p>
+              <input
+                type="text"
+                className="input"
+                value={profileBackground}
+                onChange={e => setProfileBackground(e.target.value)}
+                placeholder={
+                  profileBackgroundType === 'image' ? 'https://example.com/bg.jpg' :
+                  profileBackgroundType === 'gradient' ? 'linear-gradient(135deg, #1a0030, #0d001a)' :
+                  profileBackgroundType === 'blur' ? '' :
+                  '#1a0030'
+                }
+                style={{ width: '100%', fontFamily: 'monospace', fontSize: 13 }}
+              />
+              {profileBackground && profileBackgroundType === 'image' && (
+                <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', maxHeight: 120 }}>
+                  <img
+                    src={profileBackground}
+                    alt="Background preview"
+                    style={{ width: '100%', objectFit: 'cover', maxHeight: 120 }}
+                    onError={e => { e.target.style.display = 'none' }}
+                  />
+                </div>
+              )}
+              {profileBackground && profileBackgroundType === 'gradient' && (
+                <div style={{
+                  marginTop: 8, borderRadius: 8, height: 40,
+                  background: profileBackground
+                }} />
+              )}
+            </div>
+
+            <div className="form-group">
+              <label>Background Opacity: {profileBackgroundOpacity}%</label>
+              <p className="pc-hint">Controls how visible the background is (100 = fully visible).</p>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={profileBackgroundOpacity}
+                onChange={e => setProfileBackgroundOpacity(Number(e.target.value))}
+                style={{ width: '100%' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--volt-text-muted)' }}>
+                <span>0% (transparent)</span>
+                <span>100% (opaque)</span>
+              </div>
+            </div>
+
+            {profileBackground && (
+              <div className="form-group">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    setProfileBackground('')
+                    setProfileBackgroundType('solid')
+                    setProfileBackgroundOpacity(100)
+                  }}
+                >
+                  <RotateCcw size={14} /> Clear Background
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

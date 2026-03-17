@@ -22,10 +22,26 @@ const defaultSettings = {
   soundpack: 'default',
   soundpackVolume: 100,
   discordRichPresence: false,
-  // Voice state persistence
   voiceMuted: false,
   voiceDeafened: false,
-  rememberVoiceState: true
+  rememberVoiceState: true,
+  keyboardShortcuts: {
+    toggleMute: { key: 'M', ctrl: false, shift: true, alt: false, description: 'Toggle microphone mute' },
+    toggleDeafen: { key: 'D', ctrl: false, shift: true, alt: false, description: 'Toggle audio deafen' },
+    pushToTalk: { key: 'V', ctrl: false, shift: false, alt: true, description: 'Push to talk' },
+    toggleSelfVideo: { key: 'V', ctrl: false, shift: true, alt: false, description: 'Toggle self video' },
+    toggleScreenShare: { key: 'S', ctrl: false, shift: true, alt: false, description: 'Toggle screen share' },
+    openSettings: { key: ',', ctrl: true, shift: false, alt: false, description: 'Open settings' },
+    quickSwitcher: { key: 'K', ctrl: true, shift: false, alt: false, description: 'Quick switcher' },
+    markAllRead: { key: 'R', ctrl: true, shift: false, alt: false, description: 'Mark all as read' },
+    focusChat: { key: '/', ctrl: false, shift: false, alt: false, description: 'Focus chat input' },
+    toggleSidebar: { key: 'B', ctrl: true, shift: false, alt: false, description: 'Toggle server sidebar' },
+    goToHome: { key: 'H', ctrl: false, shift: true, alt: false, description: 'Go to home' },
+    goToDMs: { key: 'I', ctrl: true, shift: false, alt: false, description: 'Go to DMs' },
+    goToFriends: { key: 'F', ctrl: false, shift: true, alt: false, description: 'Go to friends' },
+    goToDiscovery: { key: 'X', ctrl: false, shift: true, alt: false, description: 'Go to discovery' },
+    toggleServerDrawer: { key: 'C', ctrl: true, shift: false, alt: false, description: 'Toggle channel drawer' }
+  }
 }
 
 // Simple event emitter so components can react to live settings changes

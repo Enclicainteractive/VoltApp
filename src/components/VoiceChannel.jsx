@@ -25,46 +25,31 @@ import { getStoredServer } from '../services/serverConfig'
 import '../assets/styles/VoiceChannel.css'
 import '../assets/styles/ScreenSharePicker.css'
 
-// Fallback ICE servers used only before server provides its list
-// Priority order: self-hosted STUN first, then Google's reliable STUN, then Open Relay Project TURN
-// Once the server sends its ICE servers, we use ONLY those for consistency
+// Fallback ICE servers used ONLY before the server provides its list.
+// IMPORTANT: Only STUN servers here - no TURN credentials.
+// TURN servers require matching credentials on both peers to relay traffic.
+// If peer A uses fallback TURN and peer B uses server TURN, they get different
+// relay addresses and can never connect via TURN. STUN is credential-free so
+// it works regardless of which list each peer uses.
+// Once the server sends its ICE servers (via voice:participants), we use ONLY
+// those for all subsequent peer connections - ensuring all peers use the same
+// TURN credentials and can relay through the same server.
 const FALLBACK_ICE_SERVERS = [
   // Self-hosted STUN (volt.voltagechat.app)
   { urls: 'stun:volt.voltagechat.app:32768' },
   
-  // Google's STUN servers - most reliable public STUN
+  // Google's STUN servers - most reliable public STUN (credential-free)
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun4.l.google.com:19302' },
   
-  // Additional reliable public STUN servers
+  // Additional reliable public STUN servers (credential-free)
   { urls: 'stun:stun.ekiga.net' },
   { urls: 'stun:stun.xten.com' },
-  { urls: 'stun:stun.schlund.de' },
-  
-  // Open Relay Project - ONLY reliable free TURN service
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turns:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
+  // NOTE: No TURN servers in fallback - TURN credentials must be consistent
+  // across all peers. TURN servers are provided by the Voltage server only.
 ]
 
 const isElectronRuntime = () => {
@@ -79,16 +64,23 @@ const isElectronRuntime = () => {
 }
 
 const buildPeerConfig = (serverIceServers = [], encrypted = true) => {
-  const isFirefox = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox')
-  const isChrome = typeof navigator !== 'undefined' && navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Edg')
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isFirefox = ua.includes('Firefox')
+  const isChrome = ua.includes('Chrome') && !ua.includes('Edg') && !ua.includes('Opera')
+  const isSafari = ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Chromium')
+  const isEdge = ua.includes('Edg')
+  const isElectron = ua.includes('Electron')
   
   const iceServers = serverIceServers.length > 0 ? serverIceServers : FALLBACK_ICE_SERVERS
   
   const stunCount = iceServers.filter(s => s.urls.startsWith('stun')).length
-  const turnCount = iceServers.filter(s => s.urls.startsWith('turn')).length
-  const source = serverIceServers.length > 0 ? 'server' : 'fallback'
+  const turnCount = iceServers.filter(s => s.urls.startsWith('turn') || s.urls.startsWith('turns')).length
+  const source = serverIceServers.length > 0 ? 'server' : 'fallback (STUN-only, no TURN)'
   console.log(`[WebRTC] Building peer config with ${iceServers.length} ICE servers from ${source} (${stunCount} STUN, ${turnCount} TURN)`)
-  console.log(`[WebRTC] Browser: ${isFirefox ? 'Firefox' : isChrome ? 'Chrome' : 'Other'}`)
+  if (serverIceServers.length === 0) {
+    console.log('[WebRTC] WARNING: Using STUN-only fallback - server ICE servers not yet received. TURN relay unavailable until voice:participants arrives.')
+  }
+  console.log(`[WebRTC] Browser: ${isFirefox ? 'Firefox' : isChrome ? 'Chrome' : isSafari ? 'Safari' : isEdge ? 'Edge' : isElectron ? 'Electron' : 'Other'}`)
   console.log(`[WebRTC] ICE servers:`, iceServers.map(s => s.urls))
   console.log(`[WebRTC] SRTP encryption: ${encrypted ? 'enabled (DTLS-SRTP)' : 'disabled'}`)
   
@@ -101,8 +93,20 @@ const buildPeerConfig = (serverIceServers = [], encrypted = true) => {
     iceTransports: 'all',
   }
   
+  // Firefox works better with smaller pool size
   if (isFirefox) {
     config.iceCandidatePoolSize = 0
+  }
+  
+  // Safari needs specific configuration for better connectivity
+  if (isSafari) {
+    config.iceCandidatePoolSize = 0
+    config.sdpSemantics = 'plan-b' // Safari still prefers plan-b in some versions
+  }
+  
+  // Edge Legacy (non-Chromium) needs plan-b
+  if (isEdge && !ua.includes('Chrome')) {
+    config.sdpSemantics = 'plan-b'
   }
   
   return config
@@ -159,8 +163,18 @@ const ensureTransceivers = (pc, isVideoOn = false) => {
   }
 }
 
-// Force Opus audio codec for Chrome compatibility
+// Force Opus audio codec for cross-browser compatibility
+// Works with Chrome, Firefox, Edge, and Electron
 const forceOpusAudioCodec = (pc) => {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isSafari = ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Chromium')
+  
+  // Safari handles codec negotiation automatically, skip manual intervention
+  if (isSafari) {
+    console.log('[WebRTC] Skipping manual codec forcing for Safari')
+    return
+  }
+  
   try {
     const audioCaps = RTCRtpSender.getCapabilities?.('audio')?.codecs || []
     if (audioCaps.length === 0) {
@@ -196,12 +210,16 @@ const forceOpusAudioCodec = (pc) => {
 }
 
 // Chromium can connect but output silence when Opus is not prioritized in m=audio.
+// Firefox also benefits from Opus prioritization for cross-browser compatibility.
 // Reorder payload types in SDP to put Opus first.
 const preferOpusInSdp = (sdp) => {
   if (!sdp || typeof sdp !== 'string') return sdp
   
-  const isFirefox = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox')
-  if (isFirefox) return sdp
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isSafari = ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Chromium')
+  
+  // Safari doesn't need SDP modification, it handles codec negotiation differently
+  if (isSafari) return sdp
   
   const lines = sdp.split('\r\n')
   const opusPayloads = new Set()
@@ -232,19 +250,32 @@ const preferOpusInSdp = (sdp) => {
   return reordered.join('\r\n')
 }
 
-// Set codec preference for Chrome - prevents black video from codec mismatch
+// Set codec preference for cross-browser compatibility
 // Forces H.264/VP8 priority over AV1/VP9 which can fail on some devices
+// Safari handles this automatically, so we skip manual intervention
 const setCodecPreferences = (pc) => {
-  // First force Opus for audio (most important for Chrome compatibility)
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isSafari = ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Chromium')
+  
+  // Safari handles codec negotiation automatically
+  if (isSafari) {
+    console.log('[WebRTC] Skipping manual video codec forcing for Safari')
+    // Still force Opus for audio even on Safari
+    forceOpusAudioCodec(pc)
+    return
+  }
+  
+  // First force Opus for audio (most important for cross-browser compatibility)
   forceOpusAudioCodec(pc)
   
-  // Then set video codec preferences
+  // Then set video codec preferences for Chromium-based browsers
   try {
     const videoCaps = RTCRtpSender.getCapabilities?.('video')
     if (!videoCaps?.codecs) return
     
+    // Prioritize H264 first (most compatible), then VP8
     const preferred = videoCaps.codecs.filter(c => 
-      ['video/VP8', 'video/H264'].includes(c.mimeType)
+      ['video/H264', 'video/VP8'].includes(c.mimeType)
     )
     if (preferred.length === 0) return
     
@@ -1262,6 +1293,13 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
   const gracefulReconnect = useCallback(async (peerId) => {
     console.log(`[Voice] Attempting graceful reconnect for peer ${peerId}`)
     const pc = peerConnections.current[peerId]
+    // Clear any retry interval
+    const retryKey = `ice_retry_${peerId}`
+    const retryState = iceRetryStateRef.current.get(retryKey)
+    if (retryState?.intervalId) {
+      clearInterval(retryState.intervalId)
+      iceRetryStateRef.current.delete(retryKey)
+    }
     if (pc) {
       try {
         pc.restartIce()
@@ -1284,6 +1322,13 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
       if (!pc || pc.connectionState === 'closed') {
         // Connection already torn down, stop monitoring
         delete peerDisconnectedGraceRef.current[peerId]
+        // Clean up ICE retry interval
+        const retryKey = `ice_retry_${peerId}`
+        const retryState = iceRetryStateRef.current.get(retryKey)
+        if (retryState?.intervalId) {
+          clearInterval(retryState.intervalId)
+          iceRetryStateRef.current.delete(retryKey)
+        }
         clearInterval(interval)
         return
       }
@@ -2623,6 +2668,8 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
   const peerDisconnectedAtRef = useRef(new Map()) // peerId -> timestamp when disconnected state was first observed
   const peerReconnectStateRef = useRef(new Map()) // peerId -> { attempts, nextAllowedAt, lastReason }
   const forcedInitiatorPeersRef = useRef(new Set()) // peers allowed to bypass owner rule temporarily
+  const iceRetryStateRef = useRef(new Map()) // peerId -> { attempts, lastRetry, intervalId }
+  const iceTimeoutRef = useRef(new Map()) // peerId -> { startedAt, timerId } for connection timeout
 
   // Tiered configuration for scaling to 100+ peers
   const TIER_CONFIG = {
@@ -2724,6 +2771,16 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
     if (!activeNegotiationPeersRef.current.has(peerId)) return
     activeNegotiationPeersRef.current.delete(peerId)
     activeNegotiationsRef.current = Math.max(0, activeNegotiationsRef.current - 1)
+    // If there are queued peers waiting, trigger queue processing now that a slot freed up
+    if (connectionQueueRef.current.length > 0 && !isProcessingQueueRef.current) {
+      // Use a microtask delay to avoid re-entrancy issues
+      setTimeout(() => {
+        if (connectionQueueRef.current.length > 0 && !isProcessingQueueRef.current) {
+          isProcessingQueueRef.current = false // ensure flag is clear
+          // processConnectionQueue will be called by the scheduled timeout from the queue
+        }
+      }, 50)
+    }
   }, [clearTrackedTimeout])
 
   const reserveNegotiationSlot = useCallback((peerId, fallbackDelay = 6500) => {
@@ -2886,21 +2943,118 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
     }
 
     pc.oniceconnectionstatechange = () => {
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+      const isFirefox = ua.includes('Firefox')
+      const isSafari = ua.includes('Safari') && !ua.includes('Chrome')
+      
       console.log(`[WebRTC] ICE state with ${targetUserId}:`, pc.iceConnectionState)
-      if (pc.iceConnectionState === 'failed') {
-        console.log(`[WebRTC] ICE failed with ${targetUserId} — restarting ICE`)
-        pc.restartIce()
-      }
-      if (pc.iceConnectionState === 'disconnected') {
-        // Browser may recover on its own; give it 4 s then restart ICE
-        const pcAtCheck = pc
-        scheduleTrackedTimeout(() => {
-          if (pcAtCheck.iceConnectionState === 'disconnected' ||
-              pcAtCheck.iceConnectionState === 'failed') {
-            console.log(`[WebRTC] ICE still disconnected for ${targetUserId} — restarting`)
-            pcAtCheck.restartIce()
+      
+      // Add connection timeout for stuck connections
+      if (pc.iceConnectionState === 'new' || pc.iceConnectionState === 'checking') {
+        const timeoutKey = `ice_timeout_${targetUserId}`
+        let timeoutState = iceTimeoutRef.current.get(timeoutKey)
+        
+        if (!timeoutState) {
+          timeoutState = {
+            startedAt: Date.now(),
+            timerId: scheduleTrackedTimeout(() => {
+              // If still stuck after 15 seconds, force ICE restart
+              if (pc.iceConnectionState === 'new' || pc.iceConnectionState === 'checking') {
+                console.log(`[WebRTC] ICE stuck in ${pc.iceConnectionState} for ${targetUserId}, forcing restart`)
+                try { pc.restartIce() } catch {
+                  // If restart fails, recreate connection
+                  try { pc.close() } catch {}
+                  delete peerConnections.current[targetUserId]
+                  scheduleTrackedTimeout(() => {
+                    if (channelIdRef.current) createPeerConnection(targetUserId)
+                  }, 1000)
+                }
+              }
+              iceTimeoutRef.current.delete(timeoutKey)
+            }, 15000)
           }
-        }, 4000)
+          iceTimeoutRef.current.set(timeoutKey, timeoutState)
+        }
+      } else {
+        // Clear timeout for other states
+        const timeoutKey = `ice_timeout_${targetUserId}`
+        const timeoutState = iceTimeoutRef.current.get(timeoutKey)
+        if (timeoutState) {
+          clearTimeout(timeoutState.timerId)
+          iceTimeoutRef.current.delete(timeoutKey)
+        }
+      }
+      
+      // Persistent retry - keep trying until connected
+      const retryKey = `ice_retry_${targetUserId}`
+      let retryState = iceRetryStateRef.current.get(retryKey) || { attempts: 0, lastRetry: 0, intervalId: null }
+      
+      const shouldRetry = (state) => state === 'failed' || state === 'disconnected' || state === 'new'
+      const isConnected = (state) => state === 'connected' || state === 'completed'
+      
+      if (shouldRetry(pc.iceConnectionState)) {
+        // Clear any existing retry interval first
+        if (retryState.intervalId) {
+          clearInterval(retryState.intervalId)
+        }
+        
+        // Use shorter backoff for cross-browser compatibility
+        // Firefox and Safari may need faster retries
+        const baseBackoff = isFirefox || isSafari ? 2000 : 3000
+        const backoffMs = Math.min(15000, baseBackoff + (retryState.attempts * 500))
+        
+        const intervalId = setInterval(() => {
+          // Stop if connected
+          if (isConnected(pc.iceConnectionState)) {
+            clearInterval(intervalId)
+            retryState.intervalId = null
+            iceRetryStateRef.current.delete(retryKey)
+            console.log(`[WebRTC] ICE connected with ${targetUserId}, stopped retry`)
+            return
+          }
+          
+          // Stop if connection closed
+          if (pc.connectionState === 'closed') {
+            clearInterval(intervalId)
+            retryState.intervalId = null
+            return
+          }
+          
+          retryState.attempts++
+          console.log(`[WebRTC] ICE retry ${retryState.attempts} for ${targetUserId}`)
+          
+          try {
+            pc.restartIce()
+          } catch (e) {
+            console.log(`[WebRTC] restartIce failed for ${targetUserId}, recreating connection`)
+            clearInterval(intervalId)
+            retryState.intervalId = null
+            // Close and recreate connection
+            try { pc.close() } catch {}
+            delete peerConnections.current[targetUserId]
+            scheduleTrackedTimeout(() => {
+              if (!peerConnections.current[targetUserId] && channelIdRef.current) {
+                const newPc = createPeerConnection(targetUserId)
+                if (newPc) {
+                  iceRetryStateRef.current.delete(retryKey)
+                }
+              }
+            }, 1000)
+          }
+        }, backoffMs)
+        
+        retryState.intervalId = intervalId
+        retryState.attempts++
+        retryState.lastRetry = Date.now()
+        iceRetryStateRef.current.set(retryKey, retryState)
+        
+      } else if (isConnected(pc.iceConnectionState)) {
+        // Clear retry interval on successful connection
+        if (retryState.intervalId) {
+          clearInterval(retryState.intervalId)
+        }
+        iceRetryStateRef.current.delete(retryKey)
+        console.log(`[WebRTC] ICE connected with ${targetUserId}`)
       }
     }
 
@@ -3558,7 +3712,8 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
 
     isProcessingQueueRef.current = false
 
-    // If queue still has items, schedule another processing round
+    // If queue still has items (either blocked by concurrency limit or new items added),
+    // schedule another processing round to drain the queue
     if (connectionQueueRef.current.length > 0) {
       scheduleTrackedTimeout(() => processConnectionQueue(), tier.staggerBase)
     }
@@ -3964,7 +4119,30 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
       if (data.channelId !== channelIdRef.current) return
       applyLowDelayModeToAllPeers()
       // Store ICE servers from server for subsequent peer connections
-      if (data.iceServers?.length) serverIceServersRef.current = data.iceServers
+      if (data.iceServers?.length) {
+        const hadIceServers = serverIceServersRef.current.length > 0
+        serverIceServersRef.current = data.iceServers
+        // If we had peer connections created with fallback ICE (STUN-only) before
+        // server ICE servers arrived, close and recreate them with the full server
+        // ICE list (which includes TURN). This ensures all peers use the same TURN
+        // credentials and can relay through the same server.
+        if (!hadIceServers) {
+          const existingPeers = Object.keys(peerConnections.current)
+          if (existingPeers.length > 0) {
+            console.log(`[WebRTC] Server ICE servers received - recreating ${existingPeers.length} peer connection(s) with TURN support`)
+            existingPeers.forEach(peerId => {
+              const pc = peerConnections.current[peerId]
+              if (pc && pc.connectionState !== 'connected' && pc.connectionState !== 'completed') {
+                try { pc.close() } catch {}
+                delete peerConnections.current[peerId]
+                makingOfferRef.current[peerId] = false
+                ignoreOfferRef.current[peerId] = false
+                remoteDescSetRef.current[peerId] = false
+              }
+            })
+          }
+        }
+      }
       
       // Handle both formats: array of user objects OR array of peer IDs (strings)
       const participantsData = (data.participants || [])
@@ -5712,141 +5890,21 @@ socket.on('voice:force-reconnect', (data) => {
     })
     audioElements.current = {}
 
-// Close analyser context
-if (analyserRef.current?.audioContext && analyserRef.current.audioContext.state !== 'closed') {
-  analyserRef.current.audioContext.close().catch(() => {})
-}
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
-// Close video elements
-Object.entries(videoElements.current).forEach(([key, node]) => {
-  if (node && node.pause) {
-    node.pause()
-    node.srcObject = null
-    if (node.parentNode) node.parentNode.removeChild(node)
-  }
-})
-// Clear video streams
-setVideoStreams({})
+    // Close analyser context
+    if (analyserRef.current?.audioContext && analyserRef.current.audioContext.state !== 'closed') {
+      analyserRef.current.audioContext.close().catch(() => {})
+    }
     analyserRef.current = null
+
+    // Close and clear video elements
+    Object.entries(videoElements.current).forEach(([, node]) => {
+      if (node && node.pause) {
+        node.pause()
+        node.srcObject = null
+        if (node.parentNode) node.parentNode.removeChild(node)
+      }
+    })
+    videoElements.current = {}
 
     // Reset all negotiation state so a fresh join works without page reload
     makingOfferRef.current  = {}
@@ -5876,10 +5934,8 @@ setVideoStreams({})
     setIsScreenSharing(false)
     setVideoStreams({})
 
-// Emit leave
-if (hasJoinedRef.current && !hasLeftRef.current) {
-  // Clear video streams on leave
-  setVideoStreams({})
+    // Emit leave
+    if (hasJoinedRef.current && !hasLeftRef.current) {
       if (socket?.connected) {
         socket.emit('voice:leave', channel.id)
         console.log('[Voice] Manual leave - emitted voice:leave')
@@ -5890,7 +5946,6 @@ if (hasJoinedRef.current && !hasLeftRef.current) {
 
     onLeave()
   }
-
   const otherParticipants = participants.filter(p => p?.id !== user?.id)
 
   // Create self participant if not in list yet

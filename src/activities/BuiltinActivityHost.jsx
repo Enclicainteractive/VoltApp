@@ -142,8 +142,8 @@ const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose,
         security: {
           enabled: true,
           strict: false,
-          maxInboundBytes: 96 * 1024,
-          maxEventBytes: 32 * 1024
+          maxInboundBytes: 20 * 1024 * 1024,
+          maxEventBytes: 20 * 1024 * 1024
         }
       })
 

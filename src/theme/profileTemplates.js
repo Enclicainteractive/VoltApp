@@ -26,22 +26,43 @@ export const PROFILE_TEMPLATES = [
     description: 'Deep dark aesthetic with purple accents',
     preview: { banner: 'linear-gradient(135deg, #0d0d1a 0%, #1a0a2e 50%, #120826 100%)', accent: '#8b5cf6' },
     profileCSS: `
-/* Midnight template */
+/* Midnight template - comprehensive */
 .profile-modal-container {
   --profile-accent: #8b5cf6;
+  --profile-bg: #0d0d1a;
   background: linear-gradient(180deg, #0d0d1a 0%, #0f0b1e 100%) !important;
   border: 1px solid rgba(139,92,246,0.2) !important;
 }
-.profile-banner-bg {
-  background: linear-gradient(135deg, #0d0d1a 0%, #1a0a2e 50%, #120826 100%) !important;
-}
-.profile-tab-btn.active {
-  color: #8b5cf6 !important;
-  border-bottom-color: #8b5cf6 !important;
-}
+.profile-banner-bg { background: linear-gradient(135deg, #0d0d1a 0%, #1a0a2e 50%, #120826 100%) !important; }
+.profile-banner-bg::after { background: linear-gradient(transparent, #0d0d1a) !important; }
+.profile-tab-btn.active { color: #8b5cf6 !important; border-bottom-color: #8b5cf6 !important; }
 .profile-display-name { color: #e2d9f3 !important; }
-.profile-section { border-color: rgba(139,92,246,0.12) !important; }
+.profile-username, .profile-host { color: rgba(226,217,243,0.55) !important; }
+.profile-section { background: rgba(26,10,46,0.8) !important; border-color: rgba(139,92,246,0.12) !important; }
 .section-header h3 { color: #8b5cf6 !important; }
+.profile-tab-btn { color: rgba(226,217,243,0.55) !important; }
+.profile-tab-btn:hover { color: #e2d9f3 !important; }
+.bio-content, .member-date, .activity-text, .privacy-label { color: #e2d9f3 !important; }
+.empty-state, .privacy-desc, .activity-time, .char-count, .stat-label { color: rgba(226,217,243,0.55) !important; }
+.stat-item { background: rgba(18,8,38,0.95) !important; }
+.stat-value { color: #8b5cf6 !important; }
+.activity-item, .privacy-option { background: rgba(18,8,38,0.95) !important; }
+.activity-icon, .mutual-acronym { background: #8b5cf6 !important; }
+.social-link { background: rgba(26,10,46,0.8) !important; color: #e2d9f3 !important; }
+.social-link:hover { background: rgba(18,8,38,0.95) !important; }
+.btn-primary { background: #8b5cf6 !important; border-color: #8b5cf6 !important; color: #fff !important; }
+.btn-secondary { background: rgba(26,10,46,0.8) !important; border-color: rgba(139,92,246,0.2) !important; color: #e2d9f3 !important; }
+.loading-spinner { border-color: rgba(139,92,246,0.3) !important; border-top-color: #8b5cf6 !important; }
+.profile-comment-body { background: rgba(26,10,46,0.8) !important; }
+.profile-comment-author { color: #e2d9f3 !important; }
+.profile-comment-text { color: #e2d9f3 !important; }
+.profile-comment-time { color: rgba(226,217,243,0.55) !important; }
+.profile-comment-input { background: rgba(18,8,38,0.95) !important; border-color: rgba(139,92,246,0.2) !important; color: #e2d9f3 !important; }
+.profile-comment-input:focus { border-color: #8b5cf6 !important; }
+.status-display { background: rgba(26,10,46,0.8) !important; }
+.status-text { color: #e2d9f3 !important; }
+.custom-status { color: rgba(226,217,243,0.55) !important; border-color: rgba(139,92,246,0.2) !important; }
+.mutual-name { color: rgba(226,217,243,0.55) !important; }
 `,
     settings: { bannerEffect: 'none', profileLayout: 'standard', accentColor: '#8b5cf6' }
   },
@@ -51,30 +72,44 @@ export const PROFILE_TEMPLATES = [
     description: 'Cyberpunk-inspired neon glow',
     preview: { banner: 'linear-gradient(135deg, #000b18 0%, #001428 50%, #000f22 100%)', accent: '#00d4ff' },
     profileCSS: `
-/* Neon Cyber template */
+/* Neon Cyber template - comprehensive */
 .profile-modal-container {
   --profile-accent: #00d4ff;
+  --profile-bg: #000b18;
   background: #000b18 !important;
   border: 1px solid rgba(0,212,255,0.3) !important;
   box-shadow: 0 0 40px rgba(0,212,255,0.08), 0 25px 80px rgba(0,0,0,0.7) !important;
 }
-.profile-banner-bg {
-  background: linear-gradient(135deg, #000b18 0%, #001428 50%, #000f22 100%) !important;
-}
-.profile-banner-bg::after {
-  background: linear-gradient(transparent, #000b18) !important;
-}
-.profile-display-name {
-  color: #00d4ff !important;
-  text-shadow: 0 0 20px rgba(0,212,255,0.5) !important;
-}
-.profile-tab-btn.active {
-  color: #00d4ff !important;
-  border-bottom-color: #00d4ff !important;
-  text-shadow: 0 0 10px rgba(0,212,255,0.5) !important;
-}
-.profile-section { border-color: rgba(0,212,255,0.1) !important; }
+.profile-banner-bg { background: linear-gradient(135deg, #000b18 0%, #001428 50%, #000f22 100%) !important; }
+.profile-banner-bg::after { background: linear-gradient(transparent, #000b18) !important; }
+.profile-display-name { color: #00d4ff !important; text-shadow: 0 0 20px rgba(0,212,255,0.5) !important; }
+.profile-username, .profile-host { color: rgba(0,212,255,0.55) !important; }
+.profile-section { background: rgba(0,20,40,0.9) !important; border-color: rgba(0,212,255,0.1) !important; }
 .section-header h3 { color: #00d4ff !important; }
+.profile-tab-btn { color: rgba(0,212,255,0.55) !important; }
+.profile-tab-btn:hover { color: #00d4ff !important; }
+.profile-tab-btn.active { color: #00d4ff !important; border-bottom-color: #00d4ff !important; text-shadow: 0 0 10px rgba(0,212,255,0.5) !important; }
+.bio-content, .member-date, .activity-text, .privacy-label { color: #00d4ff !important; }
+.empty-state, .privacy-desc, .activity-time, .char-count, .stat-label { color: rgba(0,212,255,0.55) !important; }
+.stat-item { background: rgba(0,15,34,0.95) !important; }
+.stat-value { color: #00d4ff !important; }
+.activity-item, .privacy-option { background: rgba(0,15,34,0.95) !important; }
+.activity-icon, .mutual-acronym { background: #00d4ff !important; }
+.social-link { background: rgba(0,20,40,0.9) !important; color: #00d4ff !important; }
+.social-link:hover { background: rgba(0,15,34,0.95) !important; }
+.btn-primary { background: #00d4ff !important; border-color: #00d4ff !important; color: #000 !important; }
+.btn-secondary { background: rgba(0,20,40,0.9) !important; border-color: rgba(0,212,255,0.3) !important; color: #00d4ff !important; }
+.loading-spinner { border-color: rgba(0,212,255,0.3) !important; border-top-color: #00d4ff !important; }
+.profile-comment-body { background: rgba(0,20,40,0.9) !important; }
+.profile-comment-author { color: #00d4ff !important; }
+.profile-comment-text { color: #00d4ff !important; }
+.profile-comment-time { color: rgba(0,212,255,0.55) !important; }
+.profile-comment-input { background: rgba(0,15,34,0.95) !important; border-color: rgba(0,212,255,0.3) !important; color: #00d4ff !important; }
+.profile-comment-input:focus { border-color: #00d4ff !important; }
+.status-display { background: rgba(0,20,40,0.9) !important; }
+.status-text { color: #00d4ff !important; }
+.custom-status { color: rgba(0,212,255,0.55) !important; border-color: rgba(0,212,255,0.3) !important; }
+.mutual-name { color: rgba(0,212,255,0.55) !important; }
 .profile-avatar-img { border-color: rgba(0,212,255,0.5) !important; box-shadow: 0 0 20px rgba(0,212,255,0.3) !important; }
 `,
     settings: { bannerEffect: 'aurora', profileLayout: 'standard', accentColor: '#00d4ff' }

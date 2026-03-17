@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { XMarkIcon, UserIcon, BellIcon, ShieldCheckIcon, MicrophoneIcon, VideoCameraIcon, VideoCameraSlashIcon, ComputerDesktopIcon, EyeIcon, PencilIcon, ServerIcon, SparklesIcon, PlayIcon, PauseIcon, SpeakerWaveIcon, Cog6ToothIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, KeyIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
-import { Camera, ImagePlus, Trash2, X, User, Bell, Volume2, ShieldCheck, Palette, Info, Mic, Video, Monitor, VideoOff, Eye, Pencil, Globe, Server, Settings, Sparkles, Play, Pause, Languages, Download, Upload, Key, Wand2, Type, Sliders } from 'lucide-react'
+import { Camera, ImagePlus, Trash2, X, User, Bell, Volume2, ShieldCheck, Palette, Info, Mic, Video, Monitor, VideoOff, Eye, Pencil, Globe, Server, Settings, Sparkles, Play, Pause, Languages, Download, Upload, Key, Wand2, Type, Sliders, Code, Palette as PaletteIcon, Package, Keyboard } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useI18n } from '../../contexts/I18nContext'
@@ -26,6 +26,8 @@ import SelfVoltPanel from '../SelfVoltPanel'
 import FederationPanel from '../FederationPanel'
 import BotPanel from '../BotPanel'
 import ActivityAppsPanel from '../ActivityAppsPanel'
+import CustomCSSEditor from './CustomCSSEditor'
+import ProfileCustomizer from './ProfileCustomizer'
 import './Modal.css'
 import './SettingsModal.css'
 import '../../assets/styles/RichTextEditor.css'
@@ -44,7 +46,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const bannerUrl = user?.id ? `${imageApiUrl}/api/images/users/${user.id}/banner` : null
   const { bannerSrc } = useBanner(bannerUrl)
   const [settings, setSettings] = useState(() => settingsService.getSettings())
-  
+
   useEffect(() => {
     const unsubscribe = settingsService.subscribe((newSettings) => {
       setSettings(newSettings)
@@ -99,6 +101,11 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const [showFontModal, setShowFontModal] = useState(false)
   const [showAnimationModal, setShowAnimationModal] = useState(false)
   const [showProfileCustomModal, setShowProfileCustomModal] = useState(false)
+  const [showCustomCSSEditor, setShowCustomCSSEditor] = useState(false)
+  const [showColorCustomizer, setShowColorCustomizer] = useState(false)
+  const [userGuildTag, setUserGuildTag] = useState(null)
+  const [userGuildTagServerId, setUserGuildTagServerId] = useState(null)
+  const [serversWithGuildTags, setServersWithGuildTags] = useState([])
   const micStreamRef = useRef(null)
   const cameraStreamRef = useRef(null)
   const videoPreviewRef = useRef(null)
@@ -110,6 +117,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
   const [isAdminUser, setIsAdminUser] = useState(false)
   const isDesktopApp = typeof window !== 'undefined' && window.__IS_DESKTOP_APP__ && typeof window.electron?.setDiscordPresence === 'function'
+  const [desktopInfo, setDesktopInfo] = useState(null)
+  const [appVersion, setAppVersion] = useState(null)
   const soundpackOptions = [
     { value: 'default', label: t('notifications.defaultSoundpack', 'Default (Generated)') },
     { value: 'classic', label: t('notifications.classicSoundpack', 'Enclica Messenger') },
@@ -204,11 +213,60 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   }, [user])
 
   useEffect(() => {
+    const loadGuildTagData = async () => {
+      try {
+        const [tagRes, serversRes] = await Promise.all([
+          apiService.getUserGuildTag(),
+          apiService.getServers()
+        ])
+        setUserGuildTag(tagRes.data?.guildTag || null)
+        setUserGuildTagServerId(tagRes.data?.guildTagServerId || null)
+        
+        const servers = serversRes.data || []
+        const serversWithTags = await Promise.all(
+          servers.map(async (srv) => {
+            try {
+              const tagRes = await apiService.getServerGuildTag(srv.id)
+              return tagRes.data?.guildTag ? { ...srv, guildTag: tagRes.data.guildTag } : null
+            } catch {
+              return null
+            }
+          })
+        )
+        setServersWithGuildTags(serversWithTags.filter(Boolean))
+      } catch (err) {
+        console.error('Failed to load guild tag data:', err)
+      }
+    }
+    loadGuildTagData()
+  }, [])
+
+  useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768)
     checkMobile()
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  useEffect(() => {
+    if (isDesktopApp) {
+      const fetchDesktopInfo = async () => {
+        try {
+          if (window.electron?.getAppInfo) {
+            const info = await window.electron.getAppInfo()
+            setDesktopInfo(info)
+          }
+          if (window.electron?.getVersion) {
+            const version = await window.electron.getVersion()
+            setAppVersion(version)
+          }
+        } catch (err) {
+          console.error('Failed to get desktop info:', err)
+        }
+      }
+      fetchDesktopInfo()
+    }
+  }, [isDesktopApp])
 
   const [customThemeDraft, setCustomThemeDraft] = useState(() => ({
     name: 'Custom',
@@ -303,14 +361,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
           console.log('[Settings] Could not get media permissions for device enumeration')
         }
       }
-      
+
       const deviceList = await navigator.mediaDevices.enumerateDevices()
-      
+
       const outputDevices = deviceList.filter(d => d.kind === 'audiooutput')
-      
+
       console.log('[Settings] Found output devices:', outputDevices.length)
       console.log('[Settings] Output device labels:', outputDevices.map(d => d.label))
-      
+
       setDevices({
         audio: deviceList.filter(d => d.kind === 'audioinput'),
         video: deviceList.filter(d => d.kind === 'videoinput'),
@@ -366,16 +424,16 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
           console.log('[Settings] Could not get audio permission')
         }
       }
-      
+
       // Now enumerate devices with permissions granted
       await enumerateDevices()
     }
-    
+
     initDevices()
-    
+
     // Listen for device changes
     navigator.mediaDevices?.addEventListener('devicechange', enumerateDevices)
-    
+
     return () => {
       navigator.mediaDevices?.removeEventListener('devicechange', enumerateDevices)
       stopMicTest()
@@ -409,7 +467,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     const initPush = async () => {
       const supported = pushService.isSupported()
       setPushSupported(supported)
-      
+
       if (supported) {
         const subscription = await pushService.getSubscription()
         const hasSubscription = !!subscription
@@ -428,16 +486,16 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
   const startMicTest = async () => {
     setMicError(null)
-    
+
     const tryGetMic = async (deviceId) => {
       const constraints = {
-        audio: deviceId && deviceId !== 'default' 
+        audio: deviceId && deviceId !== 'default'
           ? { deviceId: { exact: deviceId } }
           : true
       }
       return navigator.mediaDevices.getUserMedia(constraints)
     }
-    
+
     try {
       let stream
       try {
@@ -452,20 +510,20 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
           throw err
         }
       }
-      
+
       micStreamRef.current = stream
       setPermissionsGranted(true)
-      
+
       // Re-enumerate devices to get labels now that we have permission
       await enumerateDevices()
-      
+
       const audioContext = new AudioContext()
       const analyser = audioContext.createAnalyser()
       const source = audioContext.createMediaStreamSource(stream)
       source.connect(analyser)
       analyser.fftSize = 256
       analyserRef.current = { audioContext, analyser }
-      
+
       const dataArray = new Uint8Array(analyser.frequencyBinCount)
       const updateLevel = () => {
         if (!analyserRef.current) return
@@ -475,7 +533,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
         animationRef.current = requestAnimationFrame(updateLevel)
       }
       updateLevel()
-      
+
       setTestingMic(true)
     } catch (err) {
       console.error('Failed to start mic test:', err)
@@ -508,7 +566,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
   const startCameraTest = async () => {
     setCameraError(null)
-    
+
     const tryGetCamera = async (deviceId) => {
       const constraints = {
         video: deviceId && deviceId !== 'default'
@@ -517,7 +575,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
       }
       return navigator.mediaDevices.getUserMedia(constraints)
     }
-    
+
     try {
       let stream
       try {
@@ -532,11 +590,11 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
           throw err
         }
       }
-      
+
       cameraStreamRef.current = stream
       setPermissionsGranted(true)
       setTestingCamera(true)
-      
+
       // Re-enumerate devices to get labels
       await enumerateDevices()
     } catch (err) {
@@ -583,6 +641,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     { id: 'apps', label: t('settings.apps', 'Apps'), icon: RocketLaunchIcon },
     { id: 'serverconfig', label: t('settings.serverconfig'), icon: Settings, adminOnly: true },
     { id: 'customization', label: 'Customization', icon: Wand2 },
+    { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
     { id: 'about', label: t('settings.about'), icon: Info },
   ]
   const isVoltageServer = server?.name?.toLowerCase() === 'voltage'
@@ -697,6 +756,17 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
       }
       return newSettings
     })
+  }
+
+  const handleGuildTagChange = async (serverId) => {
+    try {
+      const res = await apiService.setUserGuildTag(serverId)
+      setUserGuildTag(res.data?.guildTag || null)
+      setUserGuildTagServerId(res.data?.guildTagServerId || null)
+    } catch (err) {
+      console.error('Failed to set guild tag:', err)
+      alert(err?.response?.data?.error || 'Failed to set guild tag')
+    }
   }
 
   const handleOutputDeviceChange = async (value) => {
@@ -849,27 +919,27 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const handleExportKeys = async () => {
     setBackupError('')
     setBackupSuccess('')
-    
+
     if (!backupPassword) {
       setBackupError(t('settings.backup.passwordRequired') || 'Password is required')
       return
     }
-    
+
     if (backupPassword.length < 8) {
       setBackupError(t('settings.backup.passwordMinLength') || 'Password must be at least 8 characters')
       return
     }
-    
+
     if (backupPassword !== backupConfirmPassword) {
       setBackupError(t('settings.backup.passwordMismatch') || 'Passwords do not match')
       return
     }
-    
+
     setIsBackingUp(true)
-    
+
     try {
       const backupData = await exportAllKeysForBackup(backupPassword)
-      
+
       const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -879,7 +949,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      
+
       setBackupSuccess(t('settings.backup.exportSuccess') || 'Keys exported successfully!')
       setBackupPassword('')
       setBackupConfirmPassword('')
@@ -893,24 +963,24 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const handleImportKeys = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
-    
+
     setRestoreError('')
     setRestoreSuccess('')
-    
+
     if (!restorePassword) {
       setRestoreError(t('settings.backup.passwordRequired') || 'Password is required')
       event.target.value = ''
       return
     }
-    
+
     setIsRestoring(true)
-    
+
     try {
       const text = await file.text()
       const backupData = JSON.parse(text)
-      
+
       const result = await importAllKeysFromBackup(backupData, restorePassword)
-      
+
       if (result.success) {
         setRestoreSuccess(t('settings.backup.importSuccess') || 'Keys imported successfully! Please restart the app.')
         setRestorePassword('')
@@ -988,7 +1058,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
               <div className="settings-section">
                 <h2>{t('settings.account')}</h2>
                 <div className="user-profile-card">
-                  <div 
+                  <div
                     className="user-banner"
                     style={accountBannerPreview ? {
                       backgroundImage: `url(${accountBannerPreview})`,
@@ -1007,7 +1077,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       ) : null}
                     </div>
                   </div>
-                  <Avatar 
+                  <Avatar
                     src={accountAvatarPreview || user?.avatar}
                     alt={user?.username}
                     fallback={user?.username || user?.email}
@@ -1053,9 +1123,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="form-group">
                   <label>{t('account.userId')}</label>
-                  <input 
-                    type="text" 
-                    className="input" 
+                  <input
+                    type="text"
+                    className="input"
                     value={user?.id || ''}
                     disabled
                   />
@@ -1063,9 +1133,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="form-group">
                   <label>{t('account.usernameCannotChange')}</label>
-                  <input 
-                    type="text" 
-                    className="input" 
+                  <input
+                    type="text"
+                    className="input"
                     value={user?.username || ''}
                     disabled
                   />
@@ -1074,8 +1144,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="form-group">
                   <label>{t('account.customUsername')}</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className={`input ${usernameError ? 'input-error' : ''}`}
                     value={usernameValue}
                     onChange={(e) => {
@@ -1100,8 +1170,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="form-group">
                   <label>{t('account.displayName')}</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className={`input ${displayNameError ? 'input-error' : ''}`}
                     value={displayNameValue}
                     onChange={(e) => {
@@ -1124,11 +1194,35 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   <small className="form-hint">{t('account.displayNameHint')}</small>
                 </div>
 
+                {serversWithGuildTags.length > 0 && (
+                  <div className="form-group">
+                    <label>Guild Tag</label>
+                    <p className="form-hint">Select which server's guild tag to display on your profile.</p>
+                    <select
+                      className="input"
+                      value={userGuildTagServerId || ''}
+                      onChange={(e) => handleGuildTagChange(e.target.value || null)}
+                    >
+                      <option value="">None</option>
+                      {serversWithGuildTags.map(srv => (
+                        <option key={srv.id} value={srv.id}>
+                          #{srv.guildTag} - {srv.name}
+                        </option>
+                      ))}
+                    </select>
+                    {userGuildTag && (
+                      <p className="form-hint" style={{ color: 'var(--volt-primary)', marginTop: 4 }}>
+                        Currently showing: <strong>#{userGuildTag}</strong>
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="form-group">
                   <label>{t('account.email')}</label>
-                  <input 
-                    type="email" 
-                    className="input" 
+                  <input
+                    type="email"
+                    className="input"
                     value={user?.email || ''}
                     disabled
                   />
@@ -1164,14 +1258,14 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   <label>{t('account.bio')}</label>
                   <div className="bio-editor">
                     <div className="bio-editor-tabs">
-                      <button 
+                      <button
                         type="button"
                         className={`bio-tab ${!bioPreview ? 'active' : ''}`}
                         onClick={() => setBioPreview(false)}
                       >
                         <PencilIcon size={14} /> {t('account.write')}
                       </button>
-                      <button 
+                      <button
                         type="button"
                         className={`bio-tab ${bioPreview ? 'active' : ''}`}
                         onClick={() => setBioPreview(true)}
@@ -1213,7 +1307,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 <p style={{ marginBottom: '20px', color: 'var(--volt-text-secondary)' }}>
                   {t('settings.selectLanguage')}
                 </p>
-                
+
                 <div className="language-grid">
                   {availableLanguages.map((lang) => (
                     <button
@@ -1238,7 +1332,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
             {activeTab === 'notifications' && (
               <div className="settings-section">
                 <h2>{t('settings.notifications')}</h2>
-                
+
                 {pushSupported && (
                   <div className="setting-item">
                     <div>
@@ -1246,8 +1340,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       <p>{t('notifications.pushNotificationsDesc')}</p>
                     </div>
                     <label className="toggle">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={settings.pushNotifications}
                         onChange={async (e) => {
                           const enable = e.target.checked
@@ -1322,8 +1416,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <p>{t('notifications.desktopNotificationsDesc')}</p>
                   </div>
                   <label className="toggle">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={settings.notifications}
                         onChange={async () => {
                           const nextEnabled = !settings.notifications
@@ -1360,8 +1454,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <p>{t('notifications.messageNotificationsDesc')}</p>
                   </div>
                   <label className="toggle">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={settings.messageNotifications}
                       onChange={() => handleToggle('messageNotifications')}
                     />
@@ -1375,8 +1469,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <p>{t('notifications.friendRequestsDesc')}</p>
                   </div>
                   <label className="toggle">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={settings.friendRequests}
                       onChange={() => handleToggle('friendRequests')}
                     />
@@ -1390,8 +1484,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <p>{t('notifications.notificationSoundsDesc')}</p>
                   </div>
                   <label className="toggle">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={settings.sounds}
                       onChange={() => handleToggle('sounds')}
                     />
@@ -1404,7 +1498,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <h4>{t('notifications.soundPack', 'Sound Pack')}</h4>
                     <p>{t('notifications.soundPackDescription', 'Choose notification sound style')}</p>
                   </div>
-                  <select 
+                  <select
                     className="input"
                     style={{ width: 'auto', minWidth: '150px' }}
                     value={settings.soundpack || 'default'}
@@ -1423,31 +1517,27 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </select>
                   </div>
 
-                  {settings.soundpack && settings.soundpack !== 'default' && (
-                    <>
-                      <div className="setting-item">
-                        <div>
-                          <h4>{t('notifications.soundPackVolume')}</h4>
-                          <p>{t('notifications.soundPackVolumeDesc', 'Adjust volume for sound pack')}</p>
-                        </div>
-                        <div className="volume-control">
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max="100" 
-                            value={settings.soundpackVolume || 100}
-                            onChange={(e) => {
-                              const vol = parseInt(e.target.value)
-                              handleSelect('soundpackVolume', vol)
-                              soundService.setSoundpackVolume(vol)
-                            }}
-                            className="volume-slider"
-                          />
-                          <span className="volume-value">{settings.soundpackVolume || 100}%</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                  <div className="setting-item">
+                    <div>
+                      <h4>{t('notifications.soundPackVolume', 'Sound Volume')}</h4>
+                      <p>{t('notifications.soundPackVolumeDesc', 'Adjust volume for notification sounds')}</p>
+                    </div>
+                    <div className="volume-control">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={settings.soundpackVolume !== undefined ? settings.soundpackVolume : 100}
+                        onChange={(e) => {
+                          const vol = parseInt(e.target.value)
+                          handleSelect('soundpackVolume', vol)
+                          soundService.setSoundpackVolume(vol)
+                        }}
+                        className="volume-slider"
+                      />
+                      <span className="volume-value">{settings.soundpackVolume !== undefined ? settings.soundpackVolume : 100}%</span>
+                    </div>
+                  </div>
 
                   <div className="soundpack-previews">
                     <h4>{t('notifications.soundPreviews')}</h4>
@@ -1455,7 +1545,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       {previewSounds.map(sound => (
                         <div key={sound.key} className="sound-preview-item">
                           <span className="sound-preview-label">{sound.label}</span>
-                          <button 
+                          <button
                             className={`btn btn-icon ${previewingSound === sound.key ? 'btn-primary' : 'btn-secondary'}`}
                             onClick={() => {
                               if (soundPreviewTimeoutRef.current) {
@@ -1492,10 +1582,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
             {activeTab === 'voice' && (
               <div className="settings-section">
                 <h2>{t('settings.voice')}</h2>
-                
+
                 <div className="voice-settings-group">
                   <h3><MicrophoneIcon size={18} /> {t('voice.voiceSettings')}</h3>
-                  
+
                   {!permissionsGranted && devices.audio.length === 0 && (
                     <div className="permission-notice">
                       <p>{t('voice.grantMicAccess')}</p>
@@ -1504,10 +1594,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       </button>
                     </div>
                   )}
-                  
+
                   <div className="form-group">
                     <label>{t('voice.inputDevice')}</label>
-                    <select 
+                    <select
                       className="input"
                       value={settings.inputDevice}
                       onChange={(e) => handleSelect('inputDevice', e.target.value)}
@@ -1530,10 +1620,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       <p>{t('voice.inputVolumeDesc', 'Adjust your microphone volume')}</p>
                     </div>
                     <div className="volume-control">
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="100" 
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
                         value={settings.inputVolume}
                         onChange={(e) => setSettings(prev => ({ ...prev, inputVolume: parseInt(e.target.value) }))}
                         className="volume-slider"
@@ -1544,7 +1634,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                   <div className="form-group">
                     <label>{t('voice.outputDevice')}</label>
-                    <select 
+                    <select
                       className="input"
                       value={settings.outputDevice}
                       onChange={(e) => handleOutputDeviceChange(e.target.value)}
@@ -1568,10 +1658,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       <p>{t('voice.outputVolumeDesc', 'Adjust your output volume')}</p>
                     </div>
                     <div className="volume-control">
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="100" 
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
                         value={settings.volume}
                         onChange={handleVolumeChange}
                         className="volume-slider"
@@ -1586,8 +1676,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       <p>{t('voice.muteAllDesc', 'Mute all voice channels')}</p>
                     </div>
                     <label className="toggle">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={settings.muteAll}
                         onChange={() => handleToggle('muteAll')}
                       />
@@ -1600,7 +1690,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <p>{t('voice.microphoneTestDesc') || 'Test your microphone to make sure it\'s working'}</p>
                     {micError && <div className="test-error">{micError}</div>}
                     <div className="mic-test-controls">
-                      <button 
+                      <button
                         className={`btn ${testingMic ? 'btn-danger' : 'btn-primary'}`}
                         onClick={testingMic ? stopMicTest : startMicTest}
                       >
@@ -1624,10 +1714,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="voice-settings-group">
                   <h3><VideoCameraIcon size={18} /> {t('voice.videoSettings')}</h3>
-                  
+
                   <div className="form-group">
                     <label>{t('voice.camera')}</label>
-                    <select 
+                    <select
                       className="input"
                       value={settings.videoDevice}
                       onChange={(e) => handleSelect('videoDevice', e.target.value)}
@@ -1650,16 +1740,16 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     {cameraError && <div className="test-error">{cameraError}</div>}
                     <div className="camera-preview-container">
                       {testingCamera ? (
-                        <video 
+                        <video
                           ref={(el) => {
                             videoPreviewRef.current = el
                             if (el && cameraStreamRef.current) {
                               el.srcObject = cameraStreamRef.current
                             }
                           }}
-                          autoPlay 
-                          playsInline 
-                          muted 
+                          autoPlay
+                          playsInline
+                          muted
                           className="camera-preview"
                         />
                       ) : (
@@ -1670,7 +1760,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         </div>
                       )}
                     </div>
-                    <button 
+                    <button
                       className={`btn ${testingCamera ? 'btn-danger' : 'btn-primary'}`}
                       onClick={testingCamera ? stopCameraTest : startCameraTest}
                     >
@@ -1688,8 +1778,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       <p>{t('voice.noiseSuppressionDesc')}</p>
                     </div>
                     <label className="toggle">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={settings.noiseSuppression}
                         onChange={() => handleToggle('noiseSuppression')}
                       />
@@ -1703,8 +1793,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       <p>{t('voice.echoCancellationDesc')}</p>
                     </div>
                     <label className="toggle">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={settings.echoCancellation}
                         onChange={() => handleToggle('echoCancellation')}
                       />
@@ -1718,8 +1808,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       <p>{t('voice.autoGainControlDesc')}</p>
                     </div>
                     <label className="toggle">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={settings.autoGainControl}
                         onChange={() => handleToggle('autoGainControl')}
                       />
@@ -1736,11 +1826,11 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 <p style={{marginBottom: '20px', color: 'var(--volt-text-secondary)'}}>
                   {t('privacy.description')}
                 </p>
-                
+
                 <div className="privacy-note">
                   <h4>{t('privacy.directMessages')}</h4>
                   <p>{t('privacy.dmDesc')}</p>
-                  <select 
+                  <select
                     className="input"
                     value={settings.dmPermissions}
                     onChange={(e) => handleSelect('dmPermissions', e.target.value)}
@@ -2048,8 +2138,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 <p className="settings-description">
                   {t('settings.serverConfigDescription')}
                 </p>
-                <button 
-                  className="btn btn-primary" 
+                <button
+                  className="btn btn-primary"
                   onClick={() => setShowAdminConfig(true)}
                 >
                   <Cog6ToothIcon size={16} /> {t('settings.openServerConfig')}
@@ -2072,6 +2162,17 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <div className="customization-item-content">
                       <h3>Theme Studio</h3>
                       <p>Create and manage custom themes with full control over colors, fonts, and effects.</p>
+                    </div>
+                    <div className="customization-item-arrow">›</div>
+                  </button>
+
+                  <button className="customization-item" onClick={() => setShowColorCustomizer(true)}>
+                    <div className="customization-item-icon">
+                      <PaletteIcon size={24} />
+                    </div>
+                    <div className="customization-item-content">
+                      <h3>Color Customizer</h3>
+                      <p>Fine-tune individual theme colors for a personalized look.</p>
                     </div>
                     <div className="customization-item-arrow">›</div>
                   </button>
@@ -2108,10 +2209,80 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     </div>
                     <div className="customization-item-arrow">›</div>
                   </button>
+
+                  <button className="customization-item" onClick={() => setShowCustomCSSEditor(true)}>
+                    <div className="customization-item-icon">
+                      <Code size={24} />
+                    </div>
+                    <div className="customization-item-content">
+                      <h3>Custom CSS</h3>
+                      <p>Add custom CSS to further personalize your interface.</p>
+                    </div>
+                    <div className="customization-item-arrow">›</div>
+                  </button>
+
+                  <div className="customization-section-title">Theme Packages</div>
+
+                  <button className="customization-item" onClick={async () => {
+                    try {
+                      const themeData = await exportCurrentTheme()
+                      if (themeData) {
+                        const blob = await createVTPPackage(themeData)
+                        downloadVTPPackage(blob, themeData.name || 'volt-theme')
+                      }
+                    } catch (err) {
+                      console.error('Failed to export theme:', err)
+                      alert('Failed to export theme: ' + err.message)
+                    }
+                  }}>
+                    <div className="customization-item-icon">
+                      <Download size={24} />
+                    </div>
+                    <div className="customization-item-content">
+                      <h3>Export Theme Package</h3>
+                      <p>Export your current theme as a .vtp file to share or backup.</p>
+                    </div>
+                    <div className="customization-item-arrow">›</div>
+                  </button>
+
+                  <button className="customization-item" onClick={() => {
+                    const input = document.createElement('input')
+                    input.type = 'file'
+                    input.accept = '.vtp,.zip'
+                    input.onchange = async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      try {
+                        const buffer = await file.arrayBuffer()
+                        const validation = await validateThemePackage(new Uint8Array(buffer))
+                        if (validation.valid) {
+                          const imported = await importVTPPackage(new Uint8Array(buffer))
+                          if (imported && imported.theme) {
+                            alert('Theme imported successfully! Go to Theme Studio to apply it.')
+                          }
+                        } else {
+                          alert('Invalid theme package: ' + validation.error)
+                        }
+                      } catch (err) {
+                        console.error('Failed to import theme:', err)
+                        alert('Failed to import theme: ' + err.message)
+                      }
+                    }
+                    input.click()
+                  }}>
+                    <div className="customization-item-icon">
+                      <Upload size={24} />
+                    </div>
+                    <div className="customization-item-content">
+                      <h3>Import Theme Package</h3>
+                      <p>Import a .vtp theme file to use custom themes from others.</p>
+                    </div>
+                    <div className="customization-item-arrow">›</div>
+                  </button>
                 </div>
 
                 <div className="customization-reset">
-                  <button 
+                  <button
                     className="btn btn-secondary"
                     onClick={() => {
                       if (confirm('Reset all customization settings to default?')) {
@@ -2136,6 +2307,79 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
               </div>
             )}
 
+            {activeTab === 'shortcuts' && (
+              <div className="settings-section">
+                <h2>Keyboard Shortcuts</h2>
+                <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
+                  Configure global keyboard shortcuts that work anywhere in the app.
+                </p>
+                <div className="shortcuts-list">
+                  {Object.entries(settings.keyboardShortcuts || {}).map(([key, config]) => (
+                    <div key={key} className="shortcut-item" style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px 16px',
+                      background: 'var(--hover-bg)',
+                      borderRadius: '8px',
+                      marginBottom: '8px'
+                    }}>
+                      <div className="shortcut-description">
+                        <span style={{ fontWeight: 500 }}>{config.description}</span>
+                      </div>
+                      <div className="shortcut-keys" style={{
+                        display: 'flex',
+                        gap: '4px',
+                        alignItems: 'center'
+                      }}>
+                        {config.ctrl && <span className="key-badge" style={{
+                          background: 'var(--primary-color)',
+                          color: 'white',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>Ctrl</span>}
+                        {config.alt && <span className="key-badge" style={{
+                          background: 'var(--primary-color)',
+                          color: 'white',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>Alt</span>}
+                        {config.shift && <span className="key-badge" style={{
+                          background: 'var(--primary-color)',
+                          color: 'white',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 600
+                        }}>Shift</span>}
+                        <span className="key-badge" style={{
+                          background: 'var(--channel-sidebar-bg)',
+                          color: 'var(--text-primary)',
+                          padding: '2px 10px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          border: '1px solid var(--border-color)'
+                        }}>{config.key.toUpperCase()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: '20px', padding: '16px', background: 'var(--hover-bg)', borderRadius: '8px' }}>
+                  <h4 style={{ marginBottom: '8px' }}>Tips</h4>
+                  <ul style={{ margin: 0, paddingLeft: '20px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                    <li>Shortcuts work globally unless you're typing in an input field</li>
+                    <li>Shortcuts are disabled when modals or dialogs are open</li>
+                    <li>Voice shortcuts work even when in full-screen voice mode with activities</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {activeTab === 'about' && (
               <div className="settings-section">
                 <h2>{t('about.title')}</h2>
@@ -2145,6 +2389,25 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   </div>
                   <h3>VoltChat</h3>
                   <p>{t('about.version')} 1.8.2</p>
+                  {isDesktopApp && (
+                    <>
+                      <p style={{ color: 'var(--volt-primary)', marginTop: '8px' }}>
+                        VoltDesktop {appVersion || 'Unknown'}
+                      </p>
+                      {desktopInfo && (
+                        <div className="about-tech" style={{ marginTop: '12px' }}>
+                          <h4>Debug Info</h4>
+                          <ul style={{ fontSize: '13px', opacity: 0.9 }}>
+                            <li>Platform: {desktopInfo.platform}</li>
+                            <li>Architecture: {desktopInfo.arch}</li>
+                            <li>Electron: {desktopInfo.version}</li>
+                            <li>Chrome: {desktopInfo.chrome}</li>
+                            <li>Node.js: {desktopInfo.node}</li>
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <p className="about-description">
                     {t('about.description')}
                   </p>
@@ -2187,7 +2450,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     {showThemeCustomizer && (
       <div className="modal-overlay settings-overlay" onClick={() => setShowThemeCustomizer(false)}>
         <div onClick={e => e.stopPropagation()}>
-          <ThemeCustomizer 
+          <ThemeCustomizer
             onClose={() => setShowThemeCustomizer(false)}
             onSave={(theme) => {
               console.log('Theme saved:', theme);
@@ -2252,57 +2515,43 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     {showProfileCustomModal && (
       <div className="modal-overlay settings-overlay" onClick={() => setShowProfileCustomModal(false)}>
         <div className="profile-custom-modal-content" onClick={e => e.stopPropagation()}>
+          <ProfileCustomizer 
+            onClose={() => setShowProfileCustomModal(false)} 
+            settings={settings}
+            onSettingsChange={(newSettings) => {
+              setSettings(prev => ({ ...prev, ...newSettings }))
+            }}
+          />
+        </div>
+      </div>
+    )}
+
+    {showCustomCSSEditor && (
+      <div className="modal-overlay settings-overlay" onClick={() => setShowCustomCSSEditor(false)}>
+        <div onClick={e => e.stopPropagation()}>
+          <CustomCSSEditor
+            onClose={() => setShowCustomCSSEditor(false)}
+            onSaved={() => {}}
+          />
+        </div>
+      </div>
+    )}
+
+    {showColorCustomizer && (
+      <div className="modal-overlay settings-overlay" onClick={() => setShowColorCustomizer(false)}>
+        <div className="color-customizer-modal-content" onClick={e => e.stopPropagation()}>
           <div className="simple-modal-header">
-            <h3><Sliders size={20} /> Profile Customization</h3>
-            <button className="modal-close-btn" onClick={() => setShowProfileCustomModal(false)}>
+            <h3><PaletteIcon size={20} /> Color Customizer</h3>
+            <button className="modal-close-btn" onClick={() => setShowColorCustomizer(false)}>
               <X size={20} />
             </button>
           </div>
           <div className="simple-modal-body">
-            <p className="modal-description">Customize your profile appearance.</p>
-            <div className="profile-custom-options">
-              <div className="form-group">
-                <label>Profile Layout</label>
-                <select 
-                  className="input"
-                  value={settings.profileLayout || 'standard'}
-                  onChange={(e) => handleSelect('profileLayout', e.target.value)}
-                >
-                  <option value="standard">Standard</option>
-                  <option value="compact">Compact</option>
-                  <option value="expanded">Expanded</option>
-                  <option value="card">Card</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Banner Effect</label>
-                <select 
-                  className="input"
-                  value={settings.bannerEffect || 'none'}
-                  onChange={(e) => handleSelect('bannerEffect', e.target.value)}
-                >
-                  <option value="none">None</option>
-                  <option value="gradient-shift">Gradient Shift</option>
-                  <option value="pulse">Pulse</option>
-                  <option value="wave">Wave</option>
-                  <option value="aurora">Aurora</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Badge Style</label>
-                <select 
-                  className="input"
-                  value={settings.badgeStyle || 'default'}
-                  onChange={(e) => handleSelect('badgeStyle', e.target.value)}
-                >
-                  <option value="default">Default</option>
-                  <option value="glow">Glow</option>
-                  <option value="bordered">Bordered</option>
-                  <option value="minimal">Minimal</option>
-                  <option value="3d">3D</option>
-                </select>
-              </div>
-            </div>
+            <ColorCustomizer
+              color={settings.primaryColor || '#12d8ff'}
+              onChange={(color) => handleSelect('primaryColor', color)}
+              fullMode={true}
+            />
           </div>
         </div>
       </div>

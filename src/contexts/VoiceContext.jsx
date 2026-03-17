@@ -15,8 +15,11 @@ const DEFAULT_ICE_SERVERS = [
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun4.l.google.com:19302' },
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:global.stun.twilio.com:3478' },
   { urls: 'stun:stun.stunprotocol.org:3478' },
+  { urls: 'stun:stun1.stunprotocol.org:3478' },
   
   // Open Relay Project - Free global TURN servers
   // Essential for symmetric NAT and international connections
@@ -39,6 +42,12 @@ const DEFAULT_ICE_SERVERS = [
     urls: 'turns:openrelay.metered.ca:443',
     username: 'openrelayproject',
     credential: 'openrelayproject'
+  },
+  // Additional TURN servers for redundancy
+  {
+    urls: 'turn:global.stun.twilio.com:3478?transport=udp',
+    username: 'voltchat',
+    credential: 'voltchat'
   }
 ]
 
@@ -48,12 +57,16 @@ const buildPeerConfig = (serverIceServers = []) => ({
   rtcpMuxPolicy: 'require',
   iceCandidatePoolSize: 10,
   // Enable ICE restart for connection recovery
-  iceRestart: true
+  iceRestart: true,
+  // Improve connection stability for larger channels
+  sdpSemantics: 'unified-plan',
+  // Increase ICDT кандидатов timeout
+  iceCandidateTimeout: 10000
 })
 
-const PEER_LEAVE_GRACE_MS = 5000
-const NEGOTIATION_TIMEOUT_MS = 12000
-const PENDING_CANDIDATE_MAX_AGE_MS = 15000
+const PEER_LEAVE_GRACE_MS = 8000
+const NEGOTIATION_TIMEOUT_MS = 18000
+const PENDING_CANDIDATE_MAX_AGE_MS = 20000
 
 const VoiceContext = createContext(null)
 
@@ -113,10 +126,10 @@ export const VoiceProvider = ({ children }) => {
   const pendingPeerCountRef = useRef(0)
   
   const TIER_CONFIG = {
-    small: { maxPeers: 10, concurrent: 2, cooldown: 1000, staggerBase: 400, staggerPerPeer: 300, batchSize: 10 },
-    medium: { maxPeers: 25, concurrent: 2, cooldown: 1500, staggerBase: 800, staggerPerPeer: 500, batchSize: 15 },
-    large: { maxPeers: 50, concurrent: 1, cooldown: 2000, staggerBase: 1500, staggerPerPeer: 700, batchSize: 20 },
-    massive: { maxPeers: 100, concurrent: 1, cooldown: 3000, staggerBase: 2500, staggerPerPeer: 900, batchSize: 25 }
+    small: { maxPeers: 10, concurrent: 3, cooldown: 800, staggerBase: 300, staggerPerPeer: 200, batchSize: 10 },
+    medium: { maxPeers: 25, concurrent: 4, cooldown: 1000, staggerBase: 500, staggerPerPeer: 300, batchSize: 15 },
+    large: { maxPeers: 50, concurrent: 5, cooldown: 1500, staggerBase: 800, staggerPerPeer: 400, batchSize: 25 },
+    massive: { maxPeers: 100, concurrent: 6, cooldown: 2000, staggerBase: 1000, staggerPerPeer: 500, batchSize: 30 }
   }
   const MAX_CONNECTED_PEERS = 100
   const priorityPeersRef = useRef(new Set())
@@ -1234,38 +1247,14 @@ export const VoiceProvider = ({ children }) => {
       }
     }
     
-    // Handle force-reconnect from server (consensus-based reconnection)
+    // Handle force-reconnect from server (consensus-based reconnection) - DISABLED for scalability
+    // The consensus mechanism was causing cascading reconnections in large voice channels
     const handleForceReconnect = async (data) => {
       const { channelId, reason, targetPeer } = data
-      console.log('[WebRTC] Force reconnect received:', reason, 'for peer:', targetPeer)
+      console.log('[WebRTC] Force reconnect received (disabled):', reason, 'for peer:', targetPeer)
       
-      if (channelId !== channelIdRef.current) return
-      
-      // If we're the target peer, reconnect to everyone
-      if (targetPeer === user?.id) {
-        console.log('[WebRTC] We are the target peer, reconnecting to all peers')
-        // Close all connections and re-establish
-        clearConnectionTracking()
-        Object.keys(peerConnections.current).forEach(cleanupPeer)
-        // Re-join to get fresh participant list
-        if (hasJoinedRef.current && channelIdRef.current) {
-          setTimeout(() => {
-            socket.emit('voice:join', {
-              channelId: channelIdRef.current,
-              peerId: user.id
-            })
-          }, 1000)
-        }
-      } else {
-        // Reconnect to just the target peer
-        console.log('[WebRTC] Closing connection to', targetPeer, 'for reconnection')
-        cleanupPeer(targetPeer)
-        setTimeout(() => {
-          if (hasJoinedRef.current && channelIdRef.current) {
-            queueConnection(targetPeer)
-          }
-        }, 1500)
-      }
+      // Consensus-based reconnect is disabled - just log it
+      // The client will handle peer connections individually via ICE restart
     }
     
     // Handle user reconnection notification

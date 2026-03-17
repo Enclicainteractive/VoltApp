@@ -6,7 +6,7 @@ import { compressAudio, formatDuration } from '../services/audioCompression'
 import { apiService } from '../services/apiService'
 import '../assets/styles/VoiceRecorder.css'
 
-const VoiceRecorder = ({ onVoiceMessageSent, disabled }) => {
+const VoiceRecorder = ({ onVoiceMessageSent, disabled, context = 'channel', serverId = null }) => {
   const isMobile = useIsMobile()
   const [isRecording, setIsRecording] = useState(false)
   const [recordedBlob, setRecordedBlob] = useState(null)
@@ -103,45 +103,53 @@ const VoiceRecorder = ({ onVoiceMessageSent, disabled }) => {
     setError(null)
 
     try {
-      let fileToUpload = recordedBlob
-
+      // Attempt compression; fall back to original blob on failure
+      let blobToUpload = recordedBlob
       try {
         const compressedBlob = await compressAudio(recordedBlob, {
-          bitRate: 128000,
-          sampleRate: 44100,
+          bitRate: 64000,   // 64 kbps is plenty for voice
+          sampleRate: 16000, // 16 kHz is standard for voice
           channels: 1,
         })
-        
-        if (compressedBlob.size < recordedBlob.size) {
-          fileToUpload = compressedBlob
+        if (compressedBlob && compressedBlob.size < recordedBlob.size) {
+          blobToUpload = compressedBlob
         }
       } catch (compressErr) {
-        console.warn('Audio compression failed, using original:', compressErr)
+        console.warn('[VoiceRecorder] Compression failed, using original:', compressErr)
       }
 
       setIsCompressing(false)
       setIsUploading(true)
 
       const duration = recordingDuration
-      const fileName = `voice_message_${Date.now()}.wav`
-      const file = new File([fileToUpload], fileName, { type: 'audio/wav' })
 
-      const result = await apiService.uploadFiles([file])
+      // Use the dedicated voice-message endpoint so the server stores
+      // isVoiceMessage=true and duration in the file record.
+      const result = await apiService.uploadVoiceMessage(
+        blobToUpload,
+        duration,
+        context,
+        serverId
+      )
 
-      if (result.attachments && result.attachments.length > 0) {
-        const attachment = {
-          ...result.attachments[0],
-          duration: Math.round(duration),
+      // The dedicated endpoint returns { attachment: {...} }
+      const attachment = result?.data?.attachment || result?.attachment
+      if (attachment) {
+        // Ensure client-side flags are set even if server already set them
+        onVoiceMessageSent({
+          ...attachment,
           isVoiceMessage: true,
-        }
-        onVoiceMessageSent(attachment)
+          duration: attachment.duration ?? Math.round(duration),
+        })
+      } else {
+        throw new Error('No attachment returned from server')
       }
 
       setRecordedBlob(null)
       setRecordingDuration(0)
       audioChunksRef.current = []
     } catch (err) {
-      console.error('Failed to send voice message:', err)
+      console.error('[VoiceRecorder] Failed to send voice message:', err)
       setError(err?.message || 'Failed to send voice message')
       setRecordedBlob(null)
       setRecordingDuration(0)
@@ -150,7 +158,7 @@ const VoiceRecorder = ({ onVoiceMessageSent, disabled }) => {
       setIsCompressing(false)
       setIsUploading(false)
     }
-  }, [recordedBlob, isCompressing, isUploading, onVoiceMessageSent, recordingDuration])
+  }, [recordedBlob, isCompressing, isUploading, onVoiceMessageSent, recordingDuration, context, serverId])
 
   const handleMouseDown = useCallback(() => {
     if (disabled || recordedBlob) return

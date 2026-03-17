@@ -1,77 +1,129 @@
+/**
+ * ChannelSettingsModal.jsx — complete rewrite
+ *
+ * A polished channel settings modal with:
+ *  - Overview (name, topic, slow mode, NSFW toggle)
+ *  - Permissions (per-role overrides with Allow/Deny/Default)
+ *  - Encryption (E2EE status, key export/import)
+ *  - Delete channel (with confirmation overlay)
+ */
+
 import React, { useState, useEffect } from 'react'
-import { XMarkIcon, HashtagIcon, SpeakerWaveIcon, LockClosedIcon, TrashIcon, ShieldCheckIcon, ShieldExclamationIcon } from "@heroicons/react/24/outline";
-import { X, Hash, Volume2, Lock, Trash, Shield, Users, Eye, EyeOff, ShieldAlert, ShieldCheck, Download, Upload, Key } from 'lucide-react'
+import {
+  X, Hash, Volume2, Lock, Trash2, Shield, Users, Eye, EyeOff,
+  ShieldAlert, ShieldCheck, Download, Upload, Key, Settings,
+  Megaphone, MessageSquare, Film, Rss, Clock, AlertTriangle
+} from 'lucide-react'
 import { apiService } from '../../services/apiService'
 import { useTranslation } from '../../hooks/useTranslation'
 import { useE2e } from '../../contexts/E2eContext'
-import BioEditor from '../BioEditor'
 import { EncryptionStatusBadge } from '../EncryptionStatusBadge'
-import './Modal.css'
 import './ChannelSettingsModal.css'
-import '../../assets/styles/RichTextEditor.css'
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const CHANNEL_TYPE_ICONS = {
+  text: Hash,
+  voice: Volume2,
+  announcement: Megaphone,
+  forum: MessageSquare,
+  media: Film,
+  video: Film,
+}
+
+const CHANNEL_TYPE_LABELS = {
+  text: 'Text',
+  voice: 'Voice',
+  announcement: 'Announcement',
+  forum: 'Forum',
+  media: 'Media',
+  video: 'Video',
+}
+
+const SLOW_MODE_OPTIONS = [
+  { value: 0,   label: 'Off' },
+  { value: 5,   label: '5 seconds' },
+  { value: 10,  label: '10 seconds' },
+  { value: 30,  label: '30 seconds' },
+  { value: 60,  label: '1 minute' },
+  { value: 300, label: '5 minutes' },
+  { value: 900, label: '15 minutes' },
+]
+
+const PERM_KEYS_TEXT  = ['view', 'sendMessages']
+const PERM_KEYS_VOICE = ['view', 'connect', 'speak']
+
+const PERM_LABELS = {
+  view:         { icon: Eye,          label: 'View Channel' },
+  sendMessages: { icon: MessageSquare, label: 'Send Messages' },
+  connect:      { icon: Volume2,       label: 'Connect' },
+  speak:        { icon: Shield,        label: 'Speak' },
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) => {
   const { t } = useTranslation()
-  const { isEncryptionEnabled, hasDecryptedKey, getServerEncryptionStatus, exportAllKeysForBackup, importAllKeysFromBackup, fetchMissingKeys, userKeys, serverKeys } = useE2e()
+  const {
+    isEncryptionEnabled, hasDecryptedKey, getServerEncryptionStatus,
+    exportAllKeysForBackup, importAllKeysFromBackup, userKeys, serverKeys
+  } = useE2e()
 
+  const serverId = server?.id
+  const encryptionEnabled = serverId ? isEncryptionEnabled(serverId) : false
+  const userHasKey        = serverId ? hasDecryptedKey(serverId)     : false
+
+  const [activeTab, setActiveTab] = useState('overview')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // Overview state
+  const [channelData, setChannelData] = useState({
+    name:     channel?.name     || '',
+    topic:    channel?.topic    || '',
+    slowMode: channel?.slowMode || 0,
+    nsfw:     channel?.nsfw     || false,
+  })
+  const [saving, setSaving] = useState(false)
+
+  // Permissions state
+  const [permissions, setPermissions] = useState({ overrides: {} })
+  const [loadingPerms, setLoadingPerms] = useState(false)
+  const [savingPerms, setSavingPerms] = useState(false)
+
+  // Encryption / key state
   const [showKeyExport, setShowKeyExport] = useState(false)
   const [showKeyImport, setShowKeyImport] = useState(false)
   const [exportPassword, setExportPassword] = useState('')
   const [importPassword, setImportPassword] = useState('')
   const [importedData, setImportedData] = useState('')
-  const [keyActionLoading, setKeyActionLoading] = useState(false)
+  const [keyLoading, setKeyLoading] = useState(false)
   const [keyMessage, setKeyMessage] = useState(null)
 
-  const serverId = server?.id
-  const encryptionEnabled = serverId ? isEncryptionEnabled(serverId) : false
-  const userHasKey = serverId ? hasDecryptedKey(serverId) : false
+  // ── Effects ────────────────────────────────────────────────────────────────
 
-  // Check encryption status when modal opens
   useEffect(() => {
-    if (serverId) {
-      console.log('[ChannelSettingsModal] Checking encryption status for server:', serverId)
-      getServerEncryptionStatus(serverId)
-    }
+    if (serverId) getServerEncryptionStatus(serverId)
   }, [serverId, getServerEncryptionStatus])
-  const [activeTab, setActiveTab] = useState('overview')
-  const [channelData, setChannelData] = useState({
-    name: channel?.name || '',
-    topic: channel?.topic || '',
-    slowMode: channel?.slowMode || 0,
-    nsfw: channel?.nsfw || false
-  })
-  const [permissions, setPermissions] = useState({ overrides: {} })
-  const [saving, setSaving] = useState(false)
-  const [savingPermissions, setSavingPermissions] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [loadingPermissions, setLoadingPermissions] = useState(false)
+
+  useEffect(() => {
+    if (activeTab === 'permissions') loadPermissions()
+  }, [activeTab, channel?.id])
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const loadPermissions = async () => {
     if (!channel?.id) return
-    setLoadingPermissions(true)
+    setLoadingPerms(true)
     try {
-      const perms = await apiService.getChannelPermissions(channel.id)
-      // Ensure we always have a valid permissions object with overrides
-      let validPerms = perms
-      if (!perms || typeof perms !== 'object' || !perms.overrides) {
-        validPerms = { overrides: {} }
-      }
-      setPermissions(validPerms)
-    } catch (err) {
-      console.error('Failed to load permissions:', err)
+      const res = await apiService.getChannelPermissions(channel.id)
+      setPermissions(res && res.overrides ? res : { overrides: {} })
+    } catch {
       setPermissions({ overrides: {} })
     }
-    setLoadingPermissions(false)
+    setLoadingPerms(false)
   }
 
-  useEffect(() => {
-    console.log('[ChannelSettings] useEffect triggered', { activeTab, channelId: channel?.id, hasServer: !!server })
-    if (activeTab === 'permissions') {
-      loadPermissions()
-    }
-  }, [activeTab, channel?.id, server])
-
-  const handleSave = async () => {
+  const handleSaveOverview = async () => {
     setSaving(true)
     try {
       await apiService.updateChannel(channel.id, channelData)
@@ -84,27 +136,18 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
   }
 
   const handleSavePermissions = async () => {
-    setSavingPermissions(true)
+    setSavingPerms(true)
     try {
-      console.log('Saving permissions:', permissions)
-      const result = await apiService.updateChannelPermissions(channel.id, permissions)
-      console.log('Save result:', result)
-      // Notify parent to refresh server data (members, channels, etc.)
+      await apiService.updateChannelPermissions(channel.id, permissions)
       onUpdate?.()
-      // Also reload permissions in the modal to reflect any server-side changes
       await loadPermissions()
-      // Dispatch event so other components (like MemberSidebar) can refresh their channel-specific data
-      window.dispatchEvent(new CustomEvent('channel-permissions-updated', { 
-        detail: { channelId: channel.id } 
+      window.dispatchEvent(new CustomEvent('channel-permissions-updated', {
+        detail: { channelId: channel.id }
       }))
     } catch (err) {
       console.error('Failed to save permissions:', err)
-      if (err.response) {
-        console.error('Response data:', err.response.data)
-        console.error('Response status:', err.response.status)
-      }
     }
-    setSavingPermissions(false)
+    setSavingPerms(false)
   }
 
   const handleDelete = async () => {
@@ -117,486 +160,447 @@ const ChannelSettingsModal = ({ channel, server, onClose, onUpdate, onDelete }) 
     }
   }
 
-  const handlePermissionChange = (roleId, permission, value) => {
+  const setPermOverride = (roleId, perm, value) => {
     setPermissions(prev => {
       const overrides = { ...prev.overrides }
-      if (!overrides[roleId]) {
-        overrides[roleId] = {}
-      }
-      
+      if (!overrides[roleId]) overrides[roleId] = {}
       if (value === 'default') {
-        delete overrides[roleId][permission]
-        if (Object.keys(overrides[roleId]).length === 0) {
-          delete overrides[roleId]
-        }
+        delete overrides[roleId][perm]
+        if (Object.keys(overrides[roleId]).length === 0) delete overrides[roleId]
       } else {
-        overrides[roleId][permission] = value
+        overrides[roleId][perm] = value
       }
-      
       return { overrides }
     })
   }
 
-  const getPermissionValue = (roleId, permission) => {
-    const rolePerms = permissions.overrides?.[roleId]
-    if (!rolePerms) return 'default'
-    return rolePerms[permission] ?? 'default'
-  }
+  const getPermOverride = (roleId, perm) =>
+    permissions.overrides?.[roleId]?.[perm] ?? 'default'
 
-  const tabs = [
-    { id: 'overview', label: t('serverSettings.overview') },
-    { id: 'permissions', label: t('roles.permissions') || 'Permissions' },
-    { id: 'encryption', label: t('serverSettings.encryption') || 'Encryption' }
-  ]
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const isVoice = channel?.type === 'voice'
+  const permKeys = isVoice ? PERM_KEYS_VOICE : PERM_KEYS_TEXT
 
   const roles = [
     { id: '@everyone', name: '@everyone', color: '#99aab5' },
-    ...(server?.roles || []).filter(r => r && r.id && r.name !== '@member' && r.name !== '@everyone' && r.id !== '@everyone')
+    ...(server?.roles || []).filter(r => r?.id && r.name !== '@member' && r.name !== '@everyone' && r.id !== '@everyone')
   ]
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content channel-settings-modal" onClick={e => e.stopPropagation()}>
-        <div className="channel-settings-container">
-          <div className="channel-settings-sidebar">
-            <div className="channel-settings-header">
-              {channel?.type === 'voice' ? <SpeakerWaveIcon size={20} /> : <Hash size={20} />}
-              <span>{channel?.name}</span>
+  const TypeIcon = CHANNEL_TYPE_ICONS[channel?.type] || Hash
+  const typeLabel = CHANNEL_TYPE_LABELS[channel?.type] || 'Channel'
+
+  // ── Tab definitions ────────────────────────────────────────────────────────
+
+  const TABS = [
+    { id: 'overview',    label: 'Overview',    icon: Settings },
+    { id: 'permissions', label: 'Permissions', icon: Shield },
+    { id: 'encryption',  label: 'Encryption',  icon: Lock },
+  ]
+
+  // ── Render helpers ─────────────────────────────────────────────────────────
+
+  const renderOverview = () => (
+    <>
+      <div className="csm-form-group">
+        <label className="csm-label">Channel Name</label>
+        <div className="csm-input-row">
+          <span className="csm-input-prefix"><TypeIcon size={16} /></span>
+          <input
+            className="csm-input"
+            value={channelData.name}
+            onChange={e => setChannelData(p => ({ ...p, name: e.target.value.toLowerCase().replace(/\s+/g, '-') }))}
+            placeholder="channel-name"
+          />
+        </div>
+      </div>
+
+      {!isVoice && (
+        <div className="csm-form-group">
+          <label className="csm-label">Channel Topic</label>
+          <p className="csm-hint">Shown at the top of the channel. Supports basic markdown.</p>
+          <textarea
+            className="csm-textarea"
+            value={channelData.topic}
+            onChange={e => setChannelData(p => ({ ...p, topic: e.target.value }))}
+            placeholder="What's this channel about?"
+            rows={3}
+          />
+        </div>
+      )}
+
+      {!isVoice && (
+        <div className="csm-form-group">
+          <label className="csm-label">Slow Mode</label>
+          <p className="csm-hint">Limit how often members can send messages.</p>
+          <select
+            className="csm-select"
+            value={channelData.slowMode}
+            onChange={e => setChannelData(p => ({ ...p, slowMode: parseInt(e.target.value) }))}
+          >
+            {SLOW_MODE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {!isVoice && (
+        <div className="csm-setting-row">
+          <div className="csm-setting-info">
+            <span className="csm-setting-label">Age-Restricted Channel</span>
+            <span className="csm-setting-desc">Only users who have verified their age (18+) can view this channel.</span>
+          </div>
+          <label className="csm-toggle">
+            <input
+              type="checkbox"
+              checked={channelData.nsfw}
+              onChange={() => setChannelData(p => ({ ...p, nsfw: !p.nsfw }))}
+            />
+            <span className="csm-toggle-slider" />
+          </label>
+        </div>
+      )}
+    </>
+  )
+
+  const renderPermissions = () => (
+    <>
+      <p className="csm-hint">
+        Override server-level permissions for this channel. <strong>Allow</strong> grants access regardless of role defaults.
+        <strong> Deny</strong> blocks access. <strong>Default</strong> inherits from the server role.
+      </p>
+
+      {loadingPerms ? (
+        <div className="csm-loading">
+          <span className="csm-spinner" />
+          Loading permissions…
+        </div>
+      ) : (
+        <div className="csm-permissions-list">
+          {roles.map(role => (
+            <div key={role.id} className="csm-perm-role">
+              <div className="csm-perm-role-header">
+                <span className="csm-role-dot" style={{ backgroundColor: role.color }} />
+                <span className="csm-role-name">{role.name}</span>
+              </div>
+              <div className="csm-perm-rows">
+                {permKeys.map(perm => {
+                  const { icon: PIcon, label } = PERM_LABELS[perm]
+                  return (
+                    <div key={perm} className="csm-perm-row">
+                      <span className="csm-perm-label">
+                        <PIcon size={14} />
+                        {label}
+                      </span>
+                      <select
+                        className="csm-perm-select"
+                        value={getPermOverride(role.id, perm)}
+                        onChange={e => setPermOverride(role.id, perm, e.target.value)}
+                      >
+                        <option value="default">Default</option>
+                        <option value="true">Allow</option>
+                        <option value="false">Deny</option>
+                      </select>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-            <div className="channel-settings-tabs">
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  className={`channel-settings-tab ${activeTab === tab.id ? 'active' : ''}`}
-                  onClick={() => setActiveTab(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              ))}
+          ))}
+        </div>
+      )}
+    </>
+  )
+
+  const renderEncryption = () => {
+    if (!encryptionEnabled) {
+      return (
+        <div className="csm-enc-status-card">
+          <div className="csm-enc-icon muted">
+            <ShieldAlert size={24} />
+          </div>
+          <div className="csm-enc-text">
+            <h3>Server Encryption Disabled</h3>
+            <p>End-to-end encryption must be enabled at the server level first. Go to Server Settings → Security to enable it.</p>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <>
+        <div className="csm-enc-status-card">
+          <div className={`csm-enc-icon ${userHasKey ? 'success' : 'warning'}`}>
+            {userHasKey ? <ShieldCheck size={24} /> : <ShieldAlert size={24} />}
+          </div>
+          <div className="csm-enc-text">
+            <h3>{userHasKey ? 'Encryption Active' : 'No Decryption Key'}</h3>
+            <p>
+              {userHasKey
+                ? 'Your device has the decryption key. Voice calls in this channel are end-to-end encrypted.'
+                : 'Encryption is enabled but you don\'t have the key yet. You\'ll be able to join once a key is available.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="csm-enc-info-list">
+          <h4>About End-to-End Encryption</h4>
+          <ul>
+            <li>Voice calls are encrypted using SRTP (Secure Real-time Transport Protocol)</li>
+            <li>Only participants with the decryption key can hear the audio</li>
+            <li>Keys are generated per session and discarded when everyone leaves</li>
+            <li>Even server admins cannot decrypt voice calls</li>
+          </ul>
+        </div>
+
+        <div className="csm-form-group">
+          <label className="csm-label">Key Management</label>
+          <p className="csm-hint">Export your encryption keys to transfer them to another device, or import keys from a backup.</p>
+          <div className="csm-key-actions">
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => { setShowKeyExport(v => !v); setShowKeyImport(false) }}
+              disabled={!userKeys?.privateKey}
+            >
+              <Download size={14} /> Export Keys
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => { setShowKeyImport(v => !v); setShowKeyExport(false) }}
+            >
+              <Upload size={14} /> Import Keys
+            </button>
+            {serverId && hasDecryptedKey(serverId) && (
               <button
-                className="channel-settings-tab danger"
-                onClick={() => setConfirmDelete(true)}
+                className="btn btn-secondary btn-sm"
+                onClick={async () => {
+                  const keyData = serverKeys?.[serverId]
+                  if (!keyData) return
+                  const blob = new Blob([JSON.stringify(keyData, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `voltchat-server-${serverId}-key.json`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                  setKeyMessage({ type: 'success', text: 'Server key exported!' })
+                }}
               >
-                <TrashIcon size={16} />
-                {t('channel.deleteChannel', 'Delete Channel')}
+                <Key size={14} /> Export Server Key
               </button>
+            )}
+          </div>
+        </div>
+
+        {showKeyExport && (
+          <div className="csm-key-box">
+            <h5>Export Your Keys</h5>
+            <p>Set a password to encrypt the exported key file. Keep it safe.</p>
+            <input
+              type="password"
+              className="csm-textarea"
+              style={{ minHeight: 'unset', resize: 'none' }}
+              placeholder="Enter password"
+              value={exportPassword}
+              onChange={e => setExportPassword(e.target.value)}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={keyLoading}
+              onClick={async () => {
+                if (!exportPassword) { setKeyMessage({ type: 'error', text: 'Password is required' }); return }
+                setKeyLoading(true)
+                try {
+                  const data = await exportAllKeysForBackup(exportPassword)
+                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `voltchat-keys-${new Date().toISOString().split('T')[0]}.json`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                  setKeyMessage({ type: 'success', text: 'Keys exported successfully!' })
+                  setShowKeyExport(false)
+                  setExportPassword('')
+                } catch (err) {
+                  setKeyMessage({ type: 'error', text: err.message })
+                }
+                setKeyLoading(false)
+              }}
+            >
+              {keyLoading ? 'Exporting…' : 'Download Keys'}
+            </button>
+          </div>
+        )}
+
+        {showKeyImport && (
+          <div className="csm-key-box">
+            <h5>Import Keys</h5>
+            <p>Paste the exported key JSON and enter the password used when exporting.</p>
+            <textarea
+              className="csm-textarea"
+              placeholder="Paste exported key data here"
+              value={importedData}
+              onChange={e => setImportedData(e.target.value)}
+              rows={4}
+            />
+            <input
+              type="password"
+              className="csm-textarea"
+              style={{ minHeight: 'unset', resize: 'none' }}
+              placeholder="Enter password"
+              value={importPassword}
+              onChange={e => setImportPassword(e.target.value)}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={keyLoading}
+              onClick={async () => {
+                if (!importedData || !importPassword) {
+                  setKeyMessage({ type: 'error', text: 'Both key data and password are required' })
+                  return
+                }
+                setKeyLoading(true)
+                try {
+                  const parsed = JSON.parse(importedData)
+                  const result = await importAllKeysFromBackup(parsed, importPassword)
+                  if (result.success) {
+                    setKeyMessage({ type: 'success', text: 'Keys imported successfully!' })
+                    setImportedData('')
+                    setImportPassword('')
+                    setShowKeyImport(false)
+                  } else {
+                    setKeyMessage({ type: 'error', text: result.error || 'Failed to import keys' })
+                  }
+                } catch {
+                  setKeyMessage({ type: 'error', text: 'Invalid key data — check the JSON format' })
+                }
+                setKeyLoading(false)
+              }}
+            >
+              {keyLoading ? 'Importing…' : 'Import Keys'}
+            </button>
+          </div>
+        )}
+
+        {keyMessage && (
+          <div className={`csm-key-message ${keyMessage.type}`}>
+            <span>{keyMessage.text}</span>
+            <button onClick={() => setKeyMessage(null)}>×</button>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // ── Tab content map ────────────────────────────────────────────────────────
+
+  const TAB_TITLES = {
+    overview:    'Channel Overview',
+    permissions: 'Channel Permissions',
+    encryption:  'Encryption',
+  }
+
+  const showFooter = activeTab === 'overview' || activeTab === 'permissions'
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="csm-overlay" onClick={onClose}>
+      <div className="csm-modal" onClick={e => e.stopPropagation()}>
+
+        {/* ── Sidebar ── */}
+        <div className="csm-sidebar">
+          <div className="csm-sidebar-header">
+            <div className="csm-channel-name">
+              <TypeIcon size={16} />
+              <span>{channel?.name}</span>
+              <span className="csm-channel-type-badge">{typeLabel}</span>
             </div>
           </div>
 
-          <div className="channel-settings-content">
-            <button className="modal-close-btn" onClick={onClose}>
-              <XMarkIcon size={24} />
+          <nav className="csm-nav">
+            {TABS.map(tab => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.id}
+                  className={`csm-nav-item ${activeTab === tab.id ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                </button>
+              )
+            })}
+
+            <div className="csm-nav-divider" />
+
+            <button
+              className="csm-nav-item danger"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 size={16} />
+              Delete Channel
             </button>
+          </nav>
+        </div>
 
-            {activeTab === 'overview' && (
-              <div className="settings-panel">
-                <h2>{t('channel.channelOverview', 'Channel Overview')}</h2>
+        {/* ── Content ── */}
+        <div className="csm-content">
+          <div className="csm-content-header">
+            <h2 className="csm-content-title">{TAB_TITLES[activeTab]}</h2>
+            <button className="csm-close-btn" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
 
-                <div className="form-group">
-                  <label>{t('channel.channelName', 'Channel Name')}</label>
-                  <div className="channel-name-input">
-                    {channel?.type === 'voice' ? <SpeakerWaveIcon size={18} /> : <Hash size={18} />}
-                    <input
-                      type="text"
-                      className="input"
-                      value={channelData.name}
-                      onChange={e => setChannelData(p => ({ ...p, name: e.target.value.toLowerCase().replace(/\s+/g, '-') }))}
-                    />
-                  </div>
-                </div>
+          <div className="csm-panel">
+            {activeTab === 'overview'    && renderOverview()}
+            {activeTab === 'permissions' && renderPermissions()}
+            {activeTab === 'encryption'  && renderEncryption()}
+          </div>
 
-                {channel?.type === 'text' && (
-                  <>
-                    <div className="form-group">
-                      <label>{t('channel.channelTopic', 'Channel Topic')}</label>
-                      <BioEditor
-                        value={channelData.topic}
-                        onChange={(text) => setChannelData(p => ({ ...p, topic: text }))}
-                        placeholder={t('channel.topicPlaceholder', 'Describe what this channel is about')}
-                        maxLength={1024}
-                      />
-                    </div>
+          {showFooter && (
+            <div className="csm-footer">
+              <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              {activeTab === 'overview' && (
+                <button className="btn btn-primary" onClick={handleSaveOverview} disabled={saving}>
+                  {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              )}
+              {activeTab === 'permissions' && (
+                <>
+                  <button className="btn btn-secondary" onClick={loadPermissions}>Reset</button>
+                  <button className="btn btn-primary" onClick={handleSavePermissions} disabled={savingPerms}>
+                    {savingPerms ? 'Saving…' : 'Save Permissions'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <h4>{t('channel.slowMode', 'Slow Mode')}</h4>
-                        <p>{t('channel.slowModeDesc', 'Limit how often users can send messages')}</p>
-                      </div>
-                      <select
-                        className="input select-small"
-                        value={channelData.slowMode}
-                        onChange={e => setChannelData(p => ({ ...p, slowMode: parseInt(e.target.value) }))}
-                      >
-                        <option value={0}>{t('common.off', 'Off')}</option>
-                        <option value={5}>{t('common.seconds', { count: 5 }, '5 seconds')}</option>
-                        <option value={10}>{t('common.seconds', { count: 10 }, '10 seconds')}</option>
-                        <option value={30}>{t('common.seconds', { count: 30 }, '30 seconds')}</option>
-                        <option value={60}>{t('common.minute', '1 minute')}</option>
-                        <option value={300}>{t('common.minutes', { count: 5 }, '5 minutes')}</option>
-                      </select>
-                    </div>
-
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <h4>{t('channel.ageRestricted', 'Age-Restricted Channel')}</h4>
-                        <p>{t('channel.ageRestrictedDesc', 'Users must be 18+ to view this channel')}</p>
-                      </div>
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={channelData.nsfw}
-                          onChange={() => setChannelData(p => ({ ...p, nsfw: !p.nsfw }))}
-                        />
-                        <span className="toggle-slider"></span>
-                      </label>
-                    </div>
-                  </>
-                )}
-
-                <div className="settings-actions">
-                  <button className="btn btn-secondary" onClick={onClose}>{t('common.cancel', 'Cancel')}</button>
-                  <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                    {saving ? t('common.saving', 'Saving...') : t('channel.saveChanges', 'Save Changes')}
+          {/* Delete confirmation overlay */}
+          {confirmDelete && (
+            <div className="csm-delete-overlay">
+              <div className="csm-delete-dialog">
+                <h3>Delete #{channel?.name}?</h3>
+                <p>
+                  This will permanently delete the channel and all its messages.
+                  <strong> This action cannot be undone.</strong>
+                </p>
+                <div className="csm-delete-actions">
+                  <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>
+                    Cancel
+                  </button>
+                  <button className="btn btn-danger" onClick={handleDelete}>
+                    <Trash2 size={14} /> Delete Channel
                   </button>
                 </div>
               </div>
-            )}
-
-            {activeTab === 'permissions' && (
-              <div className="settings-panel">
-                <h2>{t('channel.channelPermissions', 'Channel Permissions')}</h2>
-                <p className="section-desc">
-                  {t('channel.permissionsDesc', 'Control who can access and use this channel.')}
-                  <br />
-                  <small style={{ color: 'var(--text-muted)', marginTop: '8px', display: 'block' }}>
-                    Set to "Default" to use server role permissions. Use "Allow" or "Deny" to override.
-                  </small>
-                </p>
-
-                {loadingPermissions ? (
-                  <div className="loading-spinner">Loading permissions...</div>
-                ) : (
-                  <>
-                    <div className="permissions-list">
-                      {roles.map(role => (
-                        <div key={role.id} className="permission-role">
-                          <div className="role-header">
-                            <div className="role-color" style={{ backgroundColor: role.color }} />
-                            <span className="role-name">{role.name}</span>
-                          </div>
-                          <div className="permission-toggles">
-                            <div className="permission-item">
-                              <span>
-                                <Eye size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                                {t('channel.viewChannel', 'View Channel')}
-                              </span>
-                              <select
-                                className="input select-small permission-select"
-                                value={getPermissionValue(role.id, 'view')}
-                                onChange={(e) => handlePermissionChange(role.id, 'view', e.target.value)}
-                              >
-                                <option value="default">{t('channel.default', 'Default')}</option>
-                                <option value="true">{t('channel.allow', 'Allow')}</option>
-                                <option value="false">{t('channel.deny', 'Deny')}</option>
-                              </select>
-                            </div>
-                            <div className="permission-item">
-                              <span>
-                                <Users size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                                {t('channel.sendMessages', 'Send Messages')}
-                              </span>
-                              <select
-                                className="input select-small permission-select"
-                                value={getPermissionValue(role.id, 'sendMessages')}
-                                onChange={(e) => handlePermissionChange(role.id, 'sendMessages', e.target.value)}
-                              >
-                                <option value="default">{t('channel.default', 'Default')}</option>
-                                <option value="true">{t('channel.allow', 'Allow')}</option>
-                                <option value="false">{t('channel.deny', 'Deny')}</option>
-                              </select>
-                            </div>
-                            {channel?.type === 'voice' && (
-                              <>
-                                <div className="permission-item">
-                                  <span>
-                                    <Volume2 size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                                    {t('channel.connect', 'Connect')}
-                                  </span>
-                                  <select
-                                    className="input select-small permission-select"
-                                    value={getPermissionValue(role.id, 'connect')}
-                                    onChange={(e) => handlePermissionChange(role.id, 'connect', e.target.value)}
-                                  >
-                                    <option value="default">{t('channel.default', 'Default')}</option>
-                                    <option value="true">{t('channel.allow', 'Allow')}</option>
-                                    <option value="false">{t('channel.deny', 'Deny')}</option>
-                                  </select>
-                                </div>
-                                <div className="permission-item">
-                                  <span>
-                                    <Shield size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                                    {t('channel.speak', 'Speak')}
-                                  </span>
-                                  <select
-                                    className="input select-small permission-select"
-                                    value={getPermissionValue(role.id, 'speak')}
-                                    onChange={(e) => handlePermissionChange(role.id, 'speak', e.target.value)}
-                                  >
-                                    <option value="default">{t('channel.default', 'Default')}</option>
-                                    <option value="true">{t('channel.allow', 'Allow')}</option>
-                                    <option value="false">{t('channel.deny', 'Deny')}</option>
-                                  </select>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                      <div className="settings-actions">
-                      <button className="btn btn-secondary" onClick={loadPermissions}>{t('common.reset', 'Reset')}</button>
-                      <button className="btn btn-primary" onClick={handleSavePermissions} disabled={savingPermissions}>
-                        {savingPermissions ? t('common.saving', 'Saving...') : t('channel.savePermissions', 'Save Permissions')}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'encryption' && (
-              <div className="settings-panel">
-                <h2>{t('channel.channelEncryption', 'Channel Encryption')}</h2>
-                <p className="section-desc">
-                  {t('channel.encryptionDesc', 'Voice and video calls in this channel can be end-to-end encrypted.')}
-                </p>
-
-                {!encryptionEnabled ? (
-                  <div className="encryption-disabled">
-                    <ShieldAlert size={48} className="encryption-icon warning" />
-                    <h3>{t('channel.encryptionDisabled', 'Server Encryption Disabled')}</h3>
-                    <p>{t('channel.encryptionServerDisabled', 'End-to-end encryption must be enabled at the server level first. Go to Server Settings to enable it.')}</p>
-                    <button className="btn btn-secondary" onClick={() => {
-                      onClose()
-                      // Could emit event to open server settings
-                    }}>
-                      {t('channel.openServerSettings', 'Open Server Settings')}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="encryption-enabled">
-                    <div className="encryption-status-card">
-                      <div className="encryption-status-header">
-                        {userHasKey ? (
-                          <>
-                            <ShieldCheck size={32} className="encryption-icon success" />
-                            <div>
-                              <h3>{t('channel.encryptionActive', 'Encryption Active')}</h3>
-                              <p>{t('channel.encryptionActiveDesc', 'Your device has the decryption key. Voice calls are secure.')}</p>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <ShieldExclamationIcon size={32} className="encryption-icon warning" />
-                            <div>
-                              <h3>{t('channel.encryptionNoKey', 'No Decryption Key')}</h3>
-                              <p>{t('channel.encryptionNoKeyDesc', 'Encryption is enabled. You will automatically join when encryption is available.')}</p>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      <EncryptionStatusBadge
-                        isEncryptionEnabled={encryptionEnabled}
-                        hasDecryptedKey={userHasKey}
-                        isJoining={!userHasKey && encryptionEnabled}
-                      />
-                    </div>
-
-                    <div className="encryption-info-section">
-                      <h4>{t('channel.aboutEncryption', 'About End-to-End Encryption')}</h4>
-                      <ul>
-                        <li>{t('channel.encryptionPoint1', 'Voice calls are encrypted using SRTP (Secure Real-time Transport Protocol)')}</li>
-                        <li>{t('channel.encryptionPoint2', 'Only participants with the decryption key can hear the audio')}</li>
-                        <li>{t('channel.encryptionPoint3', 'Keys are generated per session and discarded when everyone leaves')}</li>
-                        <li>{t('channel.encryptionPoint4', 'Even server admins cannot decrypt voice calls')}</li>
-                      </ul>
-                    </div>
-
-                    <div className="encryption-key-section">
-                      <h4>{t('channel.keyManagement', 'Key Management')}</h4>
-                      <p className="section-desc">
-                        {t('channel.keyManagementDesc', 'Export your encryption keys to transfer them to another device, or import keys from another user to decrypt their messages.')}
-                      </p>
-
-                      <div className="key-actions">
-                        <button 
-                          className="btn btn-secondary" 
-                          onClick={() => setShowKeyExport(!showKeyExport)}
-                          disabled={!userKeys?.privateKey}
-                        >
-                          <Download size={16} />
-                          {t('channel.exportKeys', 'Export Keys')}
-                        </button>
-                        
-                        <button 
-                          className="btn btn-secondary" 
-                          onClick={() => setShowKeyImport(!showKeyImport)}
-                        >
-                          <Upload size={16} />
-                          {t('channel.importKeys', 'Import Keys')}
-                        </button>
-                      </div>
-
-                      {showKeyExport && (
-                        <div className="key-export-import-box">
-                          <h5>{t('channel.exportYourKeys', 'Export Your Keys')}</h5>
-                          <p>{t('channel.exportKeysDesc', 'Create a password to encrypt your exported keys. Share this with your other devices or users you trust.')}</p>
-                          <input
-                            type="password"
-                            placeholder={t('channel.enterPassword', 'Enter password')}
-                            value={exportPassword}
-                            onChange={(e) => setExportPassword(e.target.value)}
-                            className="input"
-                          />
-                          <button 
-                            className="btn btn-primary"
-                            onClick={async () => {
-                              if (!exportPassword) {
-                                setKeyMessage({ type: 'error', text: t('channel.passwordRequired', 'Password is required') })
-                                return
-                              }
-                              setKeyActionLoading(true)
-                              try {
-                                const backupData = await exportAllKeysForBackup(exportPassword)
-                                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' })
-                                const url = URL.createObjectURL(blob)
-                                const a = document.createElement('a')
-                                a.href = url
-                                a.download = `voltchat-keys-backup-${new Date().toISOString().split('T')[0]}.json`
-                                document.body.appendChild(a)
-                                a.click()
-                                document.body.removeChild(a)
-                                URL.revokeObjectURL(url)
-                                setKeyMessage({ type: 'success', text: t('channel.keysExported', 'Keys exported successfully!') })
-                              } catch (err) {
-                                setKeyMessage({ type: 'error', text: err.message })
-                              }
-                              setKeyActionLoading(false)
-                            }}
-                            disabled={keyActionLoading}
-                          >
-                            {keyActionLoading ? t('common.loading', 'Loading...') : t('channel.downloadKeys', 'Download Keys')}
-                          </button>
-                        </div>
-                      )}
-
-                      {showKeyImport && (
-                        <div className="key-export-import-box">
-                          <h5>{t('channel.importKeysFromOther', 'Import Keys')}</h5>
-                          <p>{t('channel.importKeysDesc', 'Paste the exported key data from another user to decrypt their messages.')}</p>
-                          <textarea
-                            placeholder={t('channel.pasteKeyData', 'Paste exported key data here')}
-                            value={importedData}
-                            onChange={(e) => setImportedData(e.target.value)}
-                            className="input"
-                            rows={4}
-                          />
-                          <input
-                            type="password"
-                            placeholder={t('channel.enterPassword', 'Enter password')}
-                            value={importPassword}
-                            onChange={(e) => setImportPassword(e.target.value)}
-                            className="input"
-                          />
-                          <button 
-                            className="btn btn-primary"
-                            onClick={async () => {
-                              if (!importedData || !importPassword) {
-                                setKeyMessage({ type: 'error', text: t('channel.dataAndPasswordRequired', 'Both key data and password are required') })
-                                return
-                              }
-                              setKeyActionLoading(true)
-                              try {
-                                const backupData = JSON.parse(importedData)
-                                const result = await importAllKeysFromBackup(backupData, importPassword)
-                                if (result.success) {
-                                  setKeyMessage({ type: 'success', text: t('channel.keysImported', 'Keys imported successfully!') })
-                                  setImportedData('')
-                                  setImportPassword('')
-                                  setShowKeyImport(false)
-                                } else {
-                                  setKeyMessage({ type: 'error', text: result.error || t('channel.keysImportFailed', 'Failed to import keys') })
-                                }
-                              } catch (err) {
-                                setKeyMessage({ type: 'error', text: t('channel.invalidKeyData', 'Invalid key data') })
-                              }
-                              setKeyActionLoading(false)
-                            }}
-                            disabled={keyActionLoading}
-                          >
-                            {keyActionLoading ? t('common.loading', 'Loading...') : t('channel.importKeysBtn', 'Import Keys')}
-                          </button>
-                        </div>
-                      )}
-
-                      {keyMessage && (
-                        <div className={`key-message ${keyMessage.type}`}>
-                          {keyMessage.text}
-                          <button onClick={() => setKeyMessage(null)}>×</button>
-                        </div>
-                      )}
-
-                      <div className="server-keys-section">
-                        <h5>{t('channel.serverKeys', 'Server Keys')}</h5>
-                        <p>{t('channel.serverKeysDesc', 'Download server keys to share with new members who cannot decrypt messages.')}</p>
-                        <button 
-                          className="btn btn-secondary"
-                          onClick={async () => {
-                            if (!serverId || !hasDecryptedKey(serverId)) {
-                              setKeyMessage({ type: 'error', text: t('channel.noServerKey', 'You need the server key to export it') })
-                              return
-                            }
-                            const keyData = serverKeys[serverId]
-                            if (keyData) {
-                              const blob = new Blob([JSON.stringify(keyData, null, 2)], { type: 'application/json' })
-                              const url = URL.createObjectURL(blob)
-                              const a = document.createElement('a')
-                              a.href = url
-                              a.download = `voltchat-server-${serverId}-key.json`
-                              document.body.appendChild(a)
-                              a.click()
-                              document.body.removeChild(a)
-                              URL.revokeObjectURL(url)
-                              setKeyMessage({ type: 'success', text: t('channel.serverKeyExported', 'Server key exported!') })
-                            }
-                          }}
-                          disabled={!serverId || !hasDecryptedKey(serverId)}
-                        >
-                          <Key size={16} />
-                          {t('channel.exportServerKey', 'Export Server Key')}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {confirmDelete && (
-              <div className="delete-confirm-overlay">
-                <div className="delete-confirm-dialog">
-                  <h3>{t('channel.deleteChannel', 'Delete Channel')}</h3>
-                  <p>{t('channel.deleteConfirm', 'Are you sure you want to delete #{{channel}}? This cannot be undone.', { channel: channel?.name })}</p>
-                  <div className="delete-confirm-actions">
-                    <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>{t('common.cancel', 'Cancel')}</button>
-                    <button className="btn btn-danger" onClick={handleDelete}>{t('channel.deleteChannel', 'Delete Channel')}</button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

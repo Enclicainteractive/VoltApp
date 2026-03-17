@@ -88,6 +88,7 @@ const Avatar = ({ player, isLocal, avatarData }) => {
   const positionOffset = avatarData?.model?.positionOffset || [0, 0, 0]
   const rotationOffset = avatarData?.model?.rotationOffset || [0, 0, 0]
   const nameTagOffset = avatarMode === 'model' ? 2.2 : proceduralAvatar.head ? proceduralAvatar.head.scale[1] + 1.4 : 1.9
+  const nameTagTexture = useMemo(() => new THREE.CanvasTexture(createNameTagCanvas(player.name || 'Player')), [player.name])
 
   useFrame((state) => {
     if (!groupRef.current) return
@@ -127,12 +128,7 @@ const Avatar = ({ player, isLocal, avatarData }) => {
         </mesh>
         <mesh position={[0, 0, 0.01]}>
           <planeGeometry args={[0.95, 0.2]} />
-          <meshBasicMaterial transparent opacity={0}>
-            <canvasTexture
-              attach="map"
-              image={createNameTagCanvas(player.name || 'Player')}
-            />
-          </meshBasicMaterial>
+          <meshBasicMaterial transparent opacity={0.9} map={nameTagTexture} depthWrite={false} />
         </mesh>
       </group>
 

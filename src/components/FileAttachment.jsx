@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { DocumentTextIcon, ArrowDownTrayIcon, EyeIcon, EyeSlashIcon, CodeBracketIcon, MusicalNoteIcon, FilmIcon, PhotoIcon, PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, MagnifyingGlassPlusIcon, MagnifyingGlassMinusIcon, ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
@@ -645,6 +645,204 @@ const highlightCode = (code, language) => {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
+// ── Voice Message Player ──────────────────────────────────────────────────────
+// The waveform IS the seekbar — clicking/dragging on the waveform seeks the
+// audio. No separate hidden range input needed.
+const VoiceMessagePlayer = ({ src, duration: initialDuration }) => {
+  const audioRef = useRef(null)
+  const waveformRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [audioDuration, setAudioDuration] = useState(initialDuration || 0)
+  const [isDragging, setIsDragging] = useState(false)
+
+  // Stable waveform heights — computed once per src, never re-randomised
+  const waveHeights = useMemo(() => {
+    // Use a simple seeded pseudo-random based on the src string so the same
+    // voice message always renders the same waveform shape.
+    const seed = (src || '').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+    return Array.from({ length: 40 }, (_, i) => {
+      const x = Math.sin(seed + i * 9.7) * 43758.5453
+      const raw = Math.abs(x - Math.floor(x))
+      // Shape the waveform: taper at edges, peak in middle
+      const envelope = Math.sin((i / 39) * Math.PI)
+      return 15 + raw * 55 * (0.4 + envelope * 0.6)
+    })
+  }, [src])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    const onLoadedMetadata = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setAudioDuration(audio.duration)
+      }
+    }
+    const onTimeUpdate = () => {
+      if (!isDragging) setCurrentTime(audio.currentTime)
+    }
+    const onPlay = () => setIsPlaying(true)
+    const onPause = () => setIsPlaying(false)
+    const onEnded = () => {
+      setIsPlaying(false)
+      setCurrentTime(0)
+      audio.currentTime = 0
+    }
+
+    audio.addEventListener('loadedmetadata', onLoadedMetadata)
+    audio.addEventListener('timeupdate', onTimeUpdate)
+    audio.addEventListener('play', onPlay)
+    audio.addEventListener('pause', onPause)
+    audio.addEventListener('ended', onEnded)
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata)
+      audio.removeEventListener('timeupdate', onTimeUpdate)
+      audio.removeEventListener('play', onPlay)
+      audio.removeEventListener('pause', onPause)
+      audio.removeEventListener('ended', onEnded)
+    }
+  }, [src, isDragging])
+
+  const togglePlay = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (isPlaying) {
+      audio.pause()
+    } else {
+      audio.play().catch(err => console.warn('[VoiceMessagePlayer] play() failed:', err))
+    }
+  }, [isPlaying])
+
+  // Seek by clicking/dragging on the waveform
+  const seekFromPointerEvent = useCallback((e) => {
+    const audio = audioRef.current
+    const waveform = waveformRef.current
+    if (!audio || !waveform) return
+    const displayDuration = audioDuration || initialDuration || 0
+    if (displayDuration <= 0) return
+    const rect = waveform.getBoundingClientRect()
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const newTime = ratio * displayDuration
+    audio.currentTime = newTime
+    setCurrentTime(newTime)
+  }, [audioDuration, initialDuration])
+
+  const handleWaveformPointerDown = useCallback((e) => {
+    e.preventDefault()
+    setIsDragging(true)
+    seekFromPointerEvent(e)
+  }, [seekFromPointerEvent])
+
+  const handleWaveformPointerMove = useCallback((e) => {
+    if (!isDragging) return
+    e.preventDefault()
+    seekFromPointerEvent(e)
+  }, [isDragging, seekFromPointerEvent])
+
+  const handleWaveformPointerUp = useCallback(() => {
+    setIsDragging(false)
+  }, [])
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleWaveformPointerMove)
+      window.addEventListener('mouseup', handleWaveformPointerUp)
+      window.addEventListener('touchmove', handleWaveformPointerMove, { passive: false })
+      window.addEventListener('touchend', handleWaveformPointerUp)
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleWaveformPointerMove)
+      window.removeEventListener('mouseup', handleWaveformPointerUp)
+      window.removeEventListener('touchmove', handleWaveformPointerMove)
+      window.removeEventListener('touchend', handleWaveformPointerUp)
+    }
+  }, [isDragging, handleWaveformPointerMove, handleWaveformPointerUp])
+
+  const formatTime = (t) => {
+    const s = Math.round(t || 0)
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
+  }
+
+  const displayDuration = audioDuration || initialDuration || 0
+  const progress = displayDuration > 0 ? (currentTime / displayDuration) * 100 : 0
+
+  return (
+    <div className="voice-message-player">
+      <audio ref={audioRef} src={src} preload="metadata" />
+
+      <button
+        className="voice-play-btn"
+        onClick={togglePlay}
+        aria-label={isPlaying ? 'Pause voice message' : 'Play voice message'}
+      >
+        {isPlaying ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        )}
+      </button>
+
+      {/* Waveform that doubles as the seekbar */}
+      <div
+        ref={waveformRef}
+        className={`voice-waveform-seekbar${isDragging ? ' dragging' : ''}`}
+        role="slider"
+        aria-label="Voice message seek"
+        aria-valuemin={0}
+        aria-valuemax={displayDuration}
+        aria-valuenow={currentTime}
+        tabIndex={0}
+        onMouseDown={handleWaveformPointerDown}
+        onTouchStart={handleWaveformPointerDown}
+        onKeyDown={(e) => {
+          const audio = audioRef.current
+          if (!audio || displayDuration <= 0) return
+          if (e.key === 'ArrowRight') {
+            const t = Math.min(displayDuration, currentTime + 5)
+            audio.currentTime = t; setCurrentTime(t)
+          } else if (e.key === 'ArrowLeft') {
+            const t = Math.max(0, currentTime - 5)
+            audio.currentTime = t; setCurrentTime(t)
+          }
+        }}
+      >
+        {waveHeights.map((h, i) => {
+          const barProgress = (i / waveHeights.length) * 100
+          const isActive = barProgress <= progress
+          return (
+            <span
+              key={i}
+              className={`voice-wave-bar${isActive ? ' played' : ''}${isPlaying && isActive ? ' playing' : ''}`}
+              style={{ height: `${h}%` }}
+            />
+          )
+        })}
+        {/* Playhead indicator */}
+        {displayDuration > 0 && (
+          <div
+            className="voice-playhead"
+            style={{ left: `${progress}%` }}
+            aria-hidden="true"
+          />
+        )}
+      </div>
+
+      <span className="voice-duration">
+        {currentTime > 0
+          ? formatTime(currentTime)
+          : formatTime(displayDuration)}
+      </span>
+    </div>
+  )
+}
+
 const ImageLightbox = ({ isOpen, url, name, sizeLabel, onClose }) => {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
@@ -1053,30 +1251,7 @@ const FileAttachment = ({ attachment }) => {
     const duration = attachment?.duration
     
     if (isVoiceMessage) {
-      return (
-        <div className="voice-message-player">
-          <button className="voice-play-btn" onClick={() => {
-            const audio = document.getElementById(`voice-audio-${attachment.id}`)
-            if (audio) {
-              if (audio.paused) audio.play()
-              else audio.pause()
-            }
-          }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </button>
-          <div className="voice-waveform">
-            {Array.from({ length: 30 }).map((_, i) => (
-              <span key={i} style={{ height: `${20 + Math.random() * 60}%` }}></span>
-            ))}
-          </div>
-          <span className="voice-duration">
-            {duration ? `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}` : '0:00'}
-          </span>
-          <audio id={`voice-audio-${attachment.id}`} src={url} preload="metadata" />
-        </div>
-      )
+      return <VoiceMessagePlayer src={url} duration={duration} />
     }
     
     return (

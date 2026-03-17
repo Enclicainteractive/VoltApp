@@ -1,719 +1,447 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { TrophyIcon } from '@heroicons/react/24/outline'
+/**
+ * ConnectFourActivity.jsx — complete rewrite
+ *
+ * Key design decisions:
+ *  - Server state (sdk.subscribeServerState) is the SINGLE source of truth.
+ *    The board, turn, players, and winner are all read from server state.
+ *  - Moves are sent via sdk.emitEvent with serverRelay:true.
+ *    The server-side handler applies the move to server state and broadcasts
+ *    the updated state to all clients.
+ *  - NO optimistic local updates — we wait for the server echo.
+ *    This prevents double-apply desyncs.
+ *  - Duplicate event deduplication via seenEventsRef (same pattern as TicTacToe).
+ *  - Hover preview is purely local (no sync needed).
+ */
 
-const styles = `
-  @keyframes dropIn {
-    0% { transform: translateY(-500px); opacity: 0; }
-    60% { transform: translateY(10px); opacity: 1; }
-    80% { transform: translateY(-5px); }
-    100% { transform: translateY(0); }
-  }
-  @keyframes bounceIn {
-    0% { transform: scale(0.3); opacity: 0; }
-    50% { transform: scale(1.1); }
-    70% { transform: scale(0.9); }
-    100% { transform: scale(1); opacity: 1; }
-  }
-  @keyframes glowPulse {
-    0%, 100% { box-shadow: 0 0 20px currentColor, inset 0 -3px 6px rgba(0,0,0,0.3); }
-    50% { box-shadow: 0 0 40px currentColor, 0 0 60px currentColor, inset 0 -3px 6px rgba(0,0,0,0.3); }
-  }
-  @keyframes columnGlow {
-    0%, 100% { background: rgba(255,255,255,0.1); }
-    50% { background: rgba(255,255,255,0.2); }
-  }
-  @keyframes winLine {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.7; transform: scale(1.05); }
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(-20px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-  .c4-activity {
-    --c4-red: #dc2626;
-    --c4-red-light: #fca5a5;
-    --c4-red-dark: #991b1b;
-    --c4-yellow: #eab308;
-    --c4-yellow-light: #fde68a;
-    --c4-yellow-dark: #a16207;
-    --c4-board: #1e40af;
-    --c4-board-light: #1d4ed8;
-    --c4-slot: #0f172a;
-    --c4-slot-shadow: #020617;
-  }
-  .c4-players-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: stretch;
-    gap: 20px;
-    margin-bottom: 20px;
-  }
-  .c4-player-slot {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: linear-gradient(135deg, rgba(30,41,59,0.9), rgba(15,23,42,0.9));
-    border-radius: 12px;
-    border: 2px solid transparent;
-    transition: all 0.3s ease;
-  }
-  .c4-player-slot.active-turn {
-    border-color: currentColor;
-    animation: columnGlow 1.5s ease-in-out infinite;
-  }
-  .c4-player-slot.active-turn:first-child {
-    color: var(--c4-red);
-  }
-  .c4-player-slot.active-turn:last-child {
-    color: var(--c4-yellow);
-  }
-  .c4-player-slot.is-me {
-    background: linear-gradient(135deg, rgba(30,41,59,0.95), rgba(15,23,42,0.95));
-  }
-  .c4-player-slot.is-me:first-child {
-    border-color: var(--c4-red);
-    box-shadow: 0 0 20px rgba(220,38,38,0.3);
-  }
-  .c4-player-slot.is-me:last-child {
-    border-color: var(--c4-yellow);
-    box-shadow: 0 0 20px rgba(234,179,8,0.3);
-  }
-  .c4-piece-container {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .c4-piece {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    transition: transform 0.3s ease;
-  }
-  .c4-piece.red {
-    background: radial-gradient(circle at 30% 30%, var(--c4-red-light), var(--c4-red), var(--c4-red-dark));
-    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3), 0 2px 8px rgba(220,38,38,0.4);
-  }
-  .c4-piece.yellow {
-    background: radial-gradient(circle at 30% 30%, var(--c4-yellow-light), var(--c4-yellow), var(--c4-yellow-dark));
-    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3), 0 2px 8px rgba(234,179,8,0.4);
-  }
-  .c4-player-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-    flex: 1;
-  }
-  .c4-player-name {
-    font-weight: 600;
-    font-size: 14px;
-    color: #f1f5f9;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .c4-player-status {
-    font-size: 12px;
-    color: #94a3b8;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .c4-turn-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    animation: bounceIn 0.5s ease;
-  }
-  .c4-red-dot {
-    background: var(--c4-red);
-    box-shadow: 0 0 8px var(--c4-red);
-  }
-  .c4-yellow-dot {
-    background: var(--c4-yellow);
-    box-shadow: 0 0 8px var(--c4-yellow);
-  }
-  .c4-status {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 20px;
-    background: linear-gradient(135deg, rgba(30,41,59,0.8), rgba(15,23,42,0.8));
-    border-radius: 12px;
-    min-width: 180px;
-  }
-  .c4-winner {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    animation: bounceIn 0.5s ease;
-  }
-  .c4-draw {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    animation: bounceIn 0.5s ease;
-  }
-  .c4-waiting, .c4-turn-indicator span {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: #94a3b8;
-    font-size: 13px;
-  }
-  .my-turn-text {
-    color: #22c55e !important;
-    font-weight: 600;
-    animation: pulse 1s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-  .c4-join-btn {
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: none;
-    font-weight: 600;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .c4-join-btn.red {
-    background: linear-gradient(135deg, var(--c4-red), var(--c4-red-dark));
-    color: white;
-  }
-  .c4-join-btn.yellow {
-    background: linear-gradient(135deg, var(--c4-yellow), var(--c4-yellow-dark));
-    color: #0f172a;
-  }
-  .c4-join-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  }
-  .c4-join-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .c4-leave-btn {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid #475569;
-    background: transparent;
-    color: #94a3b8;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  .c4-leave-btn:hover {
-    background: rgba(239,68,68,0.2);
-    border-color: #ef4444;
-    color: #ef4444;
-  }
-  .c4-game-board {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-  }
-  .c4-board-wrapper {
-    position: relative;
-    padding: 12px;
-    background: linear-gradient(180deg, var(--c4-board-light), var(--c4-board));
-    border-radius: 16px;
-    box-shadow: 
-      0 10px 40px rgba(0,0,0,0.4),
-      inset 0 2px 4px rgba(255,255,255,0.1),
-      inset 0 -2px 4px rgba(0,0,0,0.2);
-  }
-  .c4-column-indicators {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .c4-indicator {
-    width: 48px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  .c4-indicator.active:hover {
-    transform: scale(1.1);
-  }
-  .c4-disc-preview {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    animation: dropIn 0.4s ease-out;
-  }
-  .c4-board {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 8px;
-    padding: 8px;
-    background: var(--c4-slot);
-    border-radius: 8px;
-    box-shadow: inset 0 4px 12px var(--c4-slot-shadow);
-  }
-  .c4-cell {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    position: relative;
-  }
-  .c4-cell:hover {
-    background: rgba(255,255,255,0.05);
-  }
-  .c4-disc {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    transition: all 0.3s ease;
-  }
-  .c4-disc-preview {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    animation: dropIn 0.4s ease-out;
-    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3);
-  }
-  .c4-disc-preview.red {
-    background: radial-gradient(circle at 30% 30%, var(--c4-red-light), var(--c4-red), var(--c4-red-dark));
-  }
-  .c4-disc-preview.yellow {
-    background: radial-gradient(circle at 30% 30%, var(--c4-yellow-light), var(--c4-yellow), var(--c4-yellow-dark));
-  }
-  .c4-disc.red {
-    background: radial-gradient(circle at 30% 30%, var(--c4-red-light), var(--c4-red), var(--c4-red-dark));
-    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3), 0 2px 8px rgba(220,38,38,0.4);
-  }
-  .c4-disc.yellow {
-    background: radial-gradient(circle at 30% 30%, var(--c4-yellow-light), var(--c4-yellow), var(--c4-yellow-dark));
-    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3), 0 2px 8px rgba(234,179,8,0.4);
-  }
-  .c4-disc.dropping {
-    animation: dropIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  .c4-disc.preview {
-    opacity: 0.5;
-    animation: pulse 1s ease-in-out infinite;
-  }
-  .c4-disc.preview.red {
-    background: radial-gradient(circle at 30% 30%, var(--c4-red-light), var(--c4-red), var(--c4-red-dark));
-    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3);
-  }
-  .c4-disc.preview.yellow {
-    background: radial-gradient(circle at 30% 30%, var(--c4-yellow-light), var(--c4-yellow), var(--c4-yellow-dark));
-    box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3);
-  }
-  .c4-cell.winning .c4-disc {
-    animation: glowPulse 1s ease-in-out infinite;
-  }
-  .c4-cell.winning[data-color="red"] .c4-disc {
-    box-shadow: 0 0 25px var(--c4-red), 0 0 50px rgba(220,38,38,0.5), inset 0 -3px 6px rgba(0,0,0,0.3);
-  }
-  .c4-cell.winning[data-color="yellow"] .c4-disc {
-    box-shadow: 0 0 25px var(--c4-yellow), 0 0 50px rgba(234,179,8,0.5), inset 0 -3px 6px rgba(0,0,0,0.3);
-  }
-  .c4-cell.last-drop .c4-disc {
-    animation: bounceIn 0.4s ease;
-  }
-  .c4-controls {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    max-width: 400px;
-  }
-  .c4-reset-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 24px;
-    background: linear-gradient(135deg, #475569, #334155);
-    color: #f1f5f9;
-    border: none;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  .c4-reset-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #64748b, #475569);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  }
-  .c4-reset-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .c4-turn-indicator {
-    text-align: center;
-    font-size: 14px;
-    color: #94a3b8;
-  }
-  .c4-move-counter {
-    font-size: 12px;
-    color: #64748b;
-    padding: 4px 12px;
-    background: rgba(30,41,59,0.5);
-    border-radius: 20px;
-  }
-  .c4-join-toast {
-    animation: slideIn 0.3s ease;
-  }
-  .c4-color-indicator {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 6px;
-    vertical-align: middle;
-    box-shadow: 0 0 8px currentColor;
-  }
-  .c4-color-indicator.red {
-    background: var(--c4-red);
-    color: var(--c4-red);
-  }
-  .c4-color-indicator.yellow {
-    background: var(--c4-yellow);
-    color: var(--c4-yellow);
-  }
-`
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 
-const RefreshIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-    <path d="M21 3v5h-5"/>
-    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-    <path d="M8 16H3v5"/>
-  </svg>
-)
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-const H = 6
-const W = 7
-const RED = 'red'
+const ROWS = 6
+const COLS = 7
+const RED    = 'red'
 const YELLOW = 'yellow'
 
-const makeBoard = () => Array.from({ length: H }, () => Array(W).fill(null))
+// ── Pure game logic ───────────────────────────────────────────────────────────
 
-const baseState = {
-  board: makeBoard(),
-  turn: RED,
-  winner: null,
-  isDraw: false,
-  redPlayer: null,
-  yellowPlayer: null,
-  winningCells: null,
-  status: 'waiting',
-  moveCount: 0
-}
-
-const sanitizePlayer = (player) => {
-  if (!player || typeof player !== 'object' || !player.id) return null
-  return { id: String(player.id), username: String(player.username || 'Player'), avatar: player.avatar || null }
-}
+const makeBoard = () => Array.from({ length: ROWS }, () => Array(COLS).fill(null))
 
 const sanitizeBoard = (board) => {
-  if (!Array.isArray(board) || board.length !== H) return makeBoard()
-  const safe = board.map((row) => {
-    if (!Array.isArray(row) || row.length !== W) return Array(W).fill(null)
-    return row.map((cell) => (cell === RED || cell === YELLOW ? cell : null))
+  if (!Array.isArray(board) || board.length !== ROWS) return makeBoard()
+  return board.map(row => {
+    if (!Array.isArray(row) || row.length !== COLS) return Array(COLS).fill(null)
+    return row.map(cell => (cell === RED || cell === YELLOW ? cell : null))
   })
-  return safe.some((row) => !row) ? makeBoard() : safe
 }
 
-const getWin = (board) => {
-  const directions = [
-    [[0, 1], [0, 2], [0, 3]],   // Horizontal
-    [[1, 0], [2, 0], [3, 0]],   // Vertical
-    [[1, 1], [2, 2], [3, 3]],   // Diagonal down-right
-    [[1, -1], [2, -2], [3, -3]] // Diagonal up-right
+const sanitizePlayer = (p) => {
+  if (!p || typeof p !== 'object' || !p.id) return null
+  return { id: String(p.id), username: String(p.username || 'Player'), avatar: p.avatar || null }
+}
+
+/** Drop a piece into a column. Returns { board, row } or null if column full. */
+const dropPiece = (board, col, color) => {
+  if (col < 0 || col >= COLS) return null
+  const next = board.map(r => [...r])
+  for (let row = ROWS - 1; row >= 0; row--) {
+    if (!next[row][col]) {
+      next[row][col] = color
+      return { board: next, row }
+    }
+  }
+  return null // column full
+}
+
+/** Returns { winner, cells } or null. */
+const checkWin = (board) => {
+  const dirs = [
+    [0, 1], [1, 0], [1, 1], [1, -1]
   ]
-  
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const piece = board[y]?.[x]
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const piece = board[r]?.[c]
       if (!piece) continue
-      
-      for (const direction of directions) {
-        const cells = [[x, y]]
-        let valid = true
-        
-        for (const [dx, dy] of direction) {
-          const nx = x + dx
-          const ny = y + dy
-          if (nx < 0 || nx >= W || ny < 0 || ny >= H || board[ny]?.[nx] !== piece) {
-            valid = false
-            break
-          }
-          cells.push([nx, ny])
+      for (const [dr, dc] of dirs) {
+        const cells = [[r, c]]
+        for (let k = 1; k < 4; k++) {
+          const nr = r + dr * k
+          const nc = c + dc * k
+          if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS || board[nr][nc] !== piece) break
+          cells.push([nr, nc])
         }
-        
-        if (valid) {
-          return { winner: piece, cells }
-        }
+        if (cells.length === 4) return { winner: piece, cells }
       }
     }
   }
   return null
 }
 
-const dropPiece = (board, col, piece) => {
-  if (col < 0 || col >= W) return null
-  const next = board.map((row) => [...row])
-  for (let y = H - 1; y >= 0; y--) {
-    if (!next[y][col]) {
-      next[y][col] = piece
-      return { board: next, row: y }
-    }
+const isBoardFull = (board) => board.every(row => row.every(Boolean))
+
+const canDrop = (board, col) =>
+  col >= 0 && col < COLS && board[0]?.[col] == null
+
+/** Find the row a piece would land in for a given column (for preview). */
+const previewRow = (board, col) => {
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (!board[r]?.[col]) return r
   }
-  return null
+  return -1
 }
 
-const canDropInColumn = (board, col) => {
-  if (col < 0 || col >= W) return false
-  return board[0]?.[col] == null
+// ── Base state ────────────────────────────────────────────────────────────────
+
+const BASE_STATE = {
+  board:        makeBoard(),
+  turn:         RED,
+  winner:       null,
+  winCells:     null,
+  isDraw:       false,
+  redPlayer:    null,
+  yellowPlayer: null,
+  status:       'waiting', // 'waiting' | 'playing' | 'finished'
+  moveCount:    0,
 }
+
+// ── Event dedup helpers ───────────────────────────────────────────────────────
 
 const buildEventId = (evt) => {
-  const payload = evt?.payload || {}
-  if (payload?.actionId) return String(payload.actionId)
-  return `${evt?.eventType || 'evt'}:${evt?.ts || Date.now()}:${payload?.playerId || 'unknown'}:${payload?.col ?? ''}`
+  const p = evt?.payload || {}
+  if (p.actionId) return String(p.actionId)
+  return `${evt?.eventType}:${evt?.ts || Date.now()}:${p.playerId || ''}:${p.col ?? ''}`
 }
 
-const rememberEvent = (setRef, eventId) => {
-  if (!eventId) return false
-  if (setRef.current.has(eventId)) return false
-  setRef.current.add(eventId)
-  if (setRef.current.size > 300) {
-    const first = setRef.current.values().next().value
-    setRef.current.delete(first)
+const rememberEvent = (ref, id) => {
+  if (!id || ref.current.has(id)) return false
+  ref.current.add(id)
+  if (ref.current.size > 400) {
+    ref.current.delete(ref.current.values().next().value)
   }
   return true
 }
 
-const ConnectFourActivity = ({ sdk, currentUser }) => {
-  const [gameState, setGameState] = useState(baseState)
+// ── Sound ─────────────────────────────────────────────────────────────────────
 
-  const renderStyles = useMemo(() => (
-    <style>{styles}</style>
-  ), [])
+const createSounds = () => {
+  let ctx = null
+  let muted = false
+
+  const init = () => {
+    if (ctx) return
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)() } catch {}
+  }
+
+  const tone = (freq, dur, type = 'sine', vol = 0.25) => {
+    if (!ctx || muted) return
+    try {
+      if (ctx.state === 'suspended') ctx.resume()
+      const osc = ctx.createOscillator()
+      const g   = ctx.createGain()
+      osc.type = type
+      osc.frequency.value = freq
+      g.gain.setValueAtTime(vol, ctx.currentTime)
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur)
+      osc.connect(g)
+      g.connect(ctx.destination)
+      osc.start()
+      osc.stop(ctx.currentTime + dur)
+    } catch {}
+  }
+
+  return {
+    init,
+    toggleMute: () => { muted = !muted; return muted },
+    isMuted: () => muted,
+    drop:  () => { tone(300, 0.06); setTimeout(() => tone(200, 0.08), 60) },
+    win:   () => {
+      tone(523, 0.1); setTimeout(() => tone(659, 0.1), 100)
+      setTimeout(() => tone(784, 0.15), 200); setTimeout(() => tone(1047, 0.2), 320)
+    },
+    draw:  () => { tone(440, 0.15, 'triangle'); setTimeout(() => tone(440, 0.2, 'triangle'), 150) },
+    join:  () => { tone(440, 0.07); setTimeout(() => tone(554, 0.09), 60) },
+    reset: () => { tone(500, 0.06, 'triangle'); setTimeout(() => tone(700, 0.08, 'triangle'), 100) },
+  }
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const CSS = `
+.c4 {
+  --red:    #dc2626;
+  --red-l:  #fca5a5;
+  --red-d:  #991b1b;
+  --yel:    #eab308;
+  --yel-l:  #fde68a;
+  --yel-d:  #a16207;
+  --board:  #1e40af;
+  --slot:   #0f172a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  user-select: none;
+  font-family: inherit;
+}
+
+/* ── Players bar ── */
+.c4-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+  max-width: 520px;
+}
+.c4-slot {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(30,41,59,0.85);
+  border-radius: 12px;
+  border: 2px solid transparent;
+  transition: border-color 0.25s, box-shadow 0.25s;
+  min-width: 0;
+}
+.c4-slot.active { border-color: var(--slot-color); box-shadow: 0 0 16px color-mix(in srgb, var(--slot-color) 35%, transparent); }
+.c4-slot.red-slot  { --slot-color: var(--red); }
+.c4-slot.yel-slot  { --slot-color: var(--yel); }
+.c4-disc-sm {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+}
+.c4-disc-sm.red    { background: radial-gradient(circle at 30% 30%, var(--red-l), var(--red), var(--red-d)); box-shadow: inset 0 -2px 4px rgba(0,0,0,.3); }
+.c4-disc-sm.yellow { background: radial-gradient(circle at 30% 30%, var(--yel-l), var(--yel), var(--yel-d)); box-shadow: inset 0 -2px 4px rgba(0,0,0,.3); }
+.c4-pname { font-size: 13px; font-weight: 600; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c4-psub  { font-size: 11px; color: #94a3b8; }
+.c4-join-btn {
+  margin-left: auto; flex-shrink: 0;
+  padding: 6px 12px; border-radius: 8px; border: none;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+.c4-join-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.3); }
+.c4-join-btn:disabled { opacity: .45; cursor: not-allowed; }
+.c4-join-btn.red    { background: linear-gradient(135deg, var(--red), var(--red-d)); color: #fff; }
+.c4-join-btn.yellow { background: linear-gradient(135deg, var(--yel), var(--yel-d)); color: #0f172a; }
+.c4-leave-btn {
+  margin-left: auto; flex-shrink: 0;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid #475569;
+  background: transparent; color: #94a3b8; font-size: 11px; cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.c4-leave-btn:hover { background: rgba(239,68,68,.15); border-color: #ef4444; color: #ef4444; }
+
+/* ── Status pill ── */
+.c4-status {
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px 14px; background: rgba(15,23,42,.7); border-radius: 10px;
+  font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+}
+.c4-status.win-red    { color: var(--red); }
+.c4-status.win-yellow { color: var(--yel); }
+.c4-status.draw       { color: #a78bfa; }
+.c4-status.my-turn    { color: #22c55e; animation: c4pulse 1s ease-in-out infinite; }
+.c4-status.waiting    { color: #64748b; }
+@keyframes c4pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
+
+/* ── Board ── */
+.c4-board-wrap {
+  padding: 10px;
+  background: linear-gradient(180deg, #1d4ed8, var(--board));
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45), inset 0 2px 4px rgba(255,255,255,.1);
+}
+.c4-col-hints {
+  display: grid; grid-template-columns: repeat(7, 48px); gap: 8px;
+  margin-bottom: 6px;
+}
+.c4-col-hint {
+  height: 28px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none; background: transparent; padding: 0;
+}
+.c4-col-hint:disabled { cursor: not-allowed; }
+.c4-hint-disc {
+  width: 36px; height: 36px; border-radius: 50%; opacity: .55;
+  animation: c4drop .35s cubic-bezier(.34,1.56,.64,1);
+}
+.c4-hint-disc.red    { background: radial-gradient(circle at 30% 30%, var(--red-l), var(--red), var(--red-d)); }
+.c4-hint-disc.yellow { background: radial-gradient(circle at 30% 30%, var(--yel-l), var(--yel), var(--yel-d)); }
+@keyframes c4drop { from{transform:translateY(-40px);opacity:0} to{transform:translateY(0);opacity:.55} }
+
+.c4-grid {
+  display: grid; grid-template-columns: repeat(7, 48px);
+  grid-template-rows: repeat(6, 48px); gap: 8px;
+  background: var(--slot); border-radius: 8px; padding: 8px;
+  box-shadow: inset 0 4px 12px rgba(0,0,0,.6);
+}
+.c4-cell {
+  width: 48px; height: 48px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: default; position: relative; transition: background .15s;
+}
+.c4-cell.clickable { cursor: pointer; }
+.c4-cell.clickable:hover { background: rgba(255,255,255,.06); }
+.c4-disc {
+  width: 40px; height: 40px; border-radius: 50%;
+  box-shadow: inset 0 -3px 6px rgba(0,0,0,.3);
+}
+.c4-disc.red    { background: radial-gradient(circle at 30% 30%, var(--red-l), var(--red), var(--red-d)); box-shadow: inset 0 -3px 6px rgba(0,0,0,.3), 0 2px 8px rgba(220,38,38,.4); }
+.c4-disc.yellow { background: radial-gradient(circle at 30% 30%, var(--yel-l), var(--yel), var(--yel-d)); box-shadow: inset 0 -3px 6px rgba(0,0,0,.3), 0 2px 8px rgba(234,179,8,.4); }
+.c4-disc.dropping { animation: c4fall .45s cubic-bezier(.34,1.56,.64,1); }
+@keyframes c4fall { from{transform:translateY(-300px);opacity:.3} to{transform:translateY(0);opacity:1} }
+.c4-cell.winning .c4-disc {
+  animation: c4glow 1s ease-in-out infinite;
+}
+.c4-cell.winning .c4-disc.red    { box-shadow: 0 0 20px var(--red), 0 0 40px rgba(220,38,38,.5), inset 0 -3px 6px rgba(0,0,0,.3); }
+.c4-cell.winning .c4-disc.yellow { box-shadow: 0 0 20px var(--yel), 0 0 40px rgba(234,179,8,.5), inset 0 -3px 6px rgba(0,0,0,.3); }
+@keyframes c4glow { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.35)} }
+
+/* ── Controls ── */
+.c4-controls {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.c4-new-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 22px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, #475569, #334155);
+  color: #f1f5f9; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: transform .15s, box-shadow .15s, background .15s;
+}
+.c4-new-btn:hover:not(:disabled) { background: linear-gradient(135deg, #64748b, #475569); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+.c4-new-btn:disabled { opacity: .45; cursor: not-allowed; }
+.c4-hint-text { font-size: 12px; color: #64748b; }
+.c4-hint-text.active { color: #22c55e; font-weight: 600; }
+.c4-moves { font-size: 11px; color: #475569; padding: 3px 10px; background: rgba(30,41,59,.5); border-radius: 20px; }
+
+/* ── Pending overlay ── */
+.c4-pending {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.35); border-radius: 50%;
+}
+.c4-pending-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #fff;
+  animation: c4blink .6s ease-in-out infinite;
+}
+@keyframes c4blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+`
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+const ConnectFourActivity = ({ sdk, currentUser }) => {
+  const [gs, setGs]           = useState(BASE_STATE)
   const [myColor, setMyColor] = useState(null)
   const [hoverCol, setHoverCol] = useState(null)
-  const [lastMove, setLastMove] = useState(null)
-  const [joinFeedback, setJoinFeedback] = useState(null)
+  const [lastDrop, setLastDrop] = useState(null)   // { row, col } for drop animation
+  const [pending, setPending]   = useState(false)  // waiting for server echo
 
-  const seenEventsRef = useRef(new Set())
-  const joinedRef = useRef(false)
-  const pendingMoveRef = useRef(false)
+  const seenRef  = useRef(new Set())
+  const soundRef = useRef(null)
 
-  // Calculate column previews
-  const columnPreviews = useMemo(() => {
-    const previews = {}
-    for (let col = 0; col < W; col++) {
-      for (let row = H - 1; row >= 0; row--) {
-        if (!gameState.board[row]?.[col]) {
-          previews[col] = row
-          break
-        }
-      }
-    }
-    return previews
-  }, [gameState.board])
+  // Create sound manager once
+  const sound = useMemo(() => {
+    const s = createSounds()
+    soundRef.current = s
+    return s
+  }, [])
 
-  // Sync state from server
+  // Init audio on first interaction
+  useEffect(() => {
+    const h = () => { sound.init(); document.removeEventListener('click', h) }
+    document.addEventListener('click', h, { once: true })
+    return () => document.removeEventListener('click', h)
+  }, [sound])
+
+  // ── Subscribe to server state + events ──────────────────────────────────────
+
   useEffect(() => {
     if (!sdk) return
 
+    // ── Server state is the authoritative source ──
     const offState = sdk.subscribeServerState((st) => {
       const c4 = st?.c4
       if (!c4 || typeof c4 !== 'object') return
 
-      setGameState((prev) => {
-        const board = sanitizeBoard(c4.board)
-        const win = getWin(board)
-        const isDraw = !win && board.every((row) => row.every(Boolean))
+      const board       = sanitizeBoard(c4.board)
+      const redPlayer   = sanitizePlayer(c4.redPlayer)
+      const yellowPlayer = sanitizePlayer(c4.yellowPlayer)
+      const winResult   = checkWin(board)
+      const isDraw      = !winResult && isBoardFull(board)
+      const hasBoth     = !!(redPlayer && yellowPlayer)
 
-        const redPlayer = sanitizePlayer(c4.redPlayer)
-        const yellowPlayer = sanitizePlayer(c4.yellowPlayer)
-        const hasBothPlayers = redPlayer && yellowPlayer
-        
-        let newTurn = prev.turn
-        if (c4.turn === RED || c4.turn === YELLOW) {
-          newTurn = c4.turn
-        } else if (hasBothPlayers && prev.status === 'waiting') {
-          newTurn = RED
-        }
+      const turn = (c4.turn === RED || c4.turn === YELLOW) ? c4.turn : RED
 
-        const next = {
-          ...prev,
-          board,
-          turn: newTurn,
-          redPlayer,
-          yellowPlayer,
-          winner: win?.winner || null,
-          winningCells: win?.cells || null,
-          isDraw,
-          status: win || isDraw ? 'finished' : (hasBothPlayers ? 'playing' : 'waiting'),
-          moveCount: Number.isInteger(c4.moveCount) ? Math.max(0, c4.moveCount) : prev.moveCount
-        }
-        return next
+      setGs({
+        board,
+        turn,
+        winner:       winResult?.winner   || null,
+        winCells:     winResult?.cells    || null,
+        isDraw,
+        redPlayer,
+        yellowPlayer,
+        status:       winResult || isDraw ? 'finished' : hasBoth ? 'playing' : 'waiting',
+        moveCount:    Number.isInteger(c4.moveCount) ? Math.max(0, c4.moveCount) : 0,
       })
 
-      // Update my color
-      if (c4.redPlayer?.id === currentUser?.id) setMyColor(RED)
-      else if (c4.yellowPlayer?.id === currentUser?.id) setMyColor(YELLOW)
+      // Sync my color from server state
+      if (currentUser?.id) {
+        if (redPlayer?.id    === currentUser.id) setMyColor(RED)
+        else if (yellowPlayer?.id === currentUser.id) setMyColor(YELLOW)
+        // Don't clear myColor here — let leave event handle it
+      }
+
+      // Clear pending once server echoes back
+      setPending(false)
     })
 
+    // ── Events for animations / sounds ──
+    // We do NOT apply game logic from events — server state handles that.
+    // Events are only used for: drop animation trigger, sounds, join/leave feedback.
     const offEvent = sdk.on('event', (evt) => {
       if (!evt?.eventType) return
-      const eventId = buildEventId(evt)
-      if (!rememberEvent(seenEventsRef, eventId)) return
+      const eid = buildEventId(evt)
+      if (!rememberEvent(seenRef, eid)) return
 
-      const payload = evt.payload || {}
+      const p = evt.payload || {}
 
-      // Handle move events
       if (evt.eventType === 'c4:move') {
-        const col = Number(payload.col)
-        const color = payload.color
-        if (col < 0 || col >= W || (color !== RED && color !== YELLOW)) return
-        pendingMoveRef.current = false
-
-        setGameState((prev) => {
-          if (prev.winner || prev.isDraw || prev.turn !== color) return prev
-          const result = dropPiece(prev.board, col, color)
-          if (!result) return prev
-
-          const win = getWin(result.board)
-          const isDraw = !win && result.board.every((row) => row.every(Boolean))
-
-          // Set last move for animation
-          setLastMove({ col, row: result.row, color })
-
-          return {
-            ...prev,
-            board: result.board,
-            turn: color === RED ? YELLOW : RED,
-            winner: win?.winner || null,
-            winningCells: win?.cells || null,
-            isDraw,
-            status: win || isDraw ? 'finished' : 'playing',
-            moveCount: prev.moveCount + 1
-          }
+        const col = Number(p.col)
+        const color = p.color
+        if (col < 0 || col >= COLS || (color !== RED && color !== YELLOW)) return
+        // Trigger drop animation — we need to know which row the piece landed in.
+        // We can compute it from the CURRENT board state (before server state updates).
+        setGs(prev => {
+          const row = previewRow(prev.board, col)
+          if (row >= 0) setLastDrop({ row, col, color, ts: Date.now() })
+          return prev // don't change state — server state will update it
         })
+        soundRef.current?.drop()
+        setPending(false)
         return
       }
 
-      // Handle join events
       if (evt.eventType === 'c4:join') {
-        const color = payload.color
-        if ((color !== RED && color !== YELLOW) || !payload.playerId) return
-
-        const player = { 
-          id: String(payload.playerId), 
-          username: String(payload.username || 'Player'),
-          avatar: payload.avatar || null 
-        }
-        
-        setGameState((prev) => {
-          const key = color === RED ? 'redPlayer' : 'yellowPlayer'
-          const otherKey = color === RED ? 'yellowPlayer' : 'redPlayer'
-          const current = prev[key]
-          
-          // Only allow joining if slot is empty or it's the same player
-          if (current && current.id !== player.id) return prev
-          
-          const otherPlayer = prev[otherKey]
-          const hasBothPlayers = (color === RED ? player : prev.redPlayer) && (color === YELLOW ? player : prev.yellowPlayer)
-          
-          return {
-            ...prev,
-            [key]: player,
-            status: hasBothPlayers ? 'playing' : 'waiting'
-          }
-        })
-        
-        // Show join feedback
-        if (player.id === currentUser?.id) {
-          setJoinFeedback({ color, message: `You joined ${color === RED ? 'Red' : 'Yellow'}!` })
-          setTimeout(() => setJoinFeedback(null), 2000)
+        soundRef.current?.join()
+        if (p.playerId === currentUser?.id) {
+          setMyColor(p.color)
         }
         return
       }
 
-      // Handle leave events
       if (evt.eventType === 'c4:leave') {
-        const color = payload.color
-        if ((color !== RED && color !== YELLOW) || !payload.playerId) return
-        const playerId = String(payload.playerId)
-
-        setGameState((prev) => {
-          const key = color === RED ? 'redPlayer' : 'yellowPlayer'
-          const slot = prev[key]
-          if (!slot || slot.id !== playerId) return prev
-          
-          return { 
-            ...prev, 
-            [key]: null, 
-            status: 'waiting',
-            winner: null,
-            isDraw: false,
-            winningCells: null
-          }
-        })
-        
-        if (playerId === currentUser?.id) {
+        if (p.playerId === currentUser?.id) {
           setMyColor(null)
-          setJoinFeedback(null)
         }
         return
       }
 
-      // Handle reset events
       if (evt.eventType === 'c4:reset') {
-        setGameState((prev) => ({
-          ...baseState,
-          redPlayer: prev.redPlayer,
-          yellowPlayer: prev.yellowPlayer,
-          status: prev.redPlayer && prev.yellowPlayer ? 'playing' : 'waiting'
-        }))
-        setLastMove(null)
+        setLastDrop(null)
+        setPending(false)
+        soundRef.current?.reset()
         return
       }
     })
-
-    // Join the game automatically on mount
-    if (!joinedRef.current && currentUser?.id && sdk) {
-      joinedRef.current = true
-    }
 
     return () => {
       offState?.()
@@ -721,357 +449,254 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
     }
   }, [sdk, currentUser?.id])
 
+  // Play win/draw sounds when game ends
+  const prevWinnerRef = useRef(null)
+  const prevDrawRef   = useRef(false)
+  useEffect(() => {
+    if (gs.winner && gs.winner !== prevWinnerRef.current) {
+      soundRef.current?.win()
+    }
+    if (gs.isDraw && !prevDrawRef.current) {
+      soundRef.current?.draw()
+    }
+    prevWinnerRef.current = gs.winner
+    prevDrawRef.current   = gs.isDraw
+  }, [gs.winner, gs.isDraw])
+
+  // ── Actions ─────────────────────────────────────────────────────────────────
+
   const playCol = useCallback((col) => {
-    if (!sdk) return
-    if (!myColor) return
-    if (col < 0 || col >= W) return
-    if (gameState.winner || gameState.isDraw) return
-    if (gameState.turn !== myColor) return
-    if (!canDropInColumn(gameState.board, col)) return
+    if (!sdk || !myColor || pending) return
+    if (col < 0 || col >= COLS) return
+    if (gs.winner || gs.isDraw) return
+    if (gs.turn !== myColor) return
+    if (!canDrop(gs.board, col)) return
 
-    const actionId = `c4_move_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    rememberEvent(seenEventsRef, actionId)
+    sound.init()
 
-    // Apply move optimistically so the UI updates immediately
-    setGameState((prev) => {
-      if (prev.winner || prev.isDraw || prev.turn !== myColor) return prev
-      const result = dropPiece(prev.board, col, myColor)
-      if (!result) return prev
+    const actionId = `c4m_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    rememberEvent(seenRef, actionId)
 
-      const win = getWin(result.board)
-      const isDraw = !win && result.board.every((row) => row.every(Boolean))
-
-      setLastMove({ col, row: result.row, color: myColor })
-
-      return {
-        ...prev,
-        board: result.board,
-        turn: myColor === RED ? YELLOW : RED,
-        winner: win?.winner || null,
-        winningCells: win?.cells || null,
-        isDraw,
-        status: win || isDraw ? 'finished' : 'playing',
-        moveCount: prev.moveCount + 1
-      }
-    })
+    setPending(true)
+    setHoverCol(null)
 
     sdk.emitEvent('c4:move', {
       col,
       color: myColor,
       playerId: currentUser?.id,
-      actionId
+      actionId,
     }, { serverRelay: true, cue: 'piece_drop' })
-  }, [sdk, myColor, gameState.board, gameState.winner, gameState.isDraw, gameState.turn, currentUser?.id])
+  }, [sdk, myColor, pending, gs.board, gs.winner, gs.isDraw, gs.turn, currentUser?.id, sound])
 
   const joinGame = useCallback((color) => {
     if (!sdk || !currentUser?.id) return
-    
-    // Check if slot is available
-    if (color === RED && gameState.redPlayer && gameState.redPlayer.id !== currentUser.id) return
-    if (color === YELLOW && gameState.yellowPlayer && gameState.yellowPlayer.id !== currentUser.id) return
+    if (color === RED    && gs.redPlayer    && gs.redPlayer.id    !== currentUser.id) return
+    if (color === YELLOW && gs.yellowPlayer && gs.yellowPlayer.id !== currentUser.id) return
 
-    const actionId = `c4_join_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    sound.init()
+
+    const actionId = `c4j_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    rememberEvent(seenRef, actionId)
 
     sdk.emitEvent('c4:join', {
       playerId: currentUser.id,
       username: currentUser.username || 'Player',
-      avatar: currentUser.avatar || null,
+      avatar:   currentUser.avatar   || null,
       color,
-      actionId
+      actionId,
     }, { serverRelay: true, cue: 'player_join' })
-  }, [sdk, currentUser, gameState.redPlayer, gameState.yellowPlayer])
+
+    setMyColor(color)
+  }, [sdk, currentUser, gs.redPlayer, gs.yellowPlayer, sound])
 
   const leaveGame = useCallback(() => {
     if (!sdk || !myColor || !currentUser?.id) return
 
-    const actionId = `c4_leave_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const actionId = `c4l_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    rememberEvent(seenRef, actionId)
 
     sdk.emitEvent('c4:leave', {
       playerId: currentUser.id,
       color: myColor,
-      actionId
+      actionId,
     }, { serverRelay: true, cue: 'player_leave' })
+
+    setMyColor(null)
   }, [sdk, myColor, currentUser?.id])
 
   const resetGame = useCallback(() => {
     if (!sdk) return
 
-    const actionId = `c4_reset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const actionId = `c4r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    rememberEvent(seenRef, actionId)
 
     sdk.emitEvent('c4:reset', { actionId }, { serverRelay: true, cue: 'game_reset' })
   }, [sdk])
 
-  // Derived values
-  const isMyTurn = myColor === gameState.turn
-  const isPlaying = myColor === RED || myColor === YELLOW
-  const canJoinRed = !gameState.redPlayer || gameState.redPlayer.id === currentUser?.id
-  const canJoinYellow = !gameState.yellowPlayer || gameState.yellowPlayer.id === currentUser?.id
-  const gameOver = gameState.winner || gameState.isDraw
+  // ── Derived ──────────────────────────────────────────────────────────────────
+
+  const isMyTurn   = myColor === gs.turn && gs.status === 'playing'
+  const gameOver   = !!(gs.winner || gs.isDraw)
+  const canJoinRed    = !gs.redPlayer    || gs.redPlayer.id    === currentUser?.id
+  const canJoinYellow = !gs.yellowPlayer || gs.yellowPlayer.id === currentUser?.id
+
+  // Status pill content
+  let statusClass = 'waiting'
+  let statusText  = 'Waiting for players…'
+  if (gameOver) {
+    if (gs.winner) {
+      statusClass = gs.winner === RED ? 'win-red' : 'win-yellow'
+      statusText  = `${gs.winner === RED ? 'Red' : 'Yellow'} wins! 🏆`
+    } else {
+      statusClass = 'draw'
+      statusText  = "It's a draw!"
+    }
+  } else if (gs.status === 'playing') {
+    if (isMyTurn) {
+      statusClass = 'my-turn'
+      statusText  = 'Your turn!'
+    } else {
+      statusClass = ''
+      statusText  = `${gs.turn === RED ? 'Red' : 'Yellow'}'s turn`
+    }
+  }
 
   if (!sdk) {
     return (
       <div className="builtin-activity-loading">
         <div className="loading-spinner" />
-        <p>Loading Connect Four...</p>
+        <p>Loading Connect Four…</p>
       </div>
     )
   }
 
   return (
-    <div className="builtin-activity-body c4-activity">
-      {renderStyles}
-      {/* Join Feedback Toast */}
-      {joinFeedback && (
-        <div className="c4-join-toast" style={{
-          position: 'absolute',
-          top: '10px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: joinFeedback.color === RED ? '#dc2626' : '#eab308',
-          color: joinFeedback.color === RED ? 'white' : 'black',
-          padding: '10px 20px',
-          borderRadius: '8px',
-          fontWeight: 'bold',
-          zIndex: 100,
-          animation: 'fadeIn 0.3s ease'
-        }}>
-          {joinFeedback.message}
-        </div>
-      )}
+    <div className="builtin-activity-body c4">
+      <style>{CSS}</style>
 
-      {/* Players Bar */}
-      <div className="c4-players-bar">
-        {/* Red Player */}
-        <div className={`c4-player-slot ${gameState.turn === RED ? 'active-turn' : ''} ${myColor === RED ? 'is-me' : ''}`}>
-          <div className="c4-piece-container">
-            <div className="c4-piece red" />
+      {/* ── Players bar ── */}
+      <div className="c4-bar">
+        {/* Red slot */}
+        <div className={`c4-slot red-slot${gs.turn === RED && !gameOver ? ' active' : ''}`}>
+          <div className="c4-disc-sm red" />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="c4-pname">
+              {gs.redPlayer?.username || 'Open'}
+              {gs.redPlayer?.id === currentUser?.id && ' (You)'}
+            </div>
+            <div className="c4-psub">Red</div>
           </div>
-          <div className="c4-player-info">
-            <span className="c4-player-name">
-              <span className="c4-color-indicator red" aria-hidden="true" />
-              {gameState.redPlayer?.username || 'Waiting...'}
-              {gameState.redPlayer?.id === currentUser?.id && ' (You)'}
-            </span>
-            <span className="c4-player-status">
-              {gameState.redPlayer ? (
-                gameState.turn === RED ? (
-                  <><span className="c4-turn-dot red-dot" aria-hidden="true" /> Your Turn!</>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    Waiting
-                  </>
-                )
-              ) : (
-                <>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><circle cx="12" cy="12" r="10"/></svg>
-                  Open
-                </>
-              )}
-            </span>
-          </div>
-          {canJoinRed && !myColor && (
-            <button 
-              className="c4-join-btn red" 
-              onClick={() => joinGame(RED)}
-              disabled={!!gameState.redPlayer}
-            >
-              {gameState.redPlayer ? 'Taken' : 'Join Red'}
-            </button>
+          {!myColor && canJoinRed && !gs.redPlayer && (
+            <button className="c4-join-btn red" onClick={() => joinGame(RED)}>Join</button>
           )}
           {myColor === RED && (
-            <button className="c4-leave-btn" onClick={leaveGame}>
-              Leave
-            </button>
+            <button className="c4-leave-btn" onClick={leaveGame}>Leave</button>
           )}
         </div>
 
-        {/* Game Status */}
-        <div className="c4-status">
-          {gameOver ? (
-            gameState.winner ? (
-              <span className="c4-winner" style={{ 
-                color: gameState.winner === RED ? '#ef4444' : '#eab308',
-                fontWeight: 'bold',
-                fontSize: '16px'
-              }}>
-                <TrophyIcon width="18" height="18" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                {gameState.winner === RED ? 'Red' : 'Yellow'} Wins!
-              </span>
-            ) : (
-              <span className="c4-draw" style={{ 
-                color: '#8b5cf6', 
-                fontWeight: 'bold',
-                fontSize: '16px'
-              }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                Draw!
-              </span>
-            )
-          ) : gameState.status === 'waiting' ? (
-            <span className="c4-waiting">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Waiting for players...
-            </span>
-          ) : (
-            <span className={isMyTurn ? 'my-turn-text' : ''}>
-              {isMyTurn ? 'Your Turn!' : (
-                <>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  {gameState.turn === RED ? 'Red' : 'Yellow'}'s Turn
-                </>
-              )}
-            </span>
-          )}
-        </div>
+        {/* Status pill */}
+        <div className={`c4-status ${statusClass}`}>{statusText}</div>
 
-        {/* Yellow Player */}
-        <div className={`c4-player-slot ${gameState.turn === YELLOW ? 'active-turn' : ''} ${myColor === YELLOW ? 'is-me' : ''}`}>
-          <div className="c4-piece-container">
-            <div className="c4-piece yellow" />
+        {/* Yellow slot */}
+        <div className={`c4-slot yel-slot${gs.turn === YELLOW && !gameOver ? ' active' : ''}`}>
+          <div className="c4-disc-sm yellow" />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="c4-pname">
+              {gs.yellowPlayer?.username || 'Open'}
+              {gs.yellowPlayer?.id === currentUser?.id && ' (You)'}
+            </div>
+            <div className="c4-psub">Yellow</div>
           </div>
-          <div className="c4-player-info">
-            <span className="c4-player-name">
-              <span className="c4-color-indicator yellow" aria-hidden="true" />
-              {gameState.yellowPlayer?.username || 'Waiting...'}
-              {gameState.yellowPlayer?.id === currentUser?.id && ' (You)'}
-            </span>
-            <span className="c4-player-status">
-              {gameState.yellowPlayer ? (
-                gameState.turn === YELLOW ? (
-                  <><span className="c4-turn-dot yellow-dot" aria-hidden="true" /> Your Turn!</>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    Waiting
-                  </>
-                )
-              ) : (
-                <>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><circle cx="12" cy="12" r="10"/></svg>
-                  Open
-                </>
-              )}
-            </span>
-          </div>
-          {canJoinYellow && !myColor && (
-            <button 
-              className="c4-join-btn yellow" 
-              onClick={() => joinGame(YELLOW)}
-              disabled={!!gameState.yellowPlayer}
-            >
-              {gameState.yellowPlayer ? 'Taken' : 'Join Yellow'}
-            </button>
+          {!myColor && canJoinYellow && !gs.yellowPlayer && (
+            <button className="c4-join-btn yellow" onClick={() => joinGame(YELLOW)}>Join</button>
           )}
           {myColor === YELLOW && (
-            <button className="c4-leave-btn" onClick={leaveGame}>
-              Leave
-            </button>
+            <button className="c4-leave-btn" onClick={leaveGame}>Leave</button>
           )}
         </div>
       </div>
 
-      {/* Game Board */}
-      <div className="c4-game-board">
-        <div className="c4-board-wrapper">
-          {/* Column Indicators */}
-          <div className="c4-column-indicators">
-            {Array(W).fill(null).map((_, col) => {
-              const canDrop = canDropInColumn(gameState.board, col) && isMyTurn && !gameOver
-              const previewRow = columnPreviews[col]
-              
+      {/* ── Board ── */}
+      <div className="c4-board-wrap">
+        {/* Column hover hints */}
+        <div className="c4-col-hints">
+          {Array.from({ length: COLS }, (_, col) => {
+            const active = isMyTurn && !gameOver && canDrop(gs.board, col) && !pending
+            return (
+              <button
+                key={col}
+                className="c4-col-hint"
+                disabled={!active}
+                onClick={() => playCol(col)}
+                onMouseEnter={() => active && setHoverCol(col)}
+                onMouseLeave={() => setHoverCol(null)}
+              >
+                {hoverCol === col && active && (
+                  <div className={`c4-hint-disc ${myColor}`} />
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Grid */}
+        <div className="c4-grid">
+          {gs.board.map((row, r) =>
+            row.map((cell, c) => {
+              const isWin  = gs.winCells?.some(([wr, wc]) => wr === r && wc === c)
+              const isDrop = lastDrop && lastDrop.row === r && lastDrop.col === c
+              const clickable = isMyTurn && !gameOver && !cell && canDrop(gs.board, c) && !pending
+
               return (
-                <button
-                  key={col}
-                  className={`c4-indicator ${canDrop ? 'active' : ''}`}
-                  onClick={() => playCol(col)}
-                  onMouseEnter={() => setHoverCol(col)}
+                <div
+                  key={`${r}_${c}`}
+                  className={`c4-cell${clickable ? ' clickable' : ''}${isWin ? ' winning' : ''}`}
+                  onClick={() => clickable && playCol(c)}
+                  onMouseEnter={() => clickable && setHoverCol(c)}
                   onMouseLeave={() => setHoverCol(null)}
-                  disabled={!canDrop}
-                  style={{
-                    opacity: (hoverCol === col && canDrop) ? 1 : (hoverCol === col ? 0.3 : 0),
-                    cursor: canDrop ? 'pointer' : 'not-allowed'
-                  }}
                 >
-                  {hoverCol === col && previewRow !== undefined && canDrop && (
-                    <div 
-                      className={`c4-disc-preview ${myColor}`}
-                    />
+                  {cell && (
+                    <div className={`c4-disc ${cell}${isDrop ? ' dropping' : ''}`} />
                   )}
-                </button>
+                  {pending && cell == null && hoverCol === c && isMyTurn && (
+                    <div className="c4-pending">
+                      <div className="c4-pending-dot" />
+                    </div>
+                  )}
+                </div>
               )
-            })}
-          </div>
+            })
+          )}
+        </div>
+      </div>
 
-          {/* Board Grid */}
-          <div className="c4-board">
-            {gameState.board.map((row, y) => (
-              row.map((cell, x) => {
-                const isWinning = gameState.winningCells?.some(([wx, wy]) => wx === x && wy === y)
-                const isLastMove = lastMove?.col === x && lastMove?.row === y
-                const isPreview = hoverCol === x && columnPreviews[x] === y && isMyTurn && !cell && !gameOver
-                const showPreview = isPreview && canDropInColumn(gameState.board, x)
+      {/* ── Controls ── */}
+      <div className="c4-controls">
+        <button
+          className="c4-new-btn"
+          onClick={resetGame}
+          disabled={!gs.redPlayer && !gs.yellowPlayer}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+            <path d="M8 16H3v5"/>
+          </svg>
+          New Game
+        </button>
 
-                return (
-                  <div
-                    key={`${x}_${y}`}
-                    className={`c4-cell ${cell || ''} ${isWinning ? 'winning' : ''} ${isLastMove ? 'last-drop' : ''}`}
-                    data-color={cell}
-                    onClick={() => playCol(x)}
-                    onMouseEnter={() => setHoverCol(x)}
-                    onMouseLeave={() => setHoverCol(null)}
-                    style={{
-                      cursor: isMyTurn && !gameOver && cell == null ? 'pointer' : 'default'
-                    }}
-                  >
-                    {cell && (
-                      <div 
-                        className={`c4-disc ${cell} ${isLastMove ? 'dropping' : ''}`}
-                      />
-                    )}
-                    {showPreview && (
-                      <div 
-                        className={`c4-disc preview ${myColor}`}
-                      />
-                    )}
-                  </div>
-                )
-              })
-            ))}
-          </div>
+        <div className={`c4-hint-text${isMyTurn && !gameOver ? ' active' : ''}`}>
+          {myColor
+            ? isMyTurn && !gameOver
+              ? 'Click a column to drop your disc'
+              : gameOver
+                ? 'Game over — start a new game!'
+                : 'Waiting for opponent…'
+            : 'Choose a color to join!'}
         </div>
 
-        {/* Controls */}
-        <div className="c4-controls">
-          <button 
-            onClick={resetGame} 
-            className="c4-reset-btn"
-            disabled={!gameState.redPlayer && !gameState.yellowPlayer}
-          >
-            <RefreshIcon /> New Game
-          </button>
-          
-          <div className="c4-turn-indicator">
-            {isPlaying ? (
-              isMyTurn ? (
-                <span style={{ color: '#22c55e', fontWeight: 'bold' }}>
-                  Your turn! Click a column to drop your disc
-                </span>
-              ) : (
-                <span style={{ opacity: 0.7 }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14" aria-hidden="true" style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Waiting for {gameState.turn === RED ? 'Red' : 'Yellow'}...
-                </span>
-              )
-            ) : (
-              <span>Choose a color to join the game!</span>
-            )}
-          </div>
-          
-          <div className="c4-move-counter">
-            Moves: {gameState.moveCount}
-          </div>
-        </div>
+        <div className="c4-moves">Moves: {gs.moveCount}</div>
       </div>
     </div>
   )

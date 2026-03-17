@@ -1963,3 +1963,94 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ── Danger modal (received message blocked by safety scan) ─────────────── */
+.dm-danger-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  animation: dm-danger-fade-in 0.2s ease;
+}
+
+@keyframes dm-danger-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.dm-danger-modal {
+  background: var(--volt-bg-secondary, #1e1e2e);
+  border: 1px solid var(--volt-danger, #e74c3c);
+  border-radius: 12px;
+  padding: 28px 32px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 8px 40px rgba(231, 76, 60, 0.25);
+  animation: dm-danger-slide-in 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  text-align: center;
+}
+
+@keyframes dm-danger-slide-in {
+  from { opacity: 0; transform: scale(0.92) translateY(16px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
+.dm-danger-modal-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+
+.dm-danger-modal-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--volt-danger, #e74c3c);
+  margin: 0 0 10px;
+}
+
+.dm-danger-modal-body {
+  font-size: 0.9rem;
+  color: var(--volt-text, #cdd6f4);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.dm-danger-modal-reasons {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.dm-danger-modal-reason-item {
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid rgba(231, 76, 60, 0.4);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  color: var(--volt-danger, #e74c3c);
+  text-transform: capitalize;
+}
+
+.dm-danger-modal-reported {
+  font-size: 0.82rem;
+  color: var(--volt-success, #a6e3a1);
+  margin: 0 0 14px;
+}
+
+.dm-danger-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.dm-danger-modal-actions .btn {
+  min-width: 120px;
+}

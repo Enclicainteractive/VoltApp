@@ -386,9 +386,17 @@ const ChannelSidebar = ({
     
     // Add uncategorized group
     grouped['uncategorized'] = { category: { id: 'uncategorized', name: 'No Category' }, channels: [] }
-    
+
+    // Deduplicate channels by id before grouping to prevent React duplicate key warnings
+    const seenChannelIds = new Set()
+    const uniqueChannels = channels.filter(ch => {
+      if (seenChannelIds.has(ch.id)) return false
+      seenChannelIds.add(ch.id)
+      return true
+    })
+
     // Sort channels into groups
-    channels.forEach(channel => {
+    uniqueChannels.forEach(channel => {
       // categoryId can be null, undefined, or a category ID
       const catId = channel.categoryId != null ? channel.categoryId : 'uncategorized'
       if (grouped[catId]) {

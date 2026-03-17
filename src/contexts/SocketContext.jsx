@@ -600,14 +600,16 @@ export const SocketProvider = ({ children }) => {
       transports: ['polling', 'websocket'],
       upgrade: true,
       rememberUpgrade: true,
+      // More stable reconnection settings
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000,
-      randomizationFactor: 0.5,
+      reconnectionDelayMax: 5000,
+      randomizationFactor: 0.2,
       timeout: 30000,
+      // Faster ping/pong for quicker disconnect detection
       pingTimeout: 60000,
-      pingInterval: 25000
+      pingInterval: 20000
     })
 
     newSocket.on('connect', () => {
@@ -627,13 +629,18 @@ export const SocketProvider = ({ children }) => {
 
     newSocket.on('disconnect', (reason) => {
       console.log('[Socket] Disconnected, reason:', reason)
-      setConnected(false)
+      
+      // Only set connected to false if it's not an intentional disconnect
+      if (!(reason === 'io client disconnect' && intentionalDisconnectRef.current)) {
+        setConnected(false)
+      }
 
       if (reason === 'io client disconnect' && intentionalDisconnectRef.current) {
         setReconnecting(false)
         return
       }
 
+      // Don't trigger reconnection UI too aggressively - wait for actual failure
       setReconnecting(true)
 
       if (reason === 'io server disconnect') {

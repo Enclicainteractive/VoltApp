@@ -36,7 +36,8 @@ import { useTranslation } from '../hooks/useTranslation'
 import { apiService } from '../services/apiService'
 import {
   buildClientSignature,
-  runSafetyScan
+  runSafetyScan,
+  checkInputSafety
 } from '../services/localSafetyService'
 import { useAppStore } from '../store/useAppStore'
 import { soundService } from '../services/soundService'
@@ -291,6 +292,15 @@ const ChatPage = () => {
   const isAnnouncementChannel = currentChannel?.type === 'announcement'
   const isForumChannel = currentChannel?.type === 'forum'
   const isMediaChannel = currentChannel?.type === 'media'
+
+  // Listen for global keyboard shortcut to open settings
+  useEffect(() => {
+    const handleOpenSettings = () => {
+      setShowSettings(true)
+    }
+    window.addEventListener('volt:open-settings', handleOpenSettings)
+    return () => window.removeEventListener('volt:open-settings', handleOpenSettings)
+  }, [])
 
   // Update document title when server or channel changes
   useEffect(() => {
@@ -996,15 +1006,39 @@ const ChatPage = () => {
       }
 
       // Receiver-side local safety recheck for channel messages.
+      // Fast-path: checkInputSafety runs synchronously in < 1 ms and catches
+      // high-confidence patterns (pipe bomb, rape, grooming, etc.) immediately,
+      // before any async model inference.
       try {
+        const msgText = processedMessage.content || ''
         const selfAgeRaw = Number(user?.ageVerification?.age ?? user?.ageVerification?.estimatedAge)
         const selfAge = Number.isFinite(selfAgeRaw) ? selfAgeRaw : null
         const recipientContext = {
           isMinor: !!(user?.ageVerification?.verified && (user?.ageVerification?.category === 'child' || (selfAge !== null && selfAge < 18))),
           isUnder16: !!(user?.ageVerification?.verified && (selfAge !== null ? selfAge < 16 : user?.ageVerification?.category === 'child'))
         }
+
+        // ── 1. Synchronous fast-path ──────────────────────────────────────
+        const fastCheck = checkInputSafety(msgText)
+        if (fastCheck.isUnsafe) {
+          // Block immediately — no need to wait for AI models.
+          const reportPayload = {
+            contextType: 'channel',
+            reportType: 'threat',
+            accusedUserId: processedMessage.userId || null,
+            targetUserId: user?.id || null,
+            channelId: processedMessage.channelId || channelId,
+            contentFlags: { fastPathMatch: fastCheck.match, category: fastCheck.category },
+            targetAgeContext: recipientContext
+          }
+          const signature = await buildClientSignature(reportPayload)
+          apiService.submitSafetyReport({ ...reportPayload, clientSignature: signature }).catch(() => {})
+          return
+        }
+
+        // ── 2. Full async scan (keyword + AI models) ──────────────────────
         const { flags, safety } = await runSafetyScan({
-          text: processedMessage.content || '',
+          text: msgText,
           attachments: processedMessage.attachments || [],
           recipient: recipientContext,
           allowBlockingModels: false

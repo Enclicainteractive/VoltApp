@@ -9,6 +9,7 @@ import { useE2e } from '../contexts/E2eContext'
 import { soundService } from '../services/soundService'
 import Avatar from './Avatar'
 import ContextMenu from './ContextMenu'
+import GuildTagBadge from './GuildTagBadge'
 import E2eeEnableModal from './E2eeEnableModal'
 import E2eeKeyPromptModal from './E2eeKeyPromptModal'
 import '../assets/styles/DMList.css'
@@ -473,6 +474,13 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                     <div className="dm-conv-info">
                       <span className="dm-conv-name">
                         {convTitle}
+                        {!isGroup && conv.recipient?.guildTag && (
+                          <GuildTagBadge
+                            tag={conv.recipient.guildTag}
+                            serverId={conv.recipient.guildTagServerId}
+                            isPrivate={conv.recipient.guildTagPrivate}
+                          />
+                        )}
                       </span>
                       {convStatus && (
                         <span className="dm-conv-status">{convStatus}</span>

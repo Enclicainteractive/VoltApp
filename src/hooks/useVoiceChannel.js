@@ -1,10 +1,18 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSocket } from '../contexts/SocketContext'
 import SimplePeer from 'simple-peer'
 import { voiceAudio } from '../services/voiceAudio'
 import { useAppStore } from '../store/useAppStore'
 
 const ACTIVITY_DATA_CHANNEL = 'activity-data'
+
+// STUN servers for NAT traversal — without these, connections fail across different networks
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+]
 
 export const useVoiceChannel = (channelId) => {
   const { socket } = useSocket()
@@ -19,6 +27,8 @@ export const useVoiceChannel = (channelId) => {
   const { activeActivities, addActivity } = useAppStore()
   const activeActivitiesRef = useRef(activeActivities)
   const prevActivitiesRef = useRef([])
+  // Track pending signals for peers not yet created
+  const pendingSignalsRef = useRef({})
 
   useEffect(() => {
     activeActivitiesRef.current = activeActivities
@@ -92,34 +102,83 @@ export const useVoiceChannel = (channelId) => {
     audioElsRef.current.delete(key)
   }
 
+  const destroyPeer = useCallback((userId) => {
+    const peer = peersRef.current[userId]
+    if (!peer) return
+    try { peer.destroy() } catch {}
+    delete peersRef.current[userId]
+    delete pendingSignalsRef.current[userId]
+    removeAudioEl(userId)
+    setParticipants(prev => prev.filter(p => p.userId !== userId))
+  }, [])
+
   useEffect(() => {
     if (!socket || !channelId) return
 
     const handleVoiceUserJoined = ({ userId, username, peerId }) => {
-      if (!peersRef.current[userId]) {
-        const peer = createPeer(peerId, streamRef.current, userId)
-        peersRef.current[userId] = peer
-        setParticipants(prev => [...prev, { userId, username, peerId }])
+      // Avoid duplicate peers — destroy stale one if it exists
+      if (peersRef.current[userId]) {
+        try { peersRef.current[userId].destroy() } catch {}
+        delete peersRef.current[userId]
+      }
+
+      const peer = createPeer(peerId, streamRef.current, userId, true)
+      peersRef.current[userId] = peer
+      setParticipants(prev => {
+        if (prev.some(p => p.userId === userId)) return prev
+        return [...prev, { userId, username, peerId }]
+      })
+
+      // Flush any pending signals that arrived before the peer was created
+      const pending = pendingSignalsRef.current[userId]
+      if (pending) {
+        pending.forEach(sig => {
+          try { peer.signal(sig) } catch (e) {
+            console.warn('[VoiceChannel] Failed to apply pending signal:', e)
+          }
+        })
+        delete pendingSignalsRef.current[userId]
       }
     }
 
     const handleVoiceUserLeft = ({ userId }) => {
-      if (peersRef.current[userId]) {
-        peersRef.current[userId].destroy()
-        delete peersRef.current[userId]
-        setParticipants(prev => prev.filter(p => p.userId !== userId))
-      }
-      removeAudioEl(userId)
+      destroyPeer(userId)
     }
 
     const handleVoiceSignal = ({ from, signal, username }) => {
       if (peersRef.current[from]) {
-        peersRef.current[from].signal(signal)
+        // Peer exists — apply signal directly
+        try {
+          peersRef.current[from].signal(signal)
+        } catch (e) {
+          console.warn('[VoiceChannel] Signal error on existing peer, recreating:', e)
+          // Peer is in a bad state — recreate as non-initiator
+          try { peersRef.current[from].destroy() } catch {}
+          delete peersRef.current[from]
+          const peer = createPeer(null, streamRef.current, from, false)
+          peersRef.current[from] = peer
+          setParticipants(prev => {
+            if (prev.some(p => p.userId === from)) return prev
+            return [...prev, { userId: from, username: username || 'Unknown', peerId: from }]
+          })
+          try { peer.signal(signal) } catch {}
+        }
       } else {
+        // Peer doesn't exist yet — create as non-initiator and apply signal
         const peer = createPeer(null, streamRef.current, from, false)
-        peer.signal(signal)
         peersRef.current[from] = peer
-        setParticipants(prev => [...prev, { userId: from, username: username || 'Unknown', peerId: from }])
+        setParticipants(prev => {
+          if (prev.some(p => p.userId === from)) return prev
+          return [...prev, { userId: from, username: username || 'Unknown', peerId: from }]
+        })
+        try {
+          peer.signal(signal)
+        } catch (e) {
+          console.warn('[VoiceChannel] Failed to signal new peer:', e)
+          // Queue it for later if signal fails immediately
+          if (!pendingSignalsRef.current[from]) pendingSignalsRef.current[from] = []
+          pendingSignalsRef.current[from].push(signal)
+        }
       }
     }
 
@@ -132,21 +191,26 @@ export const useVoiceChannel = (channelId) => {
       socket.off('voice:user-left', handleVoiceUserLeft)
       socket.off('voice:signal', handleVoiceSignal)
     }
-  }, [socket, channelId])
+  }, [socket, channelId, destroyPeer])
 
   const createPeer = (targetPeerId, stream, key, initiator = true) => {
     const peer = new SimplePeer({
       initiator,
-      trickle: false,
+      trickle: true, // Enable trickle ICE — much faster connection establishment
       stream,
-      channels: initiator ? {
-        [ACTIVITY_DATA_CHANNEL]: { ordered: false }
-      } : undefined
+      config: {
+        iceServers: ICE_SERVERS,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 10
+      }
     })
 
     peer.on('signal', signal => {
+      // Always use key (userId) as the routing target — the server routes by userId
+      // targetPeerId is the remote peer's WebRTC peerId, not their userId
       socket.emit('voice:signal', {
-        to: targetPeerId,
+        to: key,
         signal
       })
     })
@@ -160,6 +224,25 @@ export const useVoiceChannel = (channelId) => {
         peer.send(activityData)
       } catch (e) {
         console.warn('[VoiceChannel] Failed to send activities on connect:', e)
+      }
+    })
+
+    peer.on('error', (err) => {
+      console.warn(`[VoiceChannel] Peer error for ${key}:`, err?.message || err)
+      // Clean up the broken peer — the user will need to reconnect
+      // Don't destroy immediately on all errors; some are recoverable
+      if (err?.message?.includes('Connection failed') || err?.message?.includes('ICE')) {
+        console.warn(`[VoiceChannel] Unrecoverable peer error for ${key}, cleaning up`)
+        destroyPeer(key)
+      }
+    })
+
+    peer.on('close', () => {
+      // Peer closed — clean up if it's still tracked
+      if (peersRef.current[key]) {
+        delete peersRef.current[key]
+        removeAudioEl(key)
+        setParticipants(prev => prev.filter(p => p.userId !== key))
       }
     })
 
@@ -177,26 +260,6 @@ export const useVoiceChannel = (channelId) => {
         console.warn('[VoiceChannel] Failed to parse peer data:', e)
       }
     })
-
-    if (!initiator && peer._pc) {
-      peer._pc.ondatachannel = (event) => {
-        const dataChannel = event.channel
-        dataChannel.onmessage = (e) => {
-          try {
-            const parsed = JSON.parse(e.data)
-            if (parsed.type === 'activities-sync' && Array.isArray(parsed.activities)) {
-              parsed.activities.forEach(activity => {
-                addActivity(activity)
-              })
-            } else if (parsed.type === 'activity-joined' && parsed.activity) {
-              addActivity(parsed.activity)
-            }
-          } catch (err) {
-            console.warn('[VoiceChannel] Failed to parse incoming activity data:', err)
-          }
-        }
-      }
-    }
 
     const attachStream = (remoteStream, peerKey) => {
       if (!remoteStream) return
@@ -252,8 +315,11 @@ export const useVoiceChannel = (channelId) => {
       streamRef.current = null
     }
 
-    Object.values(peersRef.current).forEach(peer => peer.destroy())
+    Object.keys(peersRef.current).forEach(userId => {
+      try { peersRef.current[userId].destroy() } catch {}
+    })
     peersRef.current = {}
+    pendingSignalsRef.current = {}
 
     for (const key of Array.from(audioElsRef.current.keys())) {
       removeAudioEl(key)

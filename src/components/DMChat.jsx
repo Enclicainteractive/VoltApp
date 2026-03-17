@@ -12,7 +12,10 @@ import { apiService } from '../services/apiService'
 import {
   buildClientSignature,
   runSafetyScan,
-  warmupSafetyModels
+  warmupSafetyModels,
+  quickSafetyCheck,
+  scanMessageAsync,
+  scanReceivedMessage
 } from '../services/localSafetyService'
 import {
   buildTransmitContentFlags,
@@ -131,6 +134,10 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   const [contextMenu, setContextMenu] = useState(null)
   const [messageContextMenu, setMessageContextMenu] = useState(null)
   const [selectedMessage, setSelectedMessage] = useState(null)
+
+  // Danger modal — shown when a received message is flagged as dangerous
+  const [dangerModal, setDangerModal] = useState(null)
+  // { senderName, senderUserId, blockReasons, flags, reported }
 
   useEffect(() => {
     warmupSafetyModels({ text: true, images: false })
@@ -492,43 +499,97 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
             }
           }
 
-          // Receiver-side safety recheck (defense-in-depth for E2EE/local moderation).
+          // ── Receiver-side safety scan with context window ─────────────────
+          // Runs AFTER the message is added to the local list so the context
+          // window (±7 messages) is available.  We first add the message
+          // optimistically, then remove it if the scan blocks it.
           if (!message.bot) {
-            try {
-              const selfAgeRaw = Number(user?.ageVerification?.age ?? user?.ageVerification?.estimatedAge)
-              const selfAge = Number.isFinite(selfAgeRaw) ? selfAgeRaw : null
-              const recipientContext = {
-                isMinor: !!(user?.ageVerification?.verified && (user?.ageVerification?.category === 'child' || (selfAge !== null && selfAge < 18))),
-            isUnder16: !!(user?.ageVerification?.verified && (selfAge !== null ? selfAge < 16 : user?.ageVerification?.category === 'child'))
-              }
-              const { flags, safety } = await runSafetyScan({
-                text: processedMessage.content || '',
-                attachments: processedMessage.attachments || [],
-                recipient: recipientContext,
-                allowBlockingModels: false
-              })
-              if (safety.shouldBlock) {
-                if (safety.shouldReport) {
-                  const reportPayload = {
-                    contextType: 'dm',
-                    reportType: 'threat',
-                    accusedUserId: processedMessage.userId || null,
-                    targetUserId: user?.id || null,
-                    conversationId: conversation.id,
-                    contentFlags: flags,
-                    targetAgeContext: recipientContext
-                  }
-                  const signature = await buildClientSignature(reportPayload)
-                  await apiService.submitSafetyReport({
-                    ...reportPayload,
-                    clientSignature: signature
-                  }).catch(() => {})
-                }
-                return
-              }
-            } catch (err) {
-              console.error('[DMChat] Receiver-side safety check failed:', err)
+            // Add message to state first so context window works
+            setMessages(prev => {
+              if (prev.some(m => m.id === processedMessage.id)) return prev
+              return [...prev, { ...processedMessage, _sendStatus: 'sent', _pendingScan: true }]
+            })
+            if (message.userId !== user?.id) soundService.messageReceived()
+            if (isAtBottomRef.current) setTimeout(() => scrollToBottom(true), 20)
+
+            // Fetch sender profile for adult-to-adult check (cached)
+            let senderProfile = recipientAgeCacheRef.current.get(processedMessage.userId) || null
+            if (!senderProfile && processedMessage.userId) {
+              try {
+                const res = await apiService.getUserProfile(processedMessage.userId)
+                senderProfile = res.data || null
+                if (senderProfile) recipientAgeCacheRef.current.set(processedMessage.userId, senderProfile)
+              } catch { /* ignore */ }
             }
+
+            // Run context-aware scan in background
+            setMessages(currentMsgs => {
+              // We need the current message list for context — capture it here
+              // and run the scan asynchronously
+              const msgsSnapshot = currentMsgs
+              ;(async () => {
+                try {
+                  const { flags, safety } = await scanReceivedMessage({
+                    message: processedMessage,
+                    messages: msgsSnapshot,
+                    senderProfile,
+                    localUser: user,
+                    contextWindow: 7
+                  })
+
+                  // Remove _pendingScan flag regardless of outcome
+                  setMessages(prev => prev.map(m =>
+                    m.id === processedMessage.id ? { ...m, _pendingScan: false } : m
+                  ))
+
+                  if (safety.shouldBlock) {
+                    // Remove the message from the UI
+                    setMessages(prev => prev.filter(m => m.id !== processedMessage.id))
+
+                    // Show danger modal
+                    setDangerModal({
+                      senderName: processedMessage.username || 'Unknown',
+                      senderUserId: processedMessage.userId || null,
+                      blockReasons: safety.blockReasons || [],
+                      flags,
+                      reported: false
+                    })
+
+                    if (safety.shouldReport) {
+                      const selfAgeRaw = Number(user?.ageVerification?.age ?? user?.ageVerification?.estimatedAge)
+                      const selfAge = Number.isFinite(selfAgeRaw) ? selfAgeRaw : null
+                      const recipientContext = {
+                        isMinor: !!(user?.ageVerification?.verified && (user?.ageVerification?.category === 'child' || (selfAge !== null && selfAge < 18))),
+                        isUnder16: !!(user?.ageVerification?.verified && (selfAge !== null ? selfAge < 16 : user?.ageVerification?.category === 'child'))
+                      }
+                      const reportPayload = {
+                        contextType: 'dm',
+                        reportType: 'threat',
+                        accusedUserId: processedMessage.userId || null,
+                        targetUserId: user?.id || null,
+                        conversationId: conversation.id,
+                        contentFlags: flags,
+                        targetAgeContext: recipientContext
+                      }
+                      const signature = await buildClientSignature(reportPayload)
+                      apiService.submitSafetyReport({ ...reportPayload, clientSignature: signature }).catch(() => {})
+                      setDangerModal(prev => prev ? { ...prev, reported: true } : prev)
+                    }
+                  }
+                } catch (err) {
+                  console.error('[DMChat] Receiver-side safety scan failed:', err)
+                  // On error, keep the message visible (fail-open)
+                  setMessages(prev => prev.map(m =>
+                    m.id === processedMessage.id ? { ...m, _pendingScan: false } : m
+                  ))
+                }
+              })()
+              return currentMsgs // don't mutate state here
+            })
+
+            // Early return — message already added above
+            clearPendingDmSendTimeout(processedMessage.clientNonce)
+            return
           }
 
           setMessages(prev => {
@@ -735,136 +796,135 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
 
   const handleSendMessage = useCallback(async () => {
     if (isSendingRef.current) return
-      if (!inputValue.trim() && attachments.length === 0) return
-        if (!socket) return
+    if (!inputValue.trim() && attachments.length === 0) return
+    if (!socket) return
 
-          isSendingRef.current = true
-          setSendError('')
+    isSendingRef.current = true
+    setSendError('')
 
-          let messageContent = inputValue.trim()
-          const displayContent = messageContent
-          let encrypted = false
-          let iv = null
+    let messageContent = inputValue.trim()
+    const displayContent = messageContent
+    const snapshotAttachments = [...attachments]
+    const snapshotReplyingTo = replyingTo
+    let encrypted = false
+    let iv = null
 
-          // Local-only safety moderation for E2EE DMs.
-          try {
-            const recipientContext = await resolveRecipientSafetyContext()
-            const { flags, safety } = await runSafetyScan({
-              text: messageContent,
-              attachments,
-              recipient: recipientContext,
-              allowBlockingModels: false
-            })
-
-            if (safety.shouldBlock) {
-              setSendError(t('dm.sendBlockedSafety', 'Message blocked by local safety policy.'))
-              if (safety.shouldReport) {
-                const reportPayload = {
-                  contextType: 'dm',
-                  reportType: 'threat',
-                  accusedUserId: user?.id || null,
-                  targetUserId: recipientContext.targetUserId,
-                  conversationId: conversation.id,
-                  contentFlags: flags,
-                  targetAgeContext: recipientContext
-                }
-                const signature = await buildClientSignature(reportPayload)
-                await apiService.submitSafetyReport({
-                  ...reportPayload,
-                  clientSignature: signature
-                }).catch(() => {})
-              }
-              isSendingRef.current = false
-              return
-            }
-          } catch (err) {
-            console.error('[DMChat] Local safety moderation failed:', err)
-          }
-
-          const dmE2eeEnabled = isDmEncryptionEnabled(conversation.id)
-          if (dmE2eeEnabled) {
-            try {
-              const keyReady = hasDmDecryptedKey(conversation.id) || await ensureDmEncryptionKeys(conversation.id)
-              if (!keyReady) {
-                setEncryptionError('encryption_key_unavailable')
-                isSendingRef.current = false
-                return
-              }
-              const encryptedData = await encryptMessageForDm(messageContent, conversation.id)
-              if (encryptedData.encrypted) {
-                encrypted = true
-                iv = encryptedData.iv
-                messageContent = encryptedData.content
-              } else {
-                setEncryptionError('encryption_failed')
-                isSendingRef.current = false
-                return
-              }
-            } catch (err) {
-              console.error('[DMChat] Encryption error:', err)
-              setEncryptionError('encryption_failed')
-              isSendingRef.current = false
-              return
-            }
-          }
-
-          const clientNonce = `dm_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-          const messageData = {
-            conversationId: conversation.id,
-            content: messageContent,
-            recipientId: recipient?.id || conversation.recipientId,
-            replyTo: replyingTo?.id,
-            attachments: attachments.length > 0 ? attachments : undefined,
-            encrypted,
-            iv,
-            clientNonce
-          }
-
-          const optimisticMessage = {
-            id: `local_${clientNonce}`,
-            conversationId: conversation.id,
-            userId: user?.id,
-            username: user?.username || user?.email || 'You',
-            avatar: user?.avatar,
-            content: displayContent,
-            timestamp: new Date().toISOString(),
-                                        attachments: attachments.length > 0 ? attachments : [],
-                                        replyTo: replyingTo || null,
-                                        encrypted,
-                                        iv,
-                                        clientNonce,
-                                        _sendStatus: 'sending'
-          }
-          setMessages(prev => [...prev, optimisticMessage])
-
-          // Reduced timeout for faster failure detection (5 seconds instead of 12)
-          const pendingTimer = setTimeout(() => {
-            markDmMessageFailed(clientNonce, 'Message failed to send (timeout)')
-          }, 5000)
-          pendingDmSendTimersRef.current.set(clientNonce, pendingTimer)
-
-          socket.emit('dm:send', messageData, (ack) => {
-            // Server acknowledged the message - clear the pending timer
-            if (ack && ack.success) {
-              clearPendingDmSendTimeout(clientNonce)
-              // Update message status to sent immediately
-              setMessages(prev => prev.map(m => {
-                if (m?.clientNonce === clientNonce) {
-                  return { ...m, _sendStatus: 'sent', id: ack.messageId || m.id }
-                }
-                return m
-              }))
-            }
-          })
-          soundService.messageSent()
-          setInputValue('')
-          inputRef.current?.setValueAndCaret?.('', 0)
-          setReplyingTo(null)
-          setAttachments([])
-          isTypingRef.current = false
-
+    // ── Encryption ────────────────────────────────────────────────────────
+    const dmE2eeEnabled = isDmEncryptionEnabled(conversation.id)
+    if (dmE2eeEnabled) {
+      try {
+        const keyReady = hasDmDecryptedKey(conversation.id) || await ensureDmEncryptionKeys(conversation.id)
+        if (!keyReady) {
+          setEncryptionError('encryption_key_unavailable')
           isSendingRef.current = false
-  }, [socket, inputValue, attachments, conversation, recipient, replyingTo, isDmEncryptionEnabled, hasDmDecryptedKey, encryptMessageForDm, ensureDmEncryptionKeys, resolveRecipientSafetyContext, t, user?.id, user?.username, user?.email, user?.avatar, markDmMessageFailed])
+          return
+        }
+        const encryptedData = await encryptMessageForDm(messageContent, conversation.id)
+        if (encryptedData.encrypted) {
+          encrypted = true
+          iv = encryptedData.iv
+          messageContent = encryptedData.content
+        } else {
+          setEncryptionError('encryption_failed')
+          isSendingRef.current = false
+          return
+        }
+      } catch (err) {
+        console.error('[DMChat] Encryption error:', err)
+        setEncryptionError('encryption_failed')
+        isSendingRef.current = false
+        return
+      }
+    }
+
+    // ── Optimistic send ───────────────────────────────────────────────────
+    // Add the message to the UI immediately so the user sees it as "sending"
+    // and can start typing the next message without waiting for the scan.
+    const clientNonce = `dm_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const messageData = {
+      conversationId: conversation.id,
+      content: messageContent,
+      recipientId: recipient?.id || conversation.recipientId,
+      replyTo: snapshotReplyingTo?.id,
+      attachments: snapshotAttachments.length > 0 ? snapshotAttachments : undefined,
+      encrypted,
+      iv,
+      clientNonce
+    }
+
+    const optimisticMessage = {
+      id: `local_${clientNonce}`,
+      conversationId: conversation.id,
+      userId: user?.id,
+      username: user?.username || user?.email || 'You',
+      avatar: user?.avatar,
+      content: displayContent,
+      timestamp: new Date().toISOString(),
+      attachments: snapshotAttachments.length > 0 ? snapshotAttachments : [],
+      replyTo: snapshotReplyingTo || null,
+      encrypted,
+      iv,
+      clientNonce,
+      _sendStatus: 'sending'
+    }
+    setMessages(prev => [...prev, optimisticMessage])
+
+    // Clear input immediately so the user can type the next message.
+    setInputValue('')
+    inputRef.current?.setValueAndCaret?.('', 0)
+    setReplyingTo(null)
+    setAttachments([])
+    isTypingRef.current = false
+    isSendingRef.current = false
+
+    // ── Transmit immediately ──────────────────────────────────────────────
+    // Send the message right away — do NOT wait for the safety scan.
+    // Waiting for TF inference before sending causes the "stuck sending" bug
+    // and the double-send bug (scan success path + catch path both emit).
+    const pendingTimer = setTimeout(() => {
+      markDmMessageFailed(clientNonce, 'Message failed to send (timeout)')
+    }, 8000)
+    pendingDmSendTimersRef.current.set(clientNonce, pendingTimer)
+
+    socket.emit('dm:send', messageData, (ack) => {
+      if (ack && ack.success) {
+        clearPendingDmSendTimeout(clientNonce)
+        setMessages(prev => prev.map(m => {
+          if (m?.clientNonce === clientNonce) {
+            return { ...m, _sendStatus: 'sent', id: ack.messageId || m.id }
+          }
+          return m
+        }))
+      } else if (ack && !ack.success) {
+        markDmMessageFailed(clientNonce, ack.error || 'Message failed to send')
+      }
+    })
+    soundService.messageSent()
+
+    // ── Background safety scan (non-blocking, post-send) ──────────────────
+    // Run the AI safety scan AFTER the message is already sent.
+    // This is purely for local safety reporting — it never blocks sending.
+    scanMessageAsync({ text: displayContent, attachments: snapshotAttachments })
+      .then(async ({ flags, safety }) => {
+        if (safety.shouldReport) {
+          const recipientContext = await resolveRecipientSafetyContext()
+          const reportPayload = {
+            contextType: 'dm',
+            reportType: 'threat',
+            accusedUserId: user?.id || null,
+            targetUserId: recipientContext.targetUserId,
+            conversationId: conversation.id,
+            contentFlags: flags,
+            targetAgeContext: recipientContext
+          }
+          const signature = await buildClientSignature(reportPayload)
+          apiService.submitSafetyReport({ ...reportPayload, clientSignature: signature }).catch(() => {})
+        }
+      })
+      .catch(() => {
+        // Scan errors are non-fatal — message was already sent successfully.
+      })
+  }, [socket, inputValue, attachments, conversation, recipient, replyingTo, isDmEncryptionEnabled, hasDmDecryptedKey, encryptMessageForDm, ensureDmEncryptionKeys, resolveRecipientSafetyContext, t, user?.id, user?.username, user?.email, user?.avatar, markDmMessageFailed, clearPendingDmSendTimeout])
 
   // ─── Input change (plain string from ChatInput) ───────────────────────────
 
@@ -937,17 +997,19 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
 
       socket.emit('dm:send', messageData, (ack) => {
         if (ack && ack.success) {
-          clearPendingDmMessageFailedTimeout(clientNonce)
+          clearPendingDmSendTimeout(clientNonce)
           setMessages(prev => prev.map(m => {
             if (m?.clientNonce === clientNonce) {
               return { ...m, _sendStatus: 'sent', id: ack.messageId || m.id }
             }
             return m
           }))
+        } else if (ack && !ack.success) {
+          markDmMessageFailed(clientNonce, ack.error || 'Voice message failed to send')
         }
       })
       soundService.messageSent()
-  }, [socket, conversation, recipient, user, markDmMessageFailed])
+  }, [socket, conversation, recipient, user, markDmMessageFailed, clearPendingDmSendTimeout])
 
   // ─── File upload ──────────────────────────────────────────────────────────
 
@@ -1832,6 +1894,8 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
     onEmojiClick={() => setShowEmojiPicker(p => !p)}
     onKlipyClick={toggleKlipyPicker}
     onVoiceMessageSent={handleVoiceMessageSent}
+    voiceContext="dm"
+    voiceServerId={null}
     />
 
     {showEmojiPicker && (
@@ -1984,6 +2048,72 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
       setEmojiPickerAnchor(null)
     }}
     />
+
+    {/* ── Danger modal — received message blocked by safety scan ── */}
+    {dangerModal && createPortal(
+      <div className="dm-danger-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="danger-modal-title">
+        <div className="dm-danger-modal">
+          <div className="dm-danger-modal-icon">🛡️</div>
+          <h2 id="danger-modal-title" className="dm-danger-modal-title">
+            Message Blocked
+          </h2>
+          <p className="dm-danger-modal-body">
+            A message from <strong>{dangerModal.senderName}</strong> was blocked by your local safety filter
+            because it may contain harmful content.
+          </p>
+          {dangerModal.blockReasons.length > 0 && (
+            <ul className="dm-danger-modal-reasons">
+              {dangerModal.blockReasons.map(r => (
+                <li key={r} className="dm-danger-modal-reason-item">
+                  {r.replace(/_/g, ' ')}
+                </li>
+              ))}
+            </ul>
+          )}
+          {dangerModal.reported && (
+            <p className="dm-danger-modal-reported">
+              ✅ This message has been automatically reported to the server for review.
+            </p>
+          )}
+          <div className="dm-danger-modal-actions">
+            {!dangerModal.reported && dangerModal.senderUserId && (
+              <button
+                className="btn btn-danger"
+                onClick={async () => {
+                  const selfAgeRaw = Number(user?.ageVerification?.age ?? user?.ageVerification?.estimatedAge)
+                  const selfAge = Number.isFinite(selfAgeRaw) ? selfAgeRaw : null
+                  const recipientContext = {
+                    isMinor: !!(user?.ageVerification?.verified && (user?.ageVerification?.category === 'child' || (selfAge !== null && selfAge < 18))),
+                    isUnder16: !!(user?.ageVerification?.verified && (selfAge !== null ? selfAge < 16 : user?.ageVerification?.category === 'child'))
+                  }
+                  const reportPayload = {
+                    contextType: 'dm',
+                    reportType: 'threat',
+                    accusedUserId: dangerModal.senderUserId,
+                    targetUserId: user?.id || null,
+                    conversationId: conversation.id,
+                    contentFlags: dangerModal.flags,
+                    targetAgeContext: recipientContext
+                  }
+                  const signature = await buildClientSignature(reportPayload)
+                  apiService.submitSafetyReport({ ...reportPayload, clientSignature: signature }).catch(() => {})
+                  setDangerModal(prev => prev ? { ...prev, reported: true } : prev)
+                }}
+              >
+                Report to Server
+              </button>
+            )}
+            <button
+              className="btn btn-secondary"
+              onClick={() => setDangerModal(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
     </div>
   )
 }

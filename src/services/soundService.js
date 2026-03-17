@@ -29,7 +29,7 @@ class SoundService {
     this._comp  = null   // DynamicsCompressor
 
     this.enabled = true
-    this.volume  = 0.453556436375
+    this.volume  = 1.0   // Global volume — full by default; user controls via slider
     this.pitchShift = 0.6
 
     this._queue          = []     // fns waiting for first gesture
@@ -207,14 +207,16 @@ class SoundService {
 
   setSoundpackVolume(vol) {
     this.soundpackVolume = Math.max(0, Math.min(1, vol / 100))
+    // Apply to Web Audio API master gain for generated sounds
     if (this._out) {
-      // Apply volume to all currently playing audio elements
-      Object.values(this._audioElements).forEach(audio => {
-        if (audio && !audio.paused) {
-          audio.volume = this.soundpackVolume * this.volume
-        }
-      })
+      this._out.gain.value = this.volume * this.soundpackVolume
     }
+    // Apply volume to all currently playing audio elements (file-based packs)
+    Object.values(this._audioElements).forEach(audio => {
+      if (audio && !audio.paused) {
+        audio.volume = this.soundpackVolume * this.volume
+      }
+    })
   }
 
   _preloadSounds(pack) {
@@ -331,16 +333,22 @@ class SoundService {
     }
 
     if (audio) {
-      audio.volume = this.soundpackVolume * this.volume
+      audio.volume = Math.min(1, this.soundpackVolume * this.volume)
       audio.currentTime = 0
-      audio.play().catch((err) => {
-        console.log('[Sound] Error playing sound:', soundKey, err)
-        try { audio.pause() } catch {}
-        audio.currentTime = 0
-        if (typeof fallback === 'function') {
-          fallback()
-        }
-      })
+
+      // Use a promise-based play with proper error handling for browser autoplay policies
+      const playPromise = audio.play()
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.log('[Sound] Error playing sound:', soundKey, err.name, err.message)
+          try { audio.pause() } catch {}
+          audio.currentTime = 0
+          // On NotAllowedError (autoplay blocked), fall back to generated sound
+          if (typeof fallback === 'function') {
+            fallback()
+          }
+        })
+      }
       return true
     }
     return false
@@ -466,15 +474,15 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 3, 3)
-      const dly = this._delay(ctx, 0.12, 0.6)
-      const rg = this._gain(ctx, 0.06)
-      const dg = this._gain(ctx, 0.5)
+      const rev = this._reverb(ctx, 5, 5)
+      const dly = this._delay(ctx, 0.18, 0.65)
+      const rg = this._gain(ctx, 0.28)
+      const dg = this._gain(ctx, 0.55)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [261.63, 329.63, 392, 523.25]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.12, 0.4, 0.035, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.12, 0.5, 0.08, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -485,15 +493,15 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 2, 2)
-      const dly = this._delay(ctx, 0.08, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rev = this._reverb(ctx, 4, 4)
+      const dly = this._delay(ctx, 0.14, 0.55)
+      const rg = this._gain(ctx, 0.25)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [392, 329.63, 261.63, 196]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.025, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.35, 0.065, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -544,7 +552,7 @@ class SoundService {
       gain.connect(this._out || ctx.destination)
       osc.frequency.value = freq
       osc.type = 'sine'
-      gain.gain.setValueAtTime(0.1 * this.volume, ctx.currentTime)
+      gain.gain.setValueAtTime(0.3 * this.volume, ctx.currentTime)
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur)
       osc.start(ctx.currentTime)
       osc.stop(ctx.currentTime + dur)
@@ -664,13 +672,13 @@ class SoundService {
     try {
       this._ctx  = new Cls()
       this._comp = this._ctx.createDynamicsCompressor()
-      this._comp.threshold.value = -12
-      this._comp.knee.value      = 10
-      this._comp.ratio.value     = 4
-      this._comp.attack.value    = 0.003
-      this._comp.release.value   = 0.15
+      this._comp.threshold.value = -12   // softer threshold = more compression headroom
+      this._comp.knee.value      = 16    // wide knee = smooth, transparent compression
+      this._comp.ratio.value     = 4     // gentle ratio to tame peaks without pumping
+      this._comp.attack.value    = 0.002
+      this._comp.release.value   = 0.25
       this._out = this._ctx.createGain()
-      this._out.gain.value = this.volume
+      this._out.gain.value = this.volume * this.soundpackVolume
       this._out.connect(this._comp)
       this._comp.connect(this._ctx.destination)
     } catch (e) {
@@ -743,7 +751,13 @@ class SoundService {
 
   setVolume(v) {
     this.volume = Math.max(0, Math.min(1, v))
-    if (this._out) this._out.gain.value = this.volume
+    if (this._out) this._out.gain.value = this.volume * this.soundpackVolume
+    // Also update all cached audio elements
+    Object.values(this._audioElements).forEach(audio => {
+      if (audio) {
+        audio.volume = Math.min(1, this.soundpackVolume * this.volume)
+      }
+    })
   }
 
   // ─── DSP helpers ──────────────────────────────────────────────────────────
@@ -789,9 +803,10 @@ class SoundService {
     const tunedVol = Math.max(0.001, vol * (profile.gainScale || 1))
     const g = ctx.createGain()
     const end = start + tunedDur
+    const holdEnd = Math.max(start + tunedAttack, end - 0.02)
     g.gain.setValueAtTime(0.0001, start)
     g.gain.linearRampToValueAtTime(tunedVol, start + tunedAttack)
-    g.gain.setValueAtTime(tunedVol, start + 1)
+    g.gain.setValueAtTime(tunedVol, holdEnd)
     g.gain.exponentialRampToValueAtTime(0.0001, end)
     const osc = ctx.createOscillator()
     osc.type = profile.wave || 'sine'
@@ -881,13 +896,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [174.61, 220, 261.63]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.035, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.09, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -900,13 +915,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [196, 246.94, 293.66]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.032, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.085, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -919,13 +934,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [261.63, 329.63, 392]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.03, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.08, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -938,13 +953,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [220, 277.18, 329.63]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.03, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.08, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -955,15 +970,15 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 2, 2)
-      const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rev = this._reverb(ctx, 4, 4)
+      const dly = this._delay(ctx, 0.12, 0.55)
+      const rg = this._gain(ctx, 0.22)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
-      const notes = [293.66]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.025, 0.01)
+      const notes = [293.66, 440]
+      notes.forEach((freq, i) => {
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.07, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -974,15 +989,15 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 2, 2)
-      const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rev = this._reverb(ctx, 4, 4)
+      const dly = this._delay(ctx, 0.15, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
-      const notes = [440]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.025, 0.01)
+      const notes = [196, 246.94, 293.66]
+      notes.forEach((freq, i) => {
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.08, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -993,51 +1008,53 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 2, 2)
-      const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rev = this._reverb(ctx, 4, 4)
+      const dly = this._delay(ctx, 0.15, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
-      const notes = [220]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.025, 0.01)
+      const notes = [246.94, 196, 146.83]
+      notes.forEach((freq, i) => {
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.08, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
   }
 
   callEnded() {
+    if (this._tryPlaySoundpack('callEnded')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 2, 2)
-      const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rev = this._reverb(ctx, 4, 4)
+      const dly = this._delay(ctx, 0.15, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
-      const notes = [196]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+      const notes = [196, 185]
+      notes.forEach((freq, i) => {
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.08, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
   }
 
   callDeclined() {
+    if (this._tryPlaySoundpack('callDeclined')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const rev = this._reverb(ctx, 2, 2)
-      const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rev = this._reverb(ctx, 4, 4)
+      const dly = this._delay(ctx, 0.15, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
-      const notes = [185]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+      const notes = [220, 185, 146.83]
+      notes.forEach((freq, i) => {
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.075, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1050,13 +1067,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [392]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1069,13 +1086,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [330]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1088,13 +1105,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.15)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.2)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [146.83]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.22, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1107,13 +1124,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.15)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.2)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [220]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.22, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1126,13 +1143,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.15)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.2)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [130.81]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.22, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1145,13 +1162,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.15)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.2)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [246.94]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.12, 0.02)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.22, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1164,13 +1181,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1183,153 +1200,76 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [392]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
   }
 
   cameraOn() {
-    if (this._tryPlaySoundpack('screenShareStart')) return
+    if (this._tryPlaySoundpack('cameraOn')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [440]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
   }
 
   cameraOff() {
-    if (this._tryPlaySoundpack('screenShareStop')) return
+    if (this._tryPlaySoundpack('cameraOff')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [330]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
   }
 
   voiceKick() {
-    if (this._tryPlaySoundpack('userLeft')) return
+    if (this._tryPlaySoundpack('voiceKick')) return
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [98]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.015, 0.01)
-        g.connect(out); g.connect(dly.node); g.connect(rev)
-      })
-    })
-  }
-
-  callConnected() {
-    if (this._tryPlaySoundpack('callConnected')) return
-    this._play((ctx) => {
-      const t = ctx.currentTime
-      const out = this._out
-      const rev = this._reverb(ctx, 4, 4)
-      const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
-      rev.connect(rg); rg.connect(out)
-      dly.node.connect(dg); dg.connect(out)
-      const notes = [196, 246.94, 293.66]
-      notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.03, 0.05)
-        g.connect(out); g.connect(dly.node); g.connect(rev)
-      })
-    })
-  }
-
-  callLeft() {
-    if (this._tryPlaySoundpack('userLeft')) return
-    this._play((ctx) => {
-      const t = ctx.currentTime
-      const out = this._out
-      const rev = this._reverb(ctx, 4, 4)
-      const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
-      rev.connect(rg); rg.connect(out)
-      dly.node.connect(dg); dg.connect(out)
-      const notes = [246.94, 196, 146.83]
-      notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.03, 0.05)
-        g.connect(out); g.connect(dly.node); g.connect(rev)
-      })
-    })
-  }
-
-  callEnded() {
-    if (this._tryPlaySoundpack('userLeft')) return
-    this._play((ctx) => {
-      const t = ctx.currentTime
-      const out = this._out
-      const rev = this._reverb(ctx, 4, 4)
-      const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
-      rev.connect(rg); rg.connect(out)
-      dly.node.connect(dg); dg.connect(out)
-      const notes = [196, 185]
-      notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.03, 0.05)
-        g.connect(out); g.connect(dly.node); g.connect(rev)
-      })
-    })
-  }
-
-  callDeclined() {
-    if (this._tryPlaySoundpack('userLeft')) return
-    this._play((ctx) => {
-      const t = ctx.currentTime
-      const out = this._out
-      const rev = this._reverb(ctx, 4, 4)
-      const dly = this._delay(ctx, 0.15, 0.7)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.7)
-      rev.connect(rg); rg.connect(out)
-      dly.node.connect(dg); dg.connect(out)
-      const notes = [220, 185, 146.83]
-      notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.028, 0.05)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.06, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
   }
 
   // ─── Ringtone Loop Control ────────────────────────────────────────────────
-  // Intentionally cheap and awkward ringtone for the generated default pack
 
   // Start repeating ringtone - plays until stopRingtone() is called
   // Call this when an incoming call arrives
@@ -1363,131 +1303,94 @@ class SoundService {
     this._stopCurrentSounds()
   }
 
-  // Intentionally bad ringtone: advanced synth stack, but still cheap and annoying
+  // Improved ringtone: melodic, recognisable, pleasant but attention-grabbing
   callRingtone() {
     if (this._tryPlaySoundpack('ringtone')) return
 
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const sat = this._sat(ctx, 5.2)
-      const satGain = this._gain(ctx, 0.78)
-      const dly = this._delay(ctx, 0.11, 0.24)
-      const dg = this._gain(ctx, 0.16)
-      sat.connect(satGain)
-      satGain.connect(out)
-      dly.node.connect(dg)
-      dg.connect(out)
 
-      const pattern = [
-        { freq: 641.2, time: 0.00, dur: 0.17, vol: 0.13, detune: -21, mod: 2.71, idx: 1.7 },
-        { freq: 712.8, time: 0.22, dur: 0.14, vol: 0.12, detune: 11, mod: 1.99, idx: 1.9 },
-        { freq: 641.2, time: 0.47, dur: 0.18, vol: 0.12, detune: -13, mod: 2.42, idx: 1.6 },
-        { freq: 498.4, time: 0.74, dur: 0.26, vol: 0.11, detune: 7, mod: 1.51, idx: 2.2 },
-        { freq: 735.5, time: 1.32, dur: 0.13, vol: 0.10, detune: 19, mod: 2.91, idx: 1.8 },
-        { freq: 603.3, time: 1.56, dur: 0.17, vol: 0.10, detune: -9, mod: 1.73, idx: 2.1 },
-        { freq: 735.5, time: 1.83, dur: 0.21, vol: 0.12, detune: 24, mod: 2.62, idx: 2.3 },
-        { freq: 430.0, time: 2.51, dur: 0.31, vol: 0.10, detune: -17, mod: 1.37, idx: 2.5 }
+      // Reverb for space
+      const rev = this._reverb(ctx, 2.5, 2.5)
+      const revGain = this._gain(ctx, 0.18)
+      rev.connect(revGain); revGain.connect(out)
+
+      // Delay for shimmer
+      const dly = this._delay(ctx, 0.18, 0.35)
+      const dlyGain = this._gain(ctx, 0.22)
+      dly.node.connect(dlyGain); dlyGain.connect(out)
+
+      // Melodic pattern: two-bar phrase, repeated twice
+      // Uses a pleasant ascending/descending motif in C major
+      const phrase = [
+        { freq: 523.25, time: 0.00, dur: 0.18, vol: 0.28 },  // C5
+        { freq: 659.25, time: 0.22, dur: 0.18, vol: 0.26 },  // E5
+        { freq: 783.99, time: 0.44, dur: 0.18, vol: 0.26 },  // G5
+        { freq: 1046.50, time: 0.66, dur: 0.28, vol: 0.24 }, // C6
+        { freq: 783.99, time: 1.10, dur: 0.18, vol: 0.22 },  // G5
+        { freq: 659.25, time: 1.32, dur: 0.18, vol: 0.22 },  // E5
+        { freq: 523.25, time: 1.54, dur: 0.32, vol: 0.24 },  // C5 (hold)
       ]
 
       for (let repeat = 0; repeat < 2; repeat++) {
-        const repeatOffset = repeat * 3.05
+        const offset = repeat * 2.2
 
-        pattern.forEach((note, index) => {
-          const startTime = t + note.time + repeatOffset
-          const voiceBus = ctx.createGain()
-          const voiceFilter = ctx.createBiquadFilter()
-          const voiceGain = ctx.createGain()
-          const wobble = ctx.createOscillator()
-          const wobbleDepth = ctx.createGain()
+        phrase.forEach((note) => {
+          const startTime = t + note.time + offset
 
-          voiceFilter.type = 'bandpass'
-          voiceFilter.frequency.setValueAtTime(note.freq * (1.7 + (index * 0.04)), startTime)
-          voiceFilter.Q.setValueAtTime(4.2, startTime)
-          voiceGain.gain.setValueAtTime(0.0001, startTime)
-          voiceGain.gain.linearRampToValueAtTime(note.vol, startTime + 0.004)
-          voiceGain.gain.exponentialRampToValueAtTime(0.0001, startTime + note.dur)
+          // Main bell-like tone: sine + triangle blend
+          const mainOsc = ctx.createOscillator()
+          const mainGain = ctx.createGain()
+          mainOsc.type = 'sine'
+          mainOsc.frequency.setValueAtTime(note.freq, startTime)
+          mainGain.gain.setValueAtTime(0.0001, startTime)
+          mainGain.gain.linearRampToValueAtTime(note.vol, startTime + 0.008)
+          mainGain.gain.exponentialRampToValueAtTime(0.0001, startTime + note.dur + 0.15)
+          mainOsc.connect(mainGain)
+          mainGain.connect(out)
+          mainGain.connect(rev)
+          mainGain.connect(dly.node)
+          mainOsc.start(startTime)
+          mainOsc.stop(startTime + note.dur + 0.2)
+          this._playingSources.push(mainOsc)
 
-          wobble.type = 'triangle'
-          wobble.frequency.setValueAtTime(8 + index, startTime)
-          wobbleDepth.gain.setValueAtTime(90 + (index * 8), startTime)
-          wobble.connect(wobbleDepth)
-          wobbleDepth.connect(voiceFilter.frequency)
+          // Harmonic overtone at 2x frequency (octave) for brightness
+          const harmOsc = ctx.createOscillator()
+          const harmGain = ctx.createGain()
+          harmOsc.type = 'triangle'
+          harmOsc.frequency.setValueAtTime(note.freq * 2, startTime)
+          harmGain.gain.setValueAtTime(0.0001, startTime)
+          harmGain.gain.linearRampToValueAtTime(note.vol * 0.18, startTime + 0.006)
+          harmGain.gain.exponentialRampToValueAtTime(0.0001, startTime + note.dur * 0.6)
+          harmOsc.connect(harmGain)
+          harmGain.connect(out)
+          harmGain.connect(rev)
+          harmOsc.start(startTime)
+          harmOsc.stop(startTime + note.dur + 0.1)
+          this._playingSources.push(harmOsc)
 
-          voiceBus.connect(voiceFilter)
-          voiceFilter.connect(voiceGain)
-          voiceGain.connect(sat)
-          voiceGain.connect(dly.node)
-
-          const carrier = ctx.createOscillator()
-          const modOsc = ctx.createOscillator()
-          const modGain = ctx.createGain()
-          carrier.type = index % 2 === 0 ? 'square' : 'sawtooth'
-          modOsc.type = 'sine'
-          carrier.frequency.setValueAtTime(note.freq, startTime)
-          carrier.detune.setValueAtTime(note.detune, startTime)
-          modOsc.frequency.setValueAtTime(note.freq * note.mod, startTime)
-          modGain.gain.setValueAtTime(note.freq * note.idx, startTime)
-          modOsc.connect(modGain)
-          modGain.connect(carrier.frequency)
-          carrier.connect(voiceBus)
-          carrier.start(startTime)
-          modOsc.start(startTime)
-          carrier.stop(startTime + note.dur + 0.03)
-          modOsc.stop(startTime + note.dur + 0.03)
-          this._playingSources.push(carrier, modOsc)
-
-          const aliasLayer = ctx.createOscillator()
-          const aliasGain = ctx.createGain()
-          aliasLayer.type = 'triangle'
-          aliasLayer.frequency.setValueAtTime((note.freq * 2.03) + 9, startTime)
-          aliasLayer.detune.setValueAtTime(31 - (index * 3), startTime)
-          aliasGain.gain.setValueAtTime(0.0001, startTime)
-          aliasGain.gain.linearRampToValueAtTime(note.vol * 0.32, startTime + 0.002)
-          aliasGain.gain.exponentialRampToValueAtTime(0.0001, startTime + (note.dur * 0.7))
-          aliasLayer.connect(aliasGain)
-          aliasGain.connect(voiceBus)
-          aliasLayer.start(startTime)
-          aliasLayer.stop(startTime + note.dur)
-          this._playingSources.push(aliasLayer)
-
-          const thump = ctx.createOscillator()
-          const thumpGain = ctx.createGain()
-          thump.type = 'square'
-          thump.frequency.setValueAtTime(note.freq * 0.49, startTime)
-          thump.detune.setValueAtTime(-35, startTime)
-          thumpGain.gain.setValueAtTime(0.0001, startTime)
-          thumpGain.gain.linearRampToValueAtTime(note.vol * 0.3, startTime + 0.002)
-          thumpGain.gain.exponentialRampToValueAtTime(0.0001, startTime + (note.dur * 0.9))
-          thump.connect(thumpGain)
-          thumpGain.connect(voiceBus)
-          thump.start(startTime)
-          thump.stop(startTime + note.dur)
-          this._playingSources.push(thump)
-
-          const click = ctx.createBufferSource()
+          // Soft attack click for definition
+          const clickBuf = ctx.createBuffer(1, Math.max(32, Math.floor(ctx.sampleRate * 0.012)), ctx.sampleRate)
+          const clickData = clickBuf.getChannelData(0)
+          for (let i = 0; i < clickData.length; i++) {
+            clickData[i] = (Math.random() * 2 - 1) * (1 - i / clickData.length) * 0.4
+          }
+          const clickSrc = ctx.createBufferSource()
           const clickGain = ctx.createGain()
           const clickFilter = ctx.createBiquadFilter()
-          const clickBuffer = ctx.createBuffer(1, Math.max(64, Math.floor(ctx.sampleRate * 0.03)), ctx.sampleRate)
-          const clickData = clickBuffer.getChannelData(0)
-          for (let i = 0; i < clickData.length; i += 1) {
-            clickData[i] = (Math.random() * 2 - 1) * (1 - (i / clickData.length))
-          }
-          click.buffer = clickBuffer
-          clickFilter.type = 'highpass'
-          clickFilter.frequency.setValueAtTime(1800 + (index * 120), startTime)
-          clickGain.gain.setValueAtTime(note.vol * 0.18, startTime)
-          clickGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.028)
-          click.connect(clickFilter)
+          clickSrc.buffer = clickBuf
+          clickFilter.type = 'bandpass'
+          clickFilter.frequency.value = note.freq * 1.5
+          clickFilter.Q.value = 2
+          clickGain.gain.setValueAtTime(note.vol * 0.12, startTime)
+          clickGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.015)
+          clickSrc.connect(clickFilter)
           clickFilter.connect(clickGain)
-          clickGain.connect(sat)
-          click.start(startTime)
-          click.stop(startTime + 0.03)
-          this._playingSources.push(click)
-
-          wobble.start(startTime)
-          wobble.stop(startTime + note.dur + 0.02)
-          this._playingSources.push(wobble)
+          clickGain.connect(out)
+          clickSrc.start(startTime)
+          clickSrc.stop(startTime + 0.02)
+          this._playingSources.push(clickSrc)
         })
       }
     })
@@ -1500,13 +1403,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1519,13 +1422,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [440]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1538,13 +1441,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [330]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.015, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.06, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1557,13 +1460,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1576,13 +1479,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [130.81]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.015, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.06, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1595,13 +1498,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.05, 0.4)
-      const rg = this._gain(ctx, 0.04)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.08, 0.07, 0.01)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1614,11 +1517,11 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 1, 1)
       const dly = this._delay(ctx, 0.03, 0.3)
-      const rg = this._gain(ctx, 0.02)
-      const dg = this._gain(ctx, 0.3)
+      const rg = this._gain(ctx, 0.05)
+      const dg = this._gain(ctx, 0.35)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
-      const g = this._ambient(ctx, 800, t, 0.05, 0.008, 0.005)
+      const g = this._ambient(ctx, 800, t, 0.05, 0.025, 0.005)
       g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
@@ -1628,11 +1531,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [440]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.08, 0.015, 0.01)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.06, 0.35)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.4)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 440, t, 0.1, 0.055, 0.01)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -1643,13 +1549,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.2, 0.6)
-      const rg = this._gain(ctx, 0.1)
-      const dg = this._gain(ctx, 0.7)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.8)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25, 783.99, 1046.50]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.4, 0.04, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.4, 0.1, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1662,13 +1568,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.15, 0.5)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [392, 349.23, 311.13, 261.63]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.12, 0.35, 0.035, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.12, 0.35, 0.09, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1681,13 +1587,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.1, 0.4)
-      const rg = this._gain(ctx, 0.06)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.12)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [440, 440, 415.30, 415.30]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.15, 0.3, 0.03, 0.04)
+        const g = this._ambient(ctx, freq, t + i * 0.15, 0.3, 0.08, 0.04)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1700,13 +1606,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.15, 0.5)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25, 783.99]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.35, 0.04, 0.04)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.35, 0.1, 0.04)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1719,13 +1625,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.12, 0.5)
-      const rg = this._gain(ctx, 0.07)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.14)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [392, 329.63, 261.63]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.12, 0.3, 0.035, 0.05)
+        const g = this._ambient(ctx, freq, t + i * 0.12, 0.3, 0.09, 0.05)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1738,13 +1644,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.08, 0.4)
-      const rg = this._gain(ctx, 0.05)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [440, 554.37]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.2, 0.025, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.2, 0.07, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1757,13 +1663,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.08, 0.4)
-      const rg = this._gain(ctx, 0.05)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [440, 369.99]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.2, 0.025, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.2, 0.07, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1776,13 +1682,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.1, 0.5)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.14)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [587.33, 880]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.035, 0.03)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.09, 0.03)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1793,10 +1699,16 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
+      const rev = this._reverb(ctx, 3, 3)
+      const dly = this._delay(ctx, 0.1, 0.45)
+      const rg = this._gain(ctx, 0.18)
+      const dg = this._gain(ctx, 0.5)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 523.25, 523.25, 783.99]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.5, 0.3, 0.06, 0.02)
-        g.connect(out)
+        const g = this._ambient(ctx, freq, t + i * 0.5, 0.3, 0.12, 0.02)
+        g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
   }
@@ -1807,11 +1719,11 @@ class SoundService {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
-      const rg = this._gain(ctx, 0.05)
+      const rg = this._gain(ctx, 0.1)
       rev.connect(rg); rg.connect(out)
       const notes = [659.25]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.03, 0.01)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.08, 0.01)
         g.connect(out); g.connect(rev)
       })
     })
@@ -1824,13 +1736,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.1, 0.5)
-      const rg = this._gain(ctx, 0.06)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.12)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [329.63]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.25, 0.04, 0.02)
+        const g = this._ambient(ctx, freq, t, 0.25, 0.1, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1841,11 +1753,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [880]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.1, 0.03, 0.01)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.06, 0.4)
+      const rg = this._gain(ctx, 0.12)
+      const dg = this._gain(ctx, 0.45)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 880, t, 0.12, 0.07, 0.01)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -1854,11 +1769,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [220]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.04, 0.01)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.06, 0.35)
+      const rg = this._gain(ctx, 0.12)
+      const dg = this._gain(ctx, 0.4)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 220, t, 0.18, 0.09, 0.01)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -1868,11 +1786,11 @@ class SoundService {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
-      const rg = this._gain(ctx, 0.05)
+      const rg = this._gain(ctx, 0.1)
       rev.connect(rg); rg.connect(out)
       const notes = [440]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.025, 0.015)
+        const g = this._ambient(ctx, freq, t, 0.15, 0.07, 0.015)
         g.connect(out); g.connect(rev)
       })
     })
@@ -1885,13 +1803,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.1, 0.5)
-      const rg = this._gain(ctx, 0.07)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.14)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25, 783.99, 1046.50]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.2, 0.035, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.2, 0.09, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1904,13 +1822,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.08, 0.5)
-      const rg = this._gain(ctx, 0.06)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.12)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [698.46, 880, 1046.50]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.06, 0.15, 0.03, 0.015)
+        const g = this._ambient(ctx, freq, t + i * 0.06, 0.15, 0.08, 0.015)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1923,13 +1841,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.12, 0.6)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25, 783.99, 987.77, 1174.66]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.07, 0.25, 0.03, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.07, 0.25, 0.08, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1940,11 +1858,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [110]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.08, 0.01)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.05, 0.35)
+      const rg = this._gain(ctx, 0.14)
+      const dg = this._gain(ctx, 0.4)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 110, t, 0.18, 0.16, 0.01)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -1955,13 +1876,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.15, 0.5)
-      const rg = this._gain(ctx, 0.06)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.12)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.03, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.08, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1974,13 +1895,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.15, 0.6)
-      const rg = this._gain(ctx, 0.09)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.16)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.035, 0.03)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.09, 0.03)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -1993,13 +1914,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.15, 0.6)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.35, 0.035, 0.03)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.35, 0.09, 0.03)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -2010,11 +1931,11 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [1200]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.05, 0.02, 0.005)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 1.5, 1.5)
+      const rg = this._gain(ctx, 0.1)
+      rev.connect(rg); rg.connect(out)
+      const g = this._ambient(ctx, 1200, t, 0.06, 0.05, 0.005)
+      g.connect(out); g.connect(rev)
     })
   }
 
@@ -2024,11 +1945,11 @@ class SoundService {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
-      const rg = this._gain(ctx, 0.04)
+      const rg = this._gain(ctx, 0.08)
       rev.connect(rg); rg.connect(out)
       const notes = [392]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.12, 0.02, 0.015)
+        const g = this._ambient(ctx, freq, t, 0.12, 0.06, 0.015)
         g.connect(out); g.connect(rev)
       })
     })
@@ -2040,11 +1961,11 @@ class SoundService {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
-      const rg = this._gain(ctx, 0.04)
+      const rg = this._gain(ctx, 0.08)
       rev.connect(rg); rg.connect(out)
       const notes = [349.23]
       notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.1, 0.02, 0.015)
+        const g = this._ambient(ctx, freq, t, 0.1, 0.06, 0.015)
         g.connect(out); g.connect(rev)
       })
     })
@@ -2056,11 +1977,11 @@ class SoundService {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
-      const rg = this._gain(ctx, 0.05)
+      const rg = this._gain(ctx, 0.1)
       rev.connect(rg); rg.connect(out)
       const notes = [440, 554.37]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.05, 0.1, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t + i * 0.05, 0.1, 0.06, 0.01)
         g.connect(out); g.connect(rev)
       })
     })
@@ -2072,11 +1993,11 @@ class SoundService {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
-      const rg = this._gain(ctx, 0.04)
+      const rg = this._gain(ctx, 0.08)
       rev.connect(rg); rg.connect(out)
       const notes = [415.30, 349.23]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.05, 0.1, 0.02, 0.01)
+        const g = this._ambient(ctx, freq, t + i * 0.05, 0.1, 0.06, 0.01)
         g.connect(out); g.connect(rev)
       })
     })
@@ -2087,11 +2008,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [587.33]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.02, 0.015)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.07, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.45)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 587.33, t, 0.18, 0.06, 0.015)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -2100,11 +2024,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [493.88]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.02, 0.015)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.07, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.45)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 493.88, t, 0.18, 0.06, 0.015)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -2115,13 +2042,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.12, 0.5)
-      const rg = this._gain(ctx, 0.06)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.12)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25, 523.25, 783.99]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.2, 0.03, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.2, 0.08, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -2132,11 +2059,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [698.46]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.025, 0.015)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.07, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.45)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 698.46, t, 0.18, 0.07, 0.015)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -2145,11 +2075,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [392]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.15, 0.025, 0.015)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.07, 0.35)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.4)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 392, t, 0.18, 0.07, 0.015)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -2160,13 +2093,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 4, 4)
       const dly = this._delay(ctx, 0.15, 0.6)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.6)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.7)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [587.33, 739.99, 880, 1108.73]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.035, 0.03)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.3, 0.09, 0.03)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -2179,13 +2112,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.12, 0.5)
-      const rg = this._gain(ctx, 0.07)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.14)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [440, 369.99, 311.13, 261.63]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.03, 0.03)
+        const g = this._ambient(ctx, freq, t + i * 0.1, 0.25, 0.08, 0.03)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -2198,13 +2131,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.1, 0.5)
-      const rg = this._gain(ctx, 0.08)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.15)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [261.63, 246.94, 220, 196]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.3, 0.35, 0.04, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.3, 0.35, 0.1, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -2217,13 +2150,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.12, 0.5)
-      const rg = this._gain(ctx, 0.07)
-      const dg = this._gain(ctx, 0.5)
+      const rg = this._gain(ctx, 0.14)
+      const dg = this._gain(ctx, 0.6)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [349.23, 349.23, 440]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.15, 0.25, 0.035, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.15, 0.25, 0.09, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -2236,13 +2169,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 2, 2)
       const dly = this._delay(ctx, 0.1, 0.4)
-      const rg = this._gain(ctx, 0.05)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [440, 493.88, 523.25]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.2, 0.3, 0.03, 0.02)
+        const g = this._ambient(ctx, freq, t + i * 0.2, 0.3, 0.08, 0.02)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })
@@ -2253,11 +2186,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [330]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.1, 0.025, 0.01)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.06, 0.35)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.4)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 330, t, 0.12, 0.07, 0.01)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -2266,11 +2202,14 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [440]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.1, 0.025, 0.01)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 2, 2)
+      const dly = this._delay(ctx, 0.06, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.45)
+      rev.connect(rg); rg.connect(out)
+      dly.node.connect(dg); dg.connect(out)
+      const g = this._ambient(ctx, 440, t, 0.12, 0.07, 0.01)
+      g.connect(out); g.connect(dly.node); g.connect(rev)
     })
   }
 
@@ -2279,11 +2218,11 @@ class SoundService {
     this._play((ctx) => {
       const t = ctx.currentTime
       const out = this._out
-      const notes = [660]
-      notes.forEach((freq) => {
-        const g = this._ambient(ctx, freq, t, 0.05, 0.015, 0.008)
-        g.connect(out)
-      })
+      const rev = this._reverb(ctx, 1.5, 1.5)
+      const rg = this._gain(ctx, 0.08)
+      rev.connect(rg); rg.connect(out)
+      const g = this._ambient(ctx, 660, t, 0.07, 0.04, 0.008)
+      g.connect(out); g.connect(rev)
     })
   }
 
@@ -2293,11 +2232,11 @@ class SoundService {
       const t = ctx.currentTime
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
-      const rg = this._gain(ctx, 0.05)
+      const rg = this._gain(ctx, 0.1)
       rev.connect(rg); rg.connect(out)
       const notes = [987.77, 1318.51]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.05, 0.1, 0.025, 0.01)
+        const g = this._ambient(ctx, freq, t + i * 0.05, 0.1, 0.07, 0.01)
         g.connect(out); g.connect(rev)
       })
     })
@@ -2310,13 +2249,13 @@ class SoundService {
       const out = this._out
       const rev = this._reverb(ctx, 3, 3)
       const dly = this._delay(ctx, 0.1, 0.5)
-      const rg = this._gain(ctx, 0.05)
-      const dg = this._gain(ctx, 0.4)
+      const rg = this._gain(ctx, 0.1)
+      const dg = this._gain(ctx, 0.5)
       rev.connect(rg); rg.connect(out)
       dly.node.connect(dg); dg.connect(out)
       const notes = [523.25, 659.25]
       notes.forEach((freq, i) => {
-        const g = this._ambient(ctx, freq, t + i * 0.08, 0.15, 0.025, 0.015)
+        const g = this._ambient(ctx, freq, t + i * 0.08, 0.15, 0.07, 0.015)
         g.connect(out); g.connect(dly.node); g.connect(rev)
       })
     })

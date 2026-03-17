@@ -70,62 +70,154 @@
   display: block;
 }
 
-/* Voice Message - Discord style compact player */
+/* ── Voice Message Player ─────────────────────────────────────────────────── */
+/* Compact pill-shaped player where the waveform IS the seekbar               */
+
 .voice-message-player {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  background: var(--volt-bg-tertiary, #313244);
-  border-radius: 8px;
-  width: min(100%, 320px);
-  max-width: 100%;
+  padding: 10px 14px;
+  background: var(--volt-bg-tertiary, #2a2d3e);
+  border: 1px solid color-mix(in srgb, var(--volt-border, #3a3d52) 70%, transparent);
+  border-radius: 999px;
+  /* Fit within message content area — never overflow */
+  width: 100%;
+  max-width: 340px;
+  min-width: 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+  /* Prevent the player from being clipped by message padding */
+  overflow: hidden;
 }
 
 .voice-play-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
   border: none;
   background: var(--volt-primary, #89b4fa);
   color: white;
   border-radius: 50%;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--volt-primary, #89b4fa) 40%, transparent);
 }
 
 .voice-play-btn:hover {
   background: var(--volt-primary-dark, #74a8f7);
-  transform: scale(1.05);
+  transform: scale(1.08);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--volt-primary, #89b4fa) 50%, transparent);
+}
+
+.voice-play-btn:active {
+  transform: scale(0.96);
 }
 
 .voice-play-btn svg {
+  /* nudge play icon slightly right for optical centering */
   margin-left: 1px;
 }
 
-.voice-waveform {
+/* ── Waveform seekbar ─────────────────────────────────────────────────────── */
+.voice-waveform-seekbar {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 1;
-  height: 24px;
+  min-width: 0;
+  height: 32px;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  border-radius: 4px;
+  outline: none;
+  padding: 0 2px;
 }
 
-.voice-waveform span {
-  width: 3px;
-  background: var(--volt-primary, #89b4fa);
+.voice-waveform-seekbar:focus-visible {
+  box-shadow: 0 0 0 2px var(--volt-primary, #89b4fa);
+}
+
+.voice-waveform-seekbar.dragging {
+  cursor: grabbing;
+}
+
+.voice-wave-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 4px;
   border-radius: 2px;
-  opacity: 0.7;
+  background: color-mix(in srgb, var(--volt-primary, #89b4fa) 30%, var(--volt-text-muted, #a6adc8));
+  transition: background 0.08s ease, transform 0.08s ease;
+  pointer-events: none;
+  align-self: center;
 }
 
+/* Bars that have been played */
+.voice-wave-bar.played {
+  background: var(--volt-primary, #89b4fa);
+}
+
+/* Bars that are currently playing (subtle pulse) */
+.voice-wave-bar.playing {
+  background: color-mix(in srgb, var(--volt-primary, #89b4fa) 90%, white);
+}
+
+/* Hover: brighten all bars slightly */
+.voice-waveform-seekbar:hover .voice-wave-bar {
+  background: color-mix(in srgb, var(--volt-primary, #89b4fa) 45%, var(--volt-text-muted, #a6adc8));
+}
+
+.voice-waveform-seekbar:hover .voice-wave-bar.played {
+  background: color-mix(in srgb, var(--volt-primary, #89b4fa) 95%, white);
+}
+
+/* Playhead dot */
+.voice-playhead {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--volt-primary, #89b4fa);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25),
+              0 2px 6px color-mix(in srgb, var(--volt-primary, #89b4fa) 60%, transparent);
+  pointer-events: none;
+  transition: transform 0.08s ease;
+  z-index: 1;
+}
+
+.voice-waveform-seekbar:hover .voice-playhead,
+.voice-waveform-seekbar.dragging .voice-playhead {
+  transform: translate(-50%, -50%) scale(1.3);
+}
+
+/* Duration label */
 .voice-duration {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--volt-text-muted, #a6adc8);
   white-space: nowrap;
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* Responsive: full width on small screens */
+@media (max-width: 480px) {
+  .voice-message-player {
+    width: 100%;
+    border-radius: 16px;
+  }
 }
 
 /* Audio Viewer */

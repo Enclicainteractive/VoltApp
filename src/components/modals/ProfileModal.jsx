@@ -4,7 +4,7 @@ import {
   User, Activity, Shield, Clock, Globe,
   Github, Twitter, Youtube, Twitch, Gamepad2, Music,
   Server, Users, Link2, Hash, Zap, Sparkles,
-  Flag, Copy, Pencil, Check
+  Flag, Copy, Pencil, Check, Heart, Trash2, Send, MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiService } from '../../services/apiService';
@@ -17,6 +17,7 @@ import { getImageBaseForHost } from '../../services/hostMetadataService';
 import Avatar from '../Avatar';
 import MarkdownMessage from '../MarkdownMessage';
 import ContextMenu from '../ContextMenu';
+import GuildTagBadge from '../GuildTagBadge';
 import { useBanner } from '../../hooks/useAvatar';
 import './Modal.css';
 import './ProfileModal.css';
@@ -34,8 +35,118 @@ const SOCIAL_PLATFORMS = [
 const TABS = [
   { id: 'info', label: 'Info', icon: User },
   { id: 'activity', label: 'Activity', icon: Activity },
+  { id: 'comments', label: 'Comments', icon: MessageCircle },
   { id: 'privacy', label: 'Privacy', icon: Shield },
 ];
+
+/**
+ * Prefix every CSS selector in `css` with `scope` so that user-authored
+ * profile CSS cannot leak outside the specific modal instance.
+ *
+ * Handles:
+ *  - `.profile-modal-container` → rewritten to the scope selector itself
+ *    (since data-profile-id IS on the container element)
+ *  - Regular selectors:  .foo { }  →  [data-profile-id="x"] .foo { }
+ *  - At-rules with blocks: @keyframes, @media, @supports — left untouched
+ *    (keyframes don't need scoping; media/supports blocks are recursed into)
+ *  - Already-scoped selectors are not double-scoped.
+ */
+const scopeProfileCSS = (css, scope) => {
+  if (!css || !scope) return css || '';
+
+  // Simple tokeniser: split on `{` and `}` to walk the rule tree.
+  // We track brace depth so we can skip @keyframes bodies.
+  let result = '';
+  let i = 0;
+  let depth = 0;
+  let inKeyframes = false;
+
+  while (i < css.length) {
+    const openIdx = css.indexOf('{', i);
+    const closeIdx = css.indexOf('}', i);
+
+    if (openIdx === -1 && closeIdx === -1) {
+      // No more braces — append remainder
+      result += css.slice(i);
+      break;
+    }
+
+    if (closeIdx !== -1 && (openIdx === -1 || closeIdx < openIdx)) {
+      // Closing brace comes first
+      result += css.slice(i, closeIdx + 1);
+      i = closeIdx + 1;
+      depth--;
+      if (depth <= 0) {
+        depth = 0;
+        inKeyframes = false;
+      }
+      continue;
+    }
+
+    // Opening brace
+    const prelude = css.slice(i, openIdx).trim();
+
+    if (/^@keyframes/i.test(prelude) || /^@font-face/i.test(prelude)) {
+      // Don't scope keyframe / font-face blocks
+      result += css.slice(i, openIdx + 1);
+      i = openIdx + 1;
+      depth++;
+      inKeyframes = true;
+      continue;
+    }
+
+    if (/^@(media|supports|layer|container)/i.test(prelude)) {
+      // Pass through the at-rule header unchanged; inner rules will be scoped
+      result += css.slice(i, openIdx + 1);
+      i = openIdx + 1;
+      depth++;
+      continue;
+    }
+
+    if (inKeyframes || depth > 0) {
+      // Inside a keyframes / nested block — pass through verbatim
+      result += css.slice(i, openIdx + 1);
+      i = openIdx + 1;
+      depth++;
+      continue;
+    }
+
+    // Regular selector block at depth 0 — scope each comma-separated selector
+    const scopedSelector = prelude
+      .split(',')
+      .map(s => {
+        const trimmed = s.trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith(scope)) return trimmed; // already scoped
+
+        // Special case: .profile-modal-container targets the container itself
+        // (which has data-profile-id), so map it directly to the scope selector
+        // rather than nesting it as a child.
+        if (trimmed === '.profile-modal-container') return scope;
+
+        // If selector starts with .profile-modal-container followed by a
+        // combinator or pseudo, replace the prefix with the scope selector.
+        if (trimmed.startsWith('.profile-modal-container ') ||
+            trimmed.startsWith('.profile-modal-container.') ||
+            trimmed.startsWith('.profile-modal-container:') ||
+            trimmed.startsWith('.profile-modal-container>') ||
+            trimmed.startsWith('.profile-modal-container+') ||
+            trimmed.startsWith('.profile-modal-container~')) {
+          return scope + trimmed.slice('.profile-modal-container'.length);
+        }
+
+        return `${scope} ${trimmed}`;
+      })
+      .filter(Boolean)
+      .join(', ');
+
+    result += `\n${scopedSelector} {`;
+    i = openIdx + 1;
+    depth++;
+  }
+
+  return result;
+};
 
 const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab = 'info' }) => {
   const { t } = useTranslation();
@@ -60,6 +171,13 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
   const [bioDraft, setBioDraft] = useState('');
   const [editingSocials, setEditingSocials] = useState(false);
   const [socialDraft, setSocialDraft] = useState({});
+  // Comments state
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState('');
+
   // UI state
   const [contextMenu, setContextMenu] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -136,6 +254,113 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
     socket.on('user:status', handleStatus);
     return () => socket.off('user:status', handleStatus);
   }, [socket, userId]);
+
+  // Inject custom profile CSS + accent colour CSS variable
+  useEffect(() => {
+    const styleId = `profile-custom-css-${userId || 'unknown'}`;
+    let styleEl = document.getElementById(styleId);
+
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      document.head.appendChild(styleEl);
+    }
+
+    const accentColor = profile?.profileAccentColor || profile?.accentColor || profile?.customization?.accentColor || null;
+    const bannerEffect = profile?.bannerEffect || profile?.customization?.bannerEffect || null;
+    const profileCSS   = profile?.profileCSS   || profile?.customization?.profileCSS   || null;
+    const profileFont  = profile?.profileFont  || null;
+    const profileAnimation = profile?.profileAnimation || null;
+    const profileBackground = profile?.profileBackground || null;
+    const profileBackgroundType = profile?.profileBackgroundType || null;
+    const profileBackgroundOpacity = profile?.profileBackgroundOpacity ?? 100;
+
+    const parts = [];
+
+    // Scope all rules to this specific modal instance via data-profile-id
+    const scope = `[data-profile-id="${userId}"]`;
+
+    // 1. Accent colour → CSS variable override (covers ALL elements using var(--volt-primary))
+    if (accentColor) {
+      parts.push(`${scope} {
+  --profile-accent: ${accentColor};
+  --volt-primary: ${accentColor};
+  --volt-primary-dark: color-mix(in srgb, ${accentColor} 80%, black);
+}`);
+      // Apply accent to all interactive/accent elements
+      parts.push(`
+${scope} .btn-primary,
+${scope} .profile-bot-tag,
+${scope} .profile-avatar-edit-btn,
+${scope} .mutual-acronym,
+${scope} .activity-icon,
+${scope} .loading-spinner { background: ${accentColor} !important; border-color: ${accentColor} !important; }
+${scope} .profile-tab-btn.active,
+${scope} .stat-value,
+${scope} .section-edit-btn:hover { color: ${accentColor} !important; }
+${scope} .profile-tab-btn.active { border-bottom-color: ${accentColor} !important; }
+${scope} .bio-edit textarea:focus,
+${scope} .social-edit-row input:focus { border-color: ${accentColor} !important; }
+${scope} .privacy-option input[type="checkbox"] { accent-color: ${accentColor} !important; }
+${scope} .loading-spinner { border-top-color: ${accentColor} !important; border-color: rgba(128,128,128,0.3) !important; border-top-color: ${accentColor} !important; }
+`);
+    }
+
+    // 2. Profile font override
+    if (profileFont && profileFont !== 'default') {
+      parts.push(`${scope} { font-family: var(--font-${profileFont}, inherit) !important; }`);
+    }
+
+    // 3. Profile background (image or gradient) — also sets --profile-bg for banner fade
+    if (profileBackground) {
+      const opacity = profileBackgroundOpacity / 100;
+      if (profileBackgroundType === 'image') {
+        parts.push(`${scope} { --profile-bg: #000; background-image: url("${profileBackground}") !important; background-size: cover !important; background-position: center !important; }`);
+        parts.push(`${scope}::before { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,${1 - opacity}); pointer-events: none; z-index: 0; }`);
+      } else if (profileBackgroundType === 'gradient') {
+        // Extract approximate end color for banner fade
+        const gradMatch = profileBackground.match(/#([0-9a-fA-F]{3,6})\s*\)?\s*$/)
+        const bgEnd = gradMatch ? `#${gradMatch[1]}` : '#0d0d1a'
+        parts.push(`${scope} { --profile-bg: ${bgEnd}; background: ${profileBackground} !important; }`);
+      } else if (profileBackgroundType === 'solid') {
+        parts.push(`${scope} { --profile-bg: ${profileBackground}; background: ${profileBackground} !important; }`);
+      } else if (profileBackgroundType === 'blur') {
+        parts.push(`${scope} { backdrop-filter: blur(${Math.round((1 - opacity) * 20)}px); }`);
+      }
+    }
+
+    // 4. Profile animation
+    if (profileAnimation && profileAnimation !== 'none') {
+      parts.push(`${scope} { animation: profile-entrance-${profileAnimation} 0.4s ease-out; }`);
+    }
+
+    // 5. Banner effect class → keyframe animation
+    if (bannerEffect && bannerEffect !== 'none') {
+      parts.push(`${scope} .profile-banner-bg { animation: banner-effect-${bannerEffect} 4s ease-in-out infinite; }`);
+    }
+
+    // 6. User-authored profile CSS (scoped to this modal)
+    // Each selector in the CSS is prefixed with the scope attribute selector
+    // so styles cannot leak outside this specific modal instance.
+    if (profileCSS) {
+      const scopedCSS = scopeProfileCSS(profileCSS, scope);
+      parts.push(scopedCSS);
+    }
+
+    styleEl.textContent = parts.join('\n');
+
+    return () => {
+      if (styleEl) {
+        styleEl.textContent = '';
+        // Remove the element entirely to avoid accumulation
+        try { styleEl.remove(); } catch {}
+      }
+    };
+  }, [userId,
+      profile?.accentColor, profile?.profileAccentColor, profile?.bannerEffect, profile?.profileCSS,
+      profile?.profileFont, profile?.profileAnimation, profile?.profileBackground,
+      profile?.profileBackgroundType, profile?.profileBackgroundOpacity,
+      profile?.customization?.accentColor, profile?.customization?.bannerEffect, profile?.customization?.profileCSS]);
 
   // Close more menu when clicking outside
   useEffect(() => {
@@ -294,6 +519,192 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
     } catch (err) {
       console.error('Failed to update privacy setting:', err);
     }
+  };
+
+  // Load comments when comments tab is active
+  useEffect(() => {
+    if (activeTab === 'comments' && userId && !isBot) {
+      loadComments();
+    }
+  }, [activeTab, userId]);
+
+  const loadComments = async () => {
+    setCommentsLoading(true);
+    setCommentError('');
+    try {
+      const res = await apiService.getProfileComments(userId);
+      setComments(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      if (err?.response?.status === 403) {
+        setCommentError(err.response.data?.error || 'Comments are disabled on this profile.');
+      } else {
+        setCommentError('Failed to load comments.');
+      }
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    if (!commentDraft.trim() || commentSubmitting) return;
+    setCommentSubmitting(true);
+    setCommentError('');
+    try {
+      const res = await apiService.addProfileComment(userId, commentDraft.trim());
+      setComments(prev => [...prev, res.data]);
+      setCommentDraft('');
+    } catch (err) {
+      setCommentError(err?.response?.data?.error || 'Failed to post comment.');
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    try {
+      await apiService.deleteProfileComment(commentId, userId);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+    } catch (err) {
+      console.error('Failed to delete comment:', err);
+    }
+  };
+
+  const handleLikeComment = async (comment) => {
+    const alreadyLiked = comment.likes?.includes(currentUser?.id);
+    setComments(prev => prev.map(c => {
+      if (c.id !== comment.id) return c;
+      const likes = alreadyLiked
+        ? (c.likes || []).filter(id => id !== currentUser?.id)
+        : [...(c.likes || []), currentUser?.id];
+      return { ...c, likes };
+    }));
+    try {
+      if (alreadyLiked) {
+        await apiService.unlikeProfileComment(comment.id, userId);
+      } else {
+        await apiService.likeProfileComment(comment.id, userId);
+      }
+    } catch (err) {
+      setComments(prev => prev.map(c => c.id === comment.id ? comment : c));
+    }
+  };
+
+  const renderCommentsTab = () => {
+    const commentsDisabled = profile?.allowComments === false;
+    const canComment = !isBot && !isOwnProfile && !commentsDisabled;
+
+    return (
+      <div className="profile-tab-content">
+        <section className="profile-section">
+          <div className="section-header">
+            <h3><MessageCircle size={16} /> Comments {comments.length > 0 && `(${comments.length})`}</h3>
+          </div>
+
+          {commentsDisabled && !isOwnProfile ? (
+            <p className="empty-state">This user has disabled profile comments.</p>
+          ) : commentsLoading ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--volt-text-muted)' }}>
+              <div className="loading-spinner" style={{ margin: '0 auto 8px' }} />
+              Loading comments...
+            </div>
+          ) : (
+            <>
+              {commentError && !commentsLoading && (
+                <p className="empty-state" style={{ color: 'var(--volt-danger)', marginBottom: 12 }}>{commentError}</p>
+              )}
+              {comments.length === 0 && !commentError ? (
+                <p className="empty-state" style={{ marginBottom: 12 }}>No comments yet. Be the first!</p>
+              ) : (
+                <div className="profile-comments-list">
+                  {comments.map(comment => {
+                    const isAuthor = comment.authorId === currentUser?.id;
+                    const liked = comment.likes?.includes(currentUser?.id);
+                    return (
+                      <div key={comment.id} className="profile-comment">
+                        <Avatar
+                          src={comment.authorAvatar}
+                          fallback={comment.authorUsername}
+                          size={32}
+                          className="profile-comment-avatar"
+                        />
+                        <div className="profile-comment-body">
+                          <div className="profile-comment-header">
+                            <span className="profile-comment-author">{comment.authorUsername}</span>
+                            <span className="profile-comment-time">
+                              {new Date(comment.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                          </div>
+                          <p className="profile-comment-text">{comment.content}</p>
+                          <div className="profile-comment-actions">
+                            <button
+                              className={`profile-comment-like-btn ${liked ? 'liked' : ''}`}
+                              onClick={() => handleLikeComment(comment)}
+                              title={liked ? 'Unlike' : 'Like'}
+                            >
+                              <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
+                              {comment.likes?.length > 0 && <span>{comment.likes.length}</span>}
+                            </button>
+                            {(isAuthor || isOwnProfile) && (
+                              <button
+                                className="profile-comment-delete-btn"
+                                onClick={() => handleDeleteComment(comment.id)}
+                                title="Delete comment"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {canComment && (
+                <div className="profile-comment-input-area">
+                  <Avatar
+                    src={currentUser?.avatar}
+                    fallback={currentUser?.displayName || currentUser?.username}
+                    size={32}
+                  />
+                  <div className="profile-comment-input-wrap">
+                    <textarea
+                      className="profile-comment-input"
+                      placeholder="Leave a comment..."
+                      value={commentDraft}
+                      onChange={e => setCommentDraft(e.target.value.slice(0, 500))}
+                      rows={2}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSubmitComment();
+                        }
+                      }}
+                    />
+                    <div className="profile-comment-input-footer">
+                      <span className="char-count">{commentDraft.length}/500</span>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleSubmitComment}
+                        disabled={!commentDraft.trim() || commentSubmitting}
+                      >
+                        <Send size={13} /> {commentSubmitting ? 'Posting...' : 'Post'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {isOwnProfile && (
+                <p className="empty-state" style={{ marginTop: 8, fontSize: 11 }}>
+                  Manage comment permissions in the Privacy tab.
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      </div>
+    );
   };
 
   const handleReportUser = async () => {
@@ -600,6 +1011,28 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
                   onChange={(e) => handlePrivacyToggle('showMutualServers', e.target.checked)}
                 />
               </label>
+              <label className="privacy-option">
+                <div className="privacy-info">
+                  <span className="privacy-label">Show Voice Channel Status</span>
+                  <span className="privacy-desc">Display when you're in a voice channel</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={profile?.showVoiceChannel !== false}
+                  onChange={(e) => handlePrivacyToggle('showVoiceChannel', e.target.checked)}
+                />
+              </label>
+              <label className="privacy-option">
+                <div className="privacy-info">
+                  <span className="privacy-label">Show Klipy Activity</span>
+                  <span className="privacy-desc">Display your Klipy usage and preferences</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={profile?.showKlipy !== false}
+                  onChange={(e) => handlePrivacyToggle('showKlipy', e.target.checked)}
+                />
+              </label>
             </div>
           </section>
 
@@ -659,6 +1092,7 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
           <motion.div
             ref={modalRef}
             className="profile-modal-container"
+            data-profile-id={userId}
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 30 }}
@@ -666,6 +1100,10 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
               duration: 0.3, 
               ease: [0.22, 1, 0.36, 1]
             }}
+            style={profile?.accentColor || profile?.customization?.accentColor ? {
+              '--profile-accent': profile.accentColor || profile.customization?.accentColor,
+              '--volt-primary': profile.accentColor || profile.customization?.accentColor
+            } : undefined}
             onClick={e => e.stopPropagation()}
           >
             {/* Close Button */}
@@ -715,6 +1153,13 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
                 <p className="profile-username">
                   @{username}
                   {!isBot && profile?.host && <span className="profile-host">:{profile.host}</span>}
+                  {!isBot && profile?.guildTag && (
+                    <GuildTagBadge
+                      tag={profile.guildTag}
+                      serverId={profile.guildTagServerId}
+                      isPrivate={profile.guildTagPrivate}
+                    />
+                  )}
                 </p>
                 {profile?.ageVerification?.riskLevel === 'self_attested_adult' && (
                   <p className="profile-risk-note">
@@ -805,6 +1250,7 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
                 >
                   {activeTab === 'info' && renderInfoTab()}
                   {activeTab === 'activity' && renderActivityTab()}
+                  {activeTab === 'comments' && renderCommentsTab()}
                   {activeTab === 'privacy' && renderPrivacyTab()}
                 </motion.div>
               </AnimatePresence>

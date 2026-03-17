@@ -9,7 +9,10 @@ import { apiService } from '../services/apiService'
 import {
   buildClientSignature,
   runSafetyScan,
-  warmupSafetyModels
+  warmupSafetyModels,
+  quickSafetyCheck,
+  scanMessageAsync,
+  checkInputSafety
 } from '../services/localSafetyService'
 import {
   buildTransmitContentFlags,
@@ -45,6 +48,24 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
   const [isTyping, setIsTyping] = useState(false)
   const [typingUsers, setTypingUsers] = useState(new Set())
   const [sendError, setSendError] = useState('')
+  const [sendErrorTimeout, setSendErrorTimeout] = useState(null)
+
+  const dismissSendError = useCallback(() => {
+    if (sendErrorTimeout) {
+      clearTimeout(sendErrorTimeout)
+      setSendErrorTimeout(null)
+    }
+    setSendError('')
+  }, [sendErrorTimeout])
+
+  const showSendError = useCallback((message) => {
+    setSendError(message)
+    // Auto-dismiss after 5 seconds
+    const timeout = setTimeout(() => {
+      setSendError('')
+    }, 5000)
+    setSendErrorTimeout(timeout)
+  }, [])
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showKlipyPicker, setShowKlipyPicker] = useState(false)
   const [serverEmojis, setServerEmojis] = useState([])
@@ -251,45 +272,14 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
     if ((!inputValue.trim() && attachments.length === 0) || !socket) return
 
     isSendingRef.current = true
-    
+
     let messageContent = inputValue.trim()
     const displayContent = messageContent
+    const snapshotAttachments = [...attachments]
+    const snapshotReplyingTo = replyingTo
     let encryptedData = null
 
-    // Local-only safety moderation before encryption/send.
-    // We never transmit content or scores, only boolean flags when a threat is escalated.
-    try {
-      const { flags, safety } = await runSafetyScan({
-        text: messageContent,
-        attachments,
-        recipient: { isMinor: false, isUnder16: false },
-        allowBlockingModels: false
-      })
-
-      if (safety.shouldBlock) {
-        setSendError(t('chat.automodBlocked', 'Message blocked by local safety policy.'))
-        if (safety.shouldReport) {
-          const reportPayload = {
-            contextType: 'channel',
-            reportType: 'threat',
-            accusedUserId: user?.id || null,
-            targetUserId: null,
-            channelId,
-            contentFlags: flags
-          }
-          const signature = await buildClientSignature(reportPayload)
-          await apiService.submitSafetyReport({
-            ...reportPayload,
-            clientSignature: signature
-          }).catch(() => {})
-        }
-        isSendingRef.current = false
-        return
-      }
-    } catch (err) {
-      console.error('[ChatArea] Local safety moderation failed:', err)
-    }
-
+    // ── Encryption ────────────────────────────────────────────────────────
     // Security hardening: when encryption is enabled for a server, require
     // True E2EE and do not silently fall back to legacy server-readable mode.
     const trueE2eeRequired = serverId && e2eTrue
@@ -314,7 +304,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
         return
       }
     }
-    
+
     // Legacy fallback is only used when True E2EE is not required/enabled.
     if (!trueE2eeRequired && !encryptedData?.encrypted && serverId && hasDecryptedKey(serverId) && isEncryptionEnabled(serverId)) {
       try {
@@ -331,13 +321,16 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
         setEncryptionError('encryption_failed')
       }
     }
-    
+
+    // ── Optimistic send ───────────────────────────────────────────────────
+    // Add the message to the UI immediately so the user sees it as "sending"
+    // and can start typing the next message without waiting for the scan.
     const clientNonce = `chn_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
     const messageData = {
       channelId,
       content: messageContent,
-      replyTo: replyingTo?.id,
-      attachments: attachments.length > 0 ? attachments : undefined,
+      replyTo: snapshotReplyingTo?.id,
+      attachments: snapshotAttachments.length > 0 ? snapshotAttachments : undefined,
       encrypted: encryptedData?.encrypted || false,
       iv: encryptedData?.iv,
       epoch: encryptedData?.epoch || null,
@@ -354,8 +347,8 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
       content: displayContent,
       mentions: null,
       timestamp: new Date().toISOString(),
-      attachments: attachments.length > 0 ? attachments : [],
-      replyTo: replyingTo || null,
+      attachments: snapshotAttachments.length > 0 ? snapshotAttachments : [],
+      replyTo: snapshotReplyingTo || null,
       encrypted: encryptedData?.encrypted || false,
       iv: encryptedData?.iv || null,
       epoch: encryptedData?.epoch || null,
@@ -364,17 +357,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
       _sendStatus: 'sending'
     })
 
-    console.log('[ChatArea] Sending message:', messageData)
-    
-    // Send with acknowledgment for immediate feedback
-    socket.emit('message:send', messageData, (ack) => {
-      if (ack && ack.success) {
-        console.log('[ChatArea] Message acknowledged:', ack.messageId)
-        onMessageAck?.(channelId, clientNonce, ack.messageId)
-      }
-    })
-    
-    soundService.messageSent()
+    // Clear input immediately so the user can type the next message.
     setInputValue('')
     inputRef.current?.setValueAndCaret?.('', 0)
     setAttachments([])
@@ -383,49 +366,97 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
     setIsTyping(false)
     setShowMentionSuggestions(false)
     setShowEmojiPicker(false)
-    
     isSendingRef.current = false
+
+    // Send message immediately - no client-side blocking
+    // Server handles moderation; client only logs for analytics
+    console.log('[ChatArea] Sending message:', messageData)
+    socket.emit('message:send', messageData, (ack) => {
+      if (ack && ack.success) {
+        console.log('[ChatArea] Message acknowledged:', ack.messageId)
+        onMessageAck?.(channelId, clientNonce, ack.messageId)
+      }
+    })
+    soundService.messageSent()
+
+    // Optional: run AI scan purely for analytics/logging (non-blocking)
+    scanMessageAsync({ text: displayContent, attachments: snapshotAttachments })
+      .then(async ({ flags, safety }) => {
+        // Only log - never block user messages
+        if (safety.shouldReport) {
+          const reportPayload = {
+            contextType: 'channel',
+            reportType: 'threat',
+            accusedUserId: user?.id || null,
+            targetUserId: null,
+            channelId,
+            contentFlags: flags
+          }
+          const signature = await buildClientSignature(reportPayload)
+          apiService.submitSafetyReport({ ...reportPayload, clientSignature: signature }).catch(() => {})
+        }
+      })
+      .catch(() => {})
   }
 
+  // Debounce ref for mention scanning — runs after user pauses typing
+  const mentionDebounceRef = useRef(null)
+
   // Called by ChatInput with a plain string (the current innerText)
+  // Keep this as lean as possible — only setInputValue is immediate.
+  // All expensive work (DOM caret read, member filter, setState cascade)
+  // is deferred 150ms so it only runs when the user pauses typing.
   const handleInputChange = (value) => {
     setInputValue(value)
-    
-    // Read cursor position from the actual contentEditable via the forwarded ref
-    const caretPos = inputRef.current?.getCaretPosition?.() ?? value.length
-    const textBeforeCursor = value.slice(0, caretPos)
-    const mentionMatch = textBeforeCursor.match(/@([a-zA-Z0-9_]*)$/)
-    
-    if (mentionMatch) {
-      const query = mentionMatch[1].toLowerCase()
-      setMentionQuery(query)
-      setShowMentionSuggestions(true)
-      setSelectedMentionIndex(0)
-      
-      // Special mentions always shown, filter members by query
-      const specials = [
-        { id: 'everyone', username: 'everyone', displayName: '@everyone — notify all members', type: 'special', color: 'var(--volt-warning)' },
-        { id: 'here', username: 'here', displayName: '@here — notify online members', type: 'special', color: 'var(--volt-primary-light)' },
-      ].filter(s => !query || s.username.startsWith(query))
 
-      const memberMatches = members.filter(m => 
-        !query ||
-        m.username?.toLowerCase().startsWith(query) || 
-        m.displayName?.toLowerCase().startsWith(query) ||
-        m.username?.toLowerCase().includes(query) || 
-        m.displayName?.toLowerCase().includes(query)
-      ).slice(0, 8)
-
-      setMentionSuggestions([...specials, ...memberMatches])
-    } else {
+    // Fast path: if there's no '@' anywhere in the value, skip mention work entirely
+    const hasMentionChar = value.includes('@')
+    if (!hasMentionChar && showMentionSuggestions) {
       setShowMentionSuggestions(false)
     }
-    
-    if (!isTyping && value.length > 0) {
-      setIsTyping(true)
-      socket?.emit('message:typing', { channelId })
-    }
 
+    // Debounce all expensive work — runs 150ms after user stops typing
+    clearTimeout(mentionDebounceRef.current)
+    mentionDebounceRef.current = setTimeout(() => {
+      // Mention detection: read caret position from DOM (layout query — deferred)
+      if (hasMentionChar) {
+        const caretPos = inputRef.current?.getCaretPosition?.() ?? value.length
+        const textBeforeCursor = value.slice(0, caretPos)
+        const mentionMatch = textBeforeCursor.match(/@([a-zA-Z0-9_]*)$/)
+
+        if (mentionMatch) {
+          const query = mentionMatch[1].toLowerCase()
+          setMentionQuery(query)
+          setShowMentionSuggestions(true)
+          setSelectedMentionIndex(0)
+
+          const specials = [
+            { id: 'everyone', username: 'everyone', displayName: '@everyone — notify all members', type: 'special', color: 'var(--volt-warning)' },
+            { id: 'here', username: 'here', displayName: '@here — notify online members', type: 'special', color: 'var(--volt-primary-light)' },
+          ].filter(s => !query || s.username.startsWith(query))
+
+          const memberMatches = members.filter(m =>
+            !query ||
+            m.username?.toLowerCase().startsWith(query) ||
+            m.displayName?.toLowerCase().startsWith(query) ||
+            m.username?.toLowerCase().includes(query) ||
+            m.displayName?.toLowerCase().includes(query)
+          ).slice(0, 8)
+
+          setMentionSuggestions([...specials, ...memberMatches])
+        } else {
+          setShowMentionSuggestions(false)
+        }
+      }
+
+      // Typing indicator — emit once when user starts typing, reset on pause
+      if (!isTyping && value.length > 0) {
+        setIsTyping(true)
+        socket?.emit('message:typing', { channelId })
+      }
+    }, 150)
+
+    // Typing stop timer — always reset so it fires 2s after last keystroke
     clearTimeout(typingTimeoutRef.current)
     typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false)
@@ -1045,8 +1076,17 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
       )}
 
       {sendError && (
-        <div className="age-warning-banner">
-          {sendError}
+        <div className="safety-toast">
+          <span className="safety-toast-icon">⚠️</span>
+          <span className="safety-toast-message">{sendError}</span>
+          <button 
+            type="button" 
+            className="safety-toast-close"
+            onClick={dismissSendError}
+            title={t('common.close', 'Close')}
+          >
+            <XMarkIcon size={16} />
+          </button>
         </div>
       )}
 
@@ -1237,6 +1277,8 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
             onEmojiClick={toggleEmojiPicker}
             onKlipyClick={toggleKlipyPicker}
             onVoiceMessageSent={handleVoiceMessageSent}
+            voiceContext="channel"
+            voiceServerId={serverId}
             customEmojis={serverEmojis}
           />
 

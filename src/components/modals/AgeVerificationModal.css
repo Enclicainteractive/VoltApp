@@ -660,6 +660,13 @@ body.age-verification-modal-open {
   animation: shakeX 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
+.quality-hint--good {
+  background: color-mix(in srgb, var(--volt-bg-secondary) 82%, var(--volt-success) 18%);
+  border-color: rgba(var(--volt-success-rgb, 45, 212, 191), 0.27);
+  color: var(--volt-success);
+  animation: fadeInUp 0.3s both;
+}
+
 @keyframes shakeX {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-6px); }

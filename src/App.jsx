@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { SocketProvider, useSocket } from './contexts/SocketContext'
@@ -19,6 +19,7 @@ import BirthDateRequiredModal from './components/modals/BirthDateRequiredModal'
 import IncomingCallModal from './components/IncomingCallModal'
 import ScreenSharePicker from './components/ScreenSharePicker'
 import { ReconnectingOverlay } from './components/LoadingScreen'
+import GlobalKeyboardShortcuts from './components/GlobalKeyboardShortcuts'
 import { soundService } from './services/soundService'
 import apiService from './services/apiService'
 import { settingsService } from './services/settingsService'
@@ -365,8 +366,9 @@ function App() {
               <UpdateBanner />
               <DiscordRichPresenceSync />
               <VoiceProvider>
-                <ScreenSharePickerWrapper />
-                <SelfVoltProvider>
+                <GlobalKeyboardShortcuts>
+                  <ScreenSharePickerWrapper />
+                  <SelfVoltProvider>
                   <E2eProvider>
                     <E2eTrueProvider>
                       <CallProvider>
@@ -394,6 +396,7 @@ function App() {
                     </E2eTrueProvider>
                   </E2eProvider>
                 </SelfVoltProvider>
+                </GlobalKeyboardShortcuts>
               </VoiceProvider>
             </SocketProvider>
           </ThemeProvider>

@@ -200,11 +200,17 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
     const userName = sdk?.session?.user?.username || sdk?.user?.username || 'Anonymous'
     setUsername(userName)
 
+    // Clear old participants on rejoin
+    setParticipants([])
+    setRemoteCursors({})
+
     sdk.emitEvent('bytebeat:join', { userId: ownId, username: userName }, { serverRelay: true })
 
+    // Request participants list and sync
     setTimeout(() => {
       sdk.emitEvent('bytebeat:request-sync', { userId: ownId }, { serverRelay: true })
-    }, 1000)
+      sdk.emitEvent('bytebeat:request-participants', { userId: ownId }, { serverRelay: true })
+    }, 1500)
 
     return () => {
       sdk.emitEvent('bytebeat:leave', { userId: ownId }, { serverRelay: true })
@@ -340,7 +346,8 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
 
       if (evt.eventType === 'bytebeat:join') {
         const { userId, username } = evt.payload || {}
-        if (userId) {
+        const ownId = sdk?.session?.user?.id || sdk?.user?.id
+        if (userId && userId !== ownId) {
           clearTimeout(participantTimeoutsRef.current[userId])
           delete participantTimeoutsRef.current[userId]
           setParticipants(prev => {
@@ -349,6 +356,29 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
             const color = colors[userId.charCodeAt(0) % colors.length]
             return [...prev, { id: userId, username: username || 'Unknown', color }]
           })
+          // Broadcast current participants to the new joiner
+          const currentParticipants = participants.map(p => ({ id: p.id, username: p.username }))
+          if (currentParticipants.length > 0) {
+            sdk.emitEvent('bytebeat:participants-list', { 
+              participants: currentParticipants,
+              requesterId: userId 
+            }, { serverRelay: true })
+          }
+        }
+      }
+
+      if (evt.eventType === 'bytebeat:participants-list') {
+        const { participants: remoteParticipants, requesterId } = evt.payload || {}
+        const ownId = sdk?.session?.user?.id || sdk?.user?.id
+        // Only process if we're the requester
+        if (requesterId === ownId && Array.isArray(remoteParticipants)) {
+          const colors = ['#f472b6', '#34d399', '#60a5fa', '#fbbf24', '#a78bfa', '#fb923c']
+          const newParticipants = remoteParticipants.map((p, i) => ({
+            id: p.id,
+            username: p.username,
+            color: colors[i % colors.length]
+          }))
+          setParticipants(newParticipants)
         }
       }
 

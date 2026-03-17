@@ -8,8 +8,9 @@
   border: 1px solid var(--volt-border);
   overflow: hidden;
   width: 100%;
-  min-height: 480px;
-  max-height: 80vh;
+  min-height: 600px;
+  max-height: 92vh;
+  height: 92vh;
 }
 
 /* Header */

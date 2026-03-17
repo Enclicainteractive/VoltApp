@@ -80,7 +80,7 @@
   left: 0;
   right: 0;
   height: 60px;
-  background: linear-gradient(transparent, var(--volt-bg-secondary));
+  background: linear-gradient(transparent, var(--profile-bg, var(--volt-bg-secondary)));
 }
 
 /* Banner Edit Button */
@@ -242,6 +242,12 @@
 .profile-host {
   color: var(--volt-text-muted);
   font-weight: 400;
+}
+
+.profile-guild-tag {
+  color: var(--volt-primary);
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .profile-risk-note {
@@ -866,6 +872,150 @@
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* ─── Profile Comments ─────────────────────────────────────────────────────── */
+
+.profile-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.profile-comment {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.profile-comment-avatar {
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.profile-comment-body {
+  flex: 1;
+  min-width: 0;
+  background: var(--volt-bg-secondary);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.profile-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.profile-comment-author {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+}
+
+.profile-comment-time {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+  margin-left: auto;
+}
+
+.profile-comment-text {
+  font-size: 13px;
+  color: var(--volt-text-primary);
+  line-height: 1.5;
+  margin: 0 0 6px;
+  word-break: break-word;
+}
+
+.profile-comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-comment-like-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.profile-comment-like-btn:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.profile-comment-like-btn.liked {
+  color: #f87171;
+}
+
+.profile-comment-delete-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--volt-text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  margin-left: auto;
+}
+
+.profile-comment-delete-btn:hover {
+  color: var(--volt-danger);
+  background: rgba(242, 63, 67, 0.1);
+}
+
+/* Comment input area */
+.profile-comment-input-area {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--volt-border);
+}
+
+.profile-comment-input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-comment-input {
+  width: 100%;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--volt-text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  resize: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.profile-comment-input:focus {
+  outline: none;
+  border-color: var(--volt-primary);
+}
+
+.profile-comment-input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 /* Responsive */

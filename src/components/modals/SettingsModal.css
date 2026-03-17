@@ -1523,3 +1523,30 @@
 .animation-modal-content .simple-modal-body {
   max-height: 400px;
 }
+
+/* Customization section title */
+.customization-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--volt-text-muted);
+  margin: 16px 0 8px;
+  padding: 0 4px;
+}
+
+/* Color customizer modal */
+.color-customizer-modal-content {
+  background: var(--volt-bg-secondary);
+  border-radius: var(--border-radius-lg);
+  max-width: 500px;
+  width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.color-customizer-modal-content .simple-modal-body {
+  flex: 1;
+  overflow-y: auto;
+}

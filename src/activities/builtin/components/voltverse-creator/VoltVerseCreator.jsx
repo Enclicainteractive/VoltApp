@@ -480,14 +480,31 @@ const PropertiesPanel = ({ entity, mode, avatarData, onUpdateObject, onUpdateSpa
         <div className="vv-panel-section">
           <h4>Material</h4>
           <div className="vv-form-group">
+            <label>Color</label>
+            <input type="color" value={object.material?.color || '#6366f1'}
+              onChange={(event) => updateCurrent({ material: { ...object.material, color: event.target.value } })} />
+          </div>
+          <div className="vv-form-group">
             <label>Preset</label>
-            <select value={object.material?.preset || 'standard'} onChange={(event) => updateCurrent({ material: { preset: event.target.value } })}>
+            <select value={object.material?.preset || 'standard'}
+              onChange={(event) => updateCurrent({ material: { ...object.material, preset: event.target.value } })}>
               {MATERIAL_PRESETS.map((preset) => <option key={preset} value={preset}>{preset}</option>)}
             </select>
           </div>
           <div className="vv-form-group">
+            <label>Roughness: {(object.material?.roughness ?? 0.5).toFixed(2)}</label>
+            <input type="range" min="0" max="1" step="0.01" value={object.material?.roughness ?? 0.5}
+              onChange={(event) => updateCurrent({ material: { ...object.material, roughness: Number(event.target.value) } })} />
+          </div>
+          <div className="vv-form-group">
+            <label>Metalness: {(object.material?.metalness ?? 0.1).toFixed(2)}</label>
+            <input type="range" min="0" max="1" step="0.01" value={object.material?.metalness ?? 0.1}
+              onChange={(event) => updateCurrent({ material: { ...object.material, metalness: Number(event.target.value) } })} />
+          </div>
+          <div className="vv-form-group">
             <label>Shader</label>
-            <select value={object.material?.shaderId || 'none'} onChange={(event) => updateCurrent({ material: { shaderId: event.target.value === 'none' ? null : event.target.value } })}>
+            <select value={object.material?.shaderId || 'none'}
+              onChange={(event) => updateCurrent({ material: { ...object.material, shaderId: event.target.value === 'none' ? null : event.target.value } })}>
               {BUILTIN_SHADERS.map((shader) => <option key={shader} value={shader}>{shader}</option>)}
             </select>
           </div>
@@ -616,9 +633,39 @@ const SceneTransformGizmo = ({ selectedEntity, isPlaying, activeTool, transformM
   return <TransformControls ref={transformRef} mode={transformMode} onMouseUp={commitTransform}><group ref={groupRef} /></TransformControls>
 }
 
+// ─── Primitive geometry selector ─────────────────────────────────────────────
+function PrimitiveGeometry({ type }) {
+  switch (type) {
+    case 'sphere':      return <sphereGeometry args={[0.5, 32, 32]} />
+    case 'cylinder':    return <cylinderGeometry args={[0.5, 0.5, 1, 32]} />
+    case 'cone':        return <coneGeometry args={[0.5, 1, 32]} />
+    case 'torus':       return <torusGeometry args={[0.4, 0.18, 16, 48]} />
+    case 'plane':       return <planeGeometry args={[1, 1]} />
+    case 'capsule':     return <capsuleGeometry args={[0.3, 0.6, 8, 16]} />
+    case 'icosahedron': return <icosahedronGeometry args={[0.55, 1]} />
+    default:            return <boxGeometry args={[1, 1, 1]} />
+  }
+}
+
+// ─── Material preset selector ─────────────────────────────────────────────────
+function PrimitiveMaterial({ preset, color, roughness, metalness, shaderId }) {
+  const col = color || '#6366f1'
+  const r   = roughness ?? 0.5
+  const m   = metalness ?? 0.1
+  switch (preset) {
+    case 'matte':    return <meshStandardMaterial color={col} roughness={0.95} metalness={0} />
+    case 'chrome':   return <meshStandardMaterial color={col} roughness={0.05} metalness={1} />
+    case 'glass':    return <meshPhysicalMaterial color={col} roughness={0} metalness={0} transmission={0.9} transparent opacity={0.3} />
+    case 'emissive': return <meshStandardMaterial color={col} emissive={col} emissiveIntensity={0.8} roughness={0.4} metalness={0} />
+    case 'toon':     return <meshToonMaterial color={col} />
+    default:         return <meshStandardMaterial color={col} roughness={r} metalness={m} />
+  }
+}
+
 const SceneObject = ({ data, assets, isSelected, onSelect }) => {
   const modelAsset = assets?.models?.find((asset) => asset.id === (data.assetRef || data.model?.assetRef))
   const modelSrc = modelAsset?.src || modelAsset?.modelUrl || data.modelUrl || null
+  const mat = data.material || {}
 
   return (
     <group position={data.position} rotation={data.rotation} scale={data.scale}>
@@ -627,12 +674,23 @@ const SceneObject = ({ data, assets, isSelected, onSelect }) => {
           <ModelAsset asset={modelAsset || { src: modelSrc, format: data.modelFormat }} src={modelSrc} />
         ) : (
           <>
-            <boxGeometry args={[1, 1, 1]} />
-            <meshStandardMaterial color={data.material?.color || '#6366f1'} />
+            <PrimitiveGeometry type={data.type} />
+            <PrimitiveMaterial
+              preset={mat.preset}
+              color={mat.color}
+              roughness={mat.roughness}
+              metalness={mat.metalness}
+              shaderId={mat.shaderId}
+            />
           </>
         )}
       </mesh>
-      {isSelected ? <mesh><boxGeometry args={[(data.scale?.[0] || 1) + 0.1, (data.scale?.[1] || 1) + 0.1, (data.scale?.[2] || 1) + 0.1]} /><meshBasicMaterial color="#6366f1" wireframe transparent opacity={0.8} /></mesh> : null}
+      {isSelected ? (
+        <mesh>
+          <boxGeometry args={[(data.scale?.[0] || 1) + 0.12, (data.scale?.[1] || 1) + 0.12, (data.scale?.[2] || 1) + 0.12]} />
+          <meshBasicMaterial color="#6366f1" wireframe transparent opacity={0.8} />
+        </mesh>
+      ) : null}
     </group>
   )
 }

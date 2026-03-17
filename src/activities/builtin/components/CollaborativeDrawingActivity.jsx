@@ -30,12 +30,13 @@ const REMOTE_CURSOR_TTL_MS = 4000
 const MAX_IMAGE_EDGE = 960
 const MIN_IMAGE_EDGE = 48
 const RESIZE_HANDLE_RADIUS = 12
-const MAX_IMAGE_BYTES = 220 * 1024
-const MAX_BOARD_PAYLOAD_BYTES = 850 * 1024
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024   // 5MB per image
+const MAX_BOARD_PAYLOAD_BYTES = 20 * 1024 * 1024  // 20MB total board
 const DEFAULT_STAGE_SIZE = { width: 1280, height: 760 }
 const ZOOM_IDLE_MS = 120
 const BOARD_CHUNK_SIZE = 32 * 1024
-const STROKE_CHUNK_POINTS = 50
+const STROKE_CHUNK_POINTS = 25
+const STROKE_CHUNK_THRESHOLD = 512
 
 const TOOL_IDS = {
   SELECT: 'select',
@@ -730,7 +731,8 @@ const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
     
     const pointsStr = JSON.stringify(points)
     
-    if (pointsStr.length > 2048) {
+    // Use lower threshold to avoid payload too large errors
+    if (points.length > STROKE_CHUNK_POINTS || pointsStr.length > STROKE_CHUNK_THRESHOLD) {
       const chunkPoints = []
       for (let i = 0; i < points.length; i += STROKE_CHUNK_POINTS) {
         chunkPoints.push(points.slice(i, i + STROKE_CHUNK_POINTS))
@@ -749,7 +751,7 @@ const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
             chunk: chunkMeta,
             chunkPoints: chunk
           }, { serverRelay: true })
-        }, idx * 30)
+        }, idx * 50)
       })
     } else {
       sdk.emitEvent('drawing:stroke', {

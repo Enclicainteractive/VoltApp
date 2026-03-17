@@ -164,6 +164,8 @@ const ChatInput = forwardRef((props, ref) => {
     onEmojiClick,
     onKlipyClick,
     onVoiceMessageSent,
+    voiceContext = 'channel',
+    voiceServerId = null,
     customEmojis = [],
     className = ''
   } = props
@@ -573,9 +575,11 @@ const ChatInput = forwardRef((props, ref) => {
       </div>
 
       {onVoiceMessageSent && (
-        <VoiceRecorder 
-          onVoiceMessageSent={onVoiceMessageSent} 
-          disabled={disabled} 
+        <VoiceRecorder
+          onVoiceMessageSent={onVoiceMessageSent}
+          disabled={disabled}
+          context={voiceContext}
+          serverId={voiceServerId}
         />
       )}
 

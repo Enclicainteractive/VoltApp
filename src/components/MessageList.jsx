@@ -10,6 +10,7 @@ import FileAttachment from './FileAttachment'
 import ContextMenu from './ContextMenu'
 import ReactionEmojiPicker from './ReactionEmojiPicker'
 import BotUIMessage from './BotUIMessage'
+import GuildTagBadge from './GuildTagBadge'
 import { deserializeReactionEmoji, serializeReactionEmoji } from '../utils/reactionEmoji'
 import '../assets/styles/MessageList.css'
 
@@ -61,6 +62,8 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
   const [initialLoad, setInitialLoad] = useState(true)
   const [selectedMessages, setSelectedMessages] = useState(new Set())
   const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [scrollBtnLeaving, setScrollBtnLeaving] = useState(false)
   const prevMessageCountRef = useRef(0)
   const scrollPositionRef = useRef(0)
   const isAtBottomRef = useRef(true)
@@ -114,11 +117,13 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
     clearSelection()
   }
 
-  // Auto-scroll when new messages arrive
+  // Track unread count when not at bottom
   useEffect(() => {
     if (safeMessages.length > prevMessageCountRef.current) {
-      const container = containerRef.current
-      if (container && isAtBottomRef.current) {
+      const newCount = safeMessages.length - prevMessageCountRef.current
+      if (!isAtBottomRef.current) {
+        setUnreadCount(prev => prev + newCount)
+      } else {
         scrollToBottom()
       }
     }
@@ -185,9 +190,14 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
     }
   }, [onSaveScrollPosition])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-  }
+  const scrollToBottom = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+    // Smooth scroll to bottom
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    setUnreadCount(0)
+    setScrollBtnLeaving(false)
+  }, [])
 
   const scrollToMessage = useCallback((messageId) => {
     const element = document.getElementById(`message-${messageId}`)
@@ -594,11 +604,35 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
     </div>
   ) : null
 
+  // Animate out when reaching bottom
+  useEffect(() => {
+    if (isAtBottom) {
+      if (unreadCount > 0) setUnreadCount(0)
+      // Trigger leave animation then hide
+      if (!scrollBtnLeaving) {
+        setScrollBtnLeaving(true)
+        const t = setTimeout(() => setScrollBtnLeaving(false), 280)
+        return () => clearTimeout(t)
+      }
+    }
+  }, [isAtBottom])
+
   // Render return-to-latest button via portal to avoid overflow clipping
-  const returnToLatestButton = (!isAtBottom && safeMessages.length > 0) ? (
-    <button className="return-to-latest" onClick={scrollToBottom}>
-      <ArrowDownIcon size={16} />
-      Return to Latest
+  // Always render when not at bottom; use CSS class for animate-out
+  const showScrollBtn = !isAtBottom && safeMessages.length > 0
+  const returnToLatestButton = (showScrollBtn || scrollBtnLeaving) ? (
+    <button
+      className={`return-to-latest${scrollBtnLeaving ? ' leaving' : ''}`}
+      onClick={scrollToBottom}
+      aria-label="Scroll to latest messages"
+    >
+      <span className="rtl-icon">
+        <ArrowDownIcon width={16} height={16} />
+      </span>
+      <span className="rtl-text">Jump to Latest</span>
+      {unreadCount > 0 && (
+        <span className="rtl-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+      )}
     </button>
   ) : null
 
@@ -707,7 +741,16 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
                       onClick={() => onShowProfile?.(message.userId)}
                       userId={message.userId}
                     />
-                    <span className="message-author" onClick={() => onShowProfile?.(message.userId)}>{message.username}</span>
+                    <span className="message-author" onClick={() => onShowProfile?.(message.userId)}>
+                      {message.displayName || message.username}
+                      {message.guildTag && (
+                        <GuildTagBadge
+                          tag={message.guildTag}
+                          serverId={message.guildTagServerId}
+                          isPrivate={message.guildTagPrivate}
+                        />
+                      )}
+                    </span>
                     {Boolean(message.bot) && (
                       <span className="bot-badge">BOT</span>
                     )}

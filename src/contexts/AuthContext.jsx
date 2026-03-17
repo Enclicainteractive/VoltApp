@@ -3,6 +3,7 @@ import { authService } from '../services/authService'
 import { apiService } from '../services/apiService'
 import { useAppStore } from '../store/useAppStore'
 import { clearAuthTokenState } from '../services/authToken'
+import { customCSSService } from '../services/customCSSService'
 import {
   clearSessionStorage,
   getStoredAccessToken,
@@ -173,6 +174,10 @@ export const AuthProvider = ({ children }) => {
             const normalizedUser = normalizeUserProfile(refreshed.data)
             setUser(normalizedUser)
             setStoredUserData(normalizedUser)
+            
+            if (normalizedUser?.clientCSS !== undefined) {
+              customCSSService.loadFromProfile(normalizedUser.clientCSS, normalizedUser.clientCSSEnabled)
+            }
           }
         } catch (err) {
           console.warn('[Auth] Failed to refresh user profile', err)
@@ -216,6 +221,11 @@ export const AuthProvider = ({ children }) => {
         const normalizedUser = normalizeUserProfile(response.data)
         setUser(normalizedUser)
         setStoredUserData(normalizedUser)
+        
+        if (normalizedUser?.clientCSS !== undefined) {
+          customCSSService.loadFromProfile(normalizedUser.clientCSS, normalizedUser.clientCSSEnabled)
+        }
+        
         return normalizedUser
       }
     } catch (error) {

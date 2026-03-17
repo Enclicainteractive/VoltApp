@@ -338,7 +338,16 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
           setGameState(prev => {
             if (!payload.player?.id) return prev
             if (prev.players.some(p => p.id === payload.player.id)) return prev
-            return { ...prev, players: [...prev.players, payload.player] }
+            // Broadcast current players to the new joiner
+            const newPlayers = [...prev.players, payload.player]
+            setTimeout(() => {
+              sdk.emitEvent('sketchduel:players-list', {
+                players: newPlayers,
+                host: prev.host || newPlayers[0] || null,
+                requesterId: payload.player.id
+              }, { serverRelay: true })
+            }, 500)
+            return { ...prev, players: newPlayers }
           })
           soundMgr.play('join')
           break
@@ -348,6 +357,16 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
             ...prev,
             players: prev.players.filter(p => p.id !== payload.playerId)
           }))
+          break
+
+        case 'sketchduel:players-list':
+          if (payload?.players && Array.isArray(payload.players)) {
+            setGameState(prev => ({
+              ...prev,
+              players: payload.players,
+              host: payload.host || prev.host
+            }))
+          }
           break
 
         case 'sketchduel:start': {
@@ -467,6 +486,14 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
       player: { id: currentUser?.id, username: currentUser?.username || 'Player' },
       actionId: joinId
     }, { serverRelay: true })
+
+    // Request current player list after joining
+    setTimeout(() => {
+      sdk.emitEvent('sketchduel:request-players', {
+        requesterId: currentUser?.id,
+        actionId: actionId('sd_req_players')
+      }, { serverRelay: true })
+    }, 1000)
 
     return () => {
       offState?.()

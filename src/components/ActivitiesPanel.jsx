@@ -64,7 +64,8 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
   const guard = useMemo(() => createVoltActivityGuard({
     enabled: true,
     strict: false,
-    maxInboundBytes: 96 * 1024,
+    maxInboundBytes: 20 * 1024 * 1024,
+    maxEventBytes: 20 * 1024 * 1024,
     onFlag: (flag) => {
       ui.flagSecurity(flag)
       // Check if we should degrade due to security issues

@@ -371,6 +371,26 @@
   background: #6b7280;
 }
 
+/* Guild tag in member list */
+.member-guild-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--volt-primary);
+  background: color-mix(in srgb, var(--volt-primary) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--volt-primary) 30%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 3px;
+  vertical-align: middle;
+  cursor: default;
+  user-select: none;
+  line-height: 13px;
+  height: 14px;
+}
+
 .member-bot-badge {
   display: inline-flex;
   align-items: center;

@@ -23,20 +23,35 @@ import './AgeVerificationModal.css'
 
 const MODEL_URL = '/models'
 const AGE_THRESHOLD = 18
-const PASS_PROBABILITY = 0.98
-const FAIL_PROBABILITY = 0.8
-const MIN_VALID_FRAMES = 8
-const TARGET_FRAMES = 24
-const CAPTURE_DURATION_MS = 4500
+const PASS_PROBABILITY = 0.95        // Relaxed from 0.98 – easier to pass with fewer frames
+const FAIL_PROBABILITY = 0.75        // Relaxed from 0.80
+const MIN_VALID_FRAMES = 5           // Reduced from 8 – helps poor webcams
+const TARGET_FRAMES = 20             // Reduced from 24
+const CAPTURE_DURATION_MS = 6000     // Extended from 4500 – more time to collect frames
 const MAX_RETRIES = 3
 
-const MIN_FACE_RATIO = 0.12
-const MAX_ROLL_DEGREES = 25
-const SHARPNESS_THRESHOLD = 30
-const LIVENESS_MOTION_THRESHOLD = 2
-const LIVENESS_MIN_MOTION_FRAMES = 4
-const ACTIVE_BLINK_THRESHOLD = 0.2
-const ACTIVE_BLINK_MIN_COUNT = 2
+// Face quality thresholds – relaxed for low-light / cheap webcams
+const MIN_FACE_RATIO = 0.08          // Reduced from 0.12 – allow smaller faces
+const MAX_ROLL_DEGREES = 35          // Increased from 25 – allow more head tilt
+const SHARPNESS_THRESHOLD = 8        // Reduced from 30 – much more lenient for blurry cams
+const MIN_EXPOSURE_MEAN = 25         // Reduced from 40 – allow darker environments
+const MAX_EXPOSURE_MEAN = 235        // Increased from 220
+
+// Liveness – passive motion (nose tip movement between frames)
+const LIVENESS_MOTION_THRESHOLD = 4  // Increased from 2 – ignore micro-jitter
+const LIVENESS_MIN_MOTION_FRAMES = 3 // Reduced from 4
+
+// Liveness – active blink
+const ACTIVE_BLINK_THRESHOLD = 0.22  // Slightly raised from 0.20 – easier to trigger
+const ACTIVE_BLINK_MIN_COUNT = 1     // Reduced from 2 – only need 1 blink
+
+// Head-pose humanization (yaw / pitch change across the session)
+const HEAD_POSE_MIN_YAW_DELTA = 4    // degrees – user must turn head slightly
+const HEAD_POSE_MIN_PITCH_DELTA = 3  // degrees – user must nod slightly
+const HEAD_POSE_HISTORY_LEN = 30     // frames to keep for pose analysis
+
+// SSD MobileNet fallback – used when TinyFaceDetector fails repeatedly
+const SSD_SCORE_THRESHOLD = 0.4
 
 const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
   const { t } = useTranslation()
@@ -50,10 +65,13 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
 
   const phaseRef = useRef('idle')
   const modelsLoadedRef = useRef(false)
+  const ssdLoadedRef = useRef(false)
   const qualityStableCountRef = useRef(0)
   const ageResultsRef = useRef([])
-  const landmarkHistoryRef = useRef([])
+  const landmarkHistoryRef = useRef([])   // { x, y } nose tip positions
+  const headPoseHistoryRef = useRef([])   // { yaw, pitch, roll } estimates
   const livenessRef = useRef({ blinkCount: 0, eyesClosed: false })
+  const tinyFailCountRef = useRef(0)      // consecutive TinyFaceDetector misses
 
   const [wizardPage, setWizardPage] = useState(0)
   const [slideDir, setSlideDir] = useState('forward')
@@ -68,6 +86,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
   const [error, setError] = useState('')
   const [qualityIssue, setQualityIssue] = useState('')
   const [faceDetected, setFaceDetected] = useState(false)
+  const [livenessHint, setLivenessHint] = useState('')   // real-time humanization prompt
 
   const [retriesLeft, setRetriesLeft] = useState(MAX_RETRIES)
   const [progress, setProgress] = useState({ framesCollected: 0, validFrames: 0, targetFrames: TARGET_FRAMES })
@@ -137,6 +156,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
 
   const loadModels = async () => {
     try {
+      // Always load TinyFaceDetector + landmarks + age
       const modelLoadPromise = Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
         faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
@@ -149,6 +169,11 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       await Promise.race([modelLoadPromise, timeoutPromise])
       modelsLoadedRef.current = true
       setModelsReady(true)
+
+      // Load SSD MobileNet in the background as a fallback for low-light / poor cams
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL)
+        .then(() => { ssdLoadedRef.current = true })
+        .catch(() => { /* SSD optional – ignore failure */ })
     } catch (err) {
       setError('Failed to load local age-estimation models. Please refresh and try again.')
       setModelsReady(true)
@@ -198,9 +223,17 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     try {
       stopCamera()
       abortRef.current = false
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-      })
+
+      // Try ideal resolution first, fall back to any available
+      let stream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+        })
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+      }
+
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -238,36 +271,90 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     return ctx.getImageData(0, 0, canvas.width, canvas.height)
   }
 
+  /**
+   * Laplacian variance sharpness – lower threshold for cheap webcams.
+   * We sample every 4th pixel to keep it fast.
+   */
   const computeSharpness = (imageData) => {
-    const gray = new Float32Array(imageData.width * imageData.height)
     const d = imageData.data
-    for (let i = 0; i < gray.length; i++) {
-      gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]
-    }
-
-    let lapSum = 0
     const w = imageData.width
     const h = imageData.height
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const idx = y * w + x
-        const lap = -4 * gray[idx] + gray[idx - 1] + gray[idx + 1] + gray[idx - w] + gray[idx + w]
+    const step = 4 // sample every 4th pixel for speed
+
+    let lapSum = 0
+    let count = 0
+    for (let y = step; y < h - step; y += step) {
+      for (let x = step; x < w - step; x += step) {
+        const idx = (y * w + x) * 4
+        const lum = 0.299 * d[idx] + 0.587 * d[idx + 1] + 0.114 * d[idx + 2]
+        const lumL = 0.299 * d[idx - step * 4] + 0.587 * d[idx - step * 4 + 1] + 0.114 * d[idx - step * 4 + 2]
+        const lumR = 0.299 * d[idx + step * 4] + 0.587 * d[idx + step * 4 + 1] + 0.114 * d[idx + step * 4 + 2]
+        const lumU = 0.299 * d[idx - step * w * 4] + 0.587 * d[idx - step * w * 4 + 1] + 0.114 * d[idx - step * w * 4 + 2]
+        const lumD = 0.299 * d[idx + step * w * 4] + 0.587 * d[idx + step * w * 4 + 1] + 0.114 * d[idx + step * w * 4 + 2]
+        const lap = -4 * lum + lumL + lumR + lumU + lumD
         lapSum += lap * lap
+        count++
       }
     }
 
-    return lapSum / ((w - 2) * (h - 2))
+    return count > 0 ? lapSum / count : 0
   }
 
   const checkExposure = (imageData) => {
     const d = imageData.data
     let sum = 0
     const count = d.length / 4
-    for (let i = 0; i < d.length; i += 4) {
+    for (let i = 0; i < d.length; i += 16) { // sample every 4th pixel
       sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
     }
-    const mean = sum / count
-    return mean > 40 && mean < 220
+    const mean = sum / (count / 4)
+    return mean > MIN_EXPOSURE_MEAN && mean < MAX_EXPOSURE_MEAN
+  }
+
+  /**
+   * Estimate head yaw/pitch from 68-point landmarks.
+   * Uses the nose bridge and chin relative to eye centres.
+   * Returns { yaw, pitch, roll } in degrees (approximate).
+   */
+  const estimateHeadPose = (landmarks) => {
+    try {
+      const nose = landmarks.getNose()          // points 27-35
+      const leftEye = landmarks.getLeftEye()    // points 36-41
+      const rightEye = landmarks.getRightEye()  // points 42-47
+      const jaw = landmarks.getJawOutline()     // points 0-16
+
+      if (!nose.length || !leftEye.length || !rightEye.length || !jaw.length) return null
+
+      // Eye centres
+      const lec = { x: leftEye.reduce((s, p) => s + p.x, 0) / leftEye.length, y: leftEye.reduce((s, p) => s + p.y, 0) / leftEye.length }
+      const rec = { x: rightEye.reduce((s, p) => s + p.x, 0) / rightEye.length, y: rightEye.reduce((s, p) => s + p.y, 0) / rightEye.length }
+
+      // Inter-ocular distance (reference scale)
+      const iod = Math.hypot(rec.x - lec.x, rec.y - lec.y) || 1
+
+      // Midpoint between eyes
+      const eyeMid = { x: (lec.x + rec.x) / 2, y: (lec.y + rec.y) / 2 }
+
+      // Nose tip (point index 4 in getNose() = landmark 30)
+      const noseTip = nose[4] || nose[nose.length - 1]
+
+      // Chin (middle of jaw outline)
+      const chin = jaw[8] || jaw[Math.floor(jaw.length / 2)]
+
+      // Yaw: horizontal offset of nose tip from eye midpoint, normalised by IOD
+      const yaw = ((noseTip.x - eyeMid.x) / iod) * 45
+
+      // Pitch: vertical offset of nose tip below eye midpoint, normalised by face height
+      const faceHeight = (chin.y - eyeMid.y) || iod
+      const pitch = ((noseTip.y - eyeMid.y) / faceHeight - 0.5) * 60
+
+      // Roll: angle of eye line
+      const roll = Math.atan2(rec.y - lec.y, rec.x - lec.x) * 180 / Math.PI
+
+      return { yaw, pitch, roll }
+    } catch {
+      return null
+    }
   }
 
   const checkFaceQuality = (detection, videoWidth, imageData) => {
@@ -276,16 +363,19 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
 
     const landmarks = detection.landmarks
     if (landmarks) {
-      const leftEye = landmarks.getLeftEye()
-      const rightEye = landmarks.getRightEye()
-      if (leftEye.length > 0 && rightEye.length > 0) {
-        const roll = Math.abs(Math.atan2(rightEye[3].y - leftEye[0].y, rightEye[3].x - leftEye[0].x) * 180 / Math.PI)
-        if (roll > MAX_ROLL_DEGREES) return 'Keep your head level and face the camera.'
-      }
+      const pose = estimateHeadPose(landmarks)
+      if (pose && Math.abs(pose.roll) > MAX_ROLL_DEGREES) return 'Keep your head level and face the camera.'
     }
 
-    if (computeSharpness(imageData) < SHARPNESS_THRESHOLD) return 'Image is blurry. Hold still for a moment.'
-    if (!checkExposure(imageData)) return 'Lighting is not ideal. Improve light on your face.'
+    // Only reject on sharpness if we have a reasonable image
+    if (imageData && computeSharpness(imageData) < SHARPNESS_THRESHOLD) {
+      return 'Image is blurry. Hold still or improve lighting.'
+    }
+
+    if (imageData && !checkExposure(imageData)) {
+      return 'Lighting is too dark or too bright. Adjust the light on your face.'
+    }
+
     return null
   }
 
@@ -308,6 +398,32 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     ctx.setLineDash([6, 4])
     ctx.strokeRect(box.x, box.y, box.width, box.height)
     ctx.setLineDash([])
+
+    // Draw head-pose indicator if landmarks available
+    if (detection.landmarks) {
+      const pose = estimateHeadPose(faceapi.resizeResults(detection, displaySize).landmarks)
+      if (pose) {
+        const cx = box.x + box.width / 2
+        const cy = box.y + box.height / 2
+        const len = Math.min(box.width, box.height) * 0.3
+
+        // Yaw arrow (horizontal)
+        ctx.strokeStyle = 'rgba(255,200,0,0.7)'
+        ctx.lineWidth = 2
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.moveTo(cx, cy)
+        ctx.lineTo(cx + (pose.yaw / 45) * len, cy)
+        ctx.stroke()
+
+        // Pitch arrow (vertical)
+        ctx.strokeStyle = 'rgba(0,200,255,0.7)'
+        ctx.beginPath()
+        ctx.moveTo(cx, cy)
+        ctx.lineTo(cx, cy + (pose.pitch / 60) * len)
+        ctx.stroke()
+      }
+    }
   }
 
   const pointDistance = (a, b) => Math.hypot((a?.x || 0) - (b?.x || 0), (a?.y || 0) - (b?.y || 0))
@@ -332,16 +448,19 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     livenessRef.current.eyesClosed = eyesClosedNow
   }
 
+  /**
+   * Passive liveness: checks that the nose tip moved enough across frames.
+   * Uses a larger threshold to avoid false positives from camera jitter.
+   */
   const checkPassiveLiveness = () => {
     const h = landmarkHistoryRef.current
     if (h.length < LIVENESS_MIN_MOTION_FRAMES) return false
 
     let motionFrames = 0
     for (let i = 1; i < h.length; i++) {
-      if (
-        Math.abs(h[i].x - h[i - 1].x) > LIVENESS_MOTION_THRESHOLD ||
-        Math.abs(h[i].y - h[i - 1].y) > LIVENESS_MOTION_THRESHOLD
-      ) {
+      const dx = Math.abs(h[i].x - h[i - 1].x)
+      const dy = Math.abs(h[i].y - h[i - 1].y)
+      if (dx > LIVENESS_MOTION_THRESHOLD || dy > LIVENESS_MOTION_THRESHOLD) {
         motionFrames++
       }
     }
@@ -349,11 +468,86 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     return motionFrames >= LIVENESS_MIN_MOTION_FRAMES - 1
   }
 
+  /**
+   * Head-pose humanization: checks that the user's head yaw/pitch changed
+   * meaningfully during the session (proves a real person, not a photo).
+   */
+  const checkHeadPoseHumanization = () => {
+    const h = headPoseHistoryRef.current
+    if (h.length < 4) return false
+
+    const yaws = h.map(p => p.yaw)
+    const pitches = h.map(p => p.pitch)
+
+    const yawDelta = Math.max(...yaws) - Math.min(...yaws)
+    const pitchDelta = Math.max(...pitches) - Math.min(...pitches)
+
+    return yawDelta >= HEAD_POSE_MIN_YAW_DELTA || pitchDelta >= HEAD_POSE_MIN_PITCH_DELTA
+  }
+
+  /**
+   * Detect a face using TinyFaceDetector first; fall back to SSD MobileNet
+   * if TinyFaceDetector has missed too many consecutive frames.
+   */
+  const detectFace = async (video) => {
+    const tinyOptions = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.25, inputSize: 416 })
+
+    try {
+      const det = await faceapi
+        .detectSingleFace(video, tinyOptions)
+        .withFaceLandmarks()
+        .withAgeAndGender()
+
+      if (det) {
+        tinyFailCountRef.current = 0
+        return det
+      }
+    } catch {
+      // fall through to SSD
+    }
+
+    tinyFailCountRef.current++
+
+    // After 5 consecutive misses, try SSD MobileNet if loaded
+    if (tinyFailCountRef.current >= 5 && ssdLoadedRef.current) {
+      try {
+        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: SSD_SCORE_THRESHOLD })
+        const det = await faceapi
+          .detectSingleFace(video, ssdOptions)
+          .withFaceLandmarks()
+          .withAgeAndGender()
+
+        if (det) {
+          tinyFailCountRef.current = 0
+          return det
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Build a real-time liveness hint to guide the user through humanization.
+   */
+  const buildLivenessHint = () => {
+    const blinkDone = livenessRef.current.blinkCount >= ACTIVE_BLINK_MIN_COUNT
+    const poseDone = checkHeadPoseHumanization()
+    const motionDone = checkPassiveLiveness()
+
+    if (!blinkDone) return '👁 Blink once naturally'
+    if (!poseDone && !motionDone) return '↔ Slowly turn your head a little'
+    if (!poseDone) return '↕ Nod your head slightly'
+    return '✓ Liveness checks passing…'
+  }
+
   const startLocalVerification = async () => {
     resetRuntimeState()
     goToPage(2)
     setPhase('face-quality')
-    setStatus('Position your face in frame. Blink twice when prompted.')
+    setStatus('Position your face in frame. Blink once when prompted.')
 
     const cameraReady = await startCamera()
     if (!cameraReady) return
@@ -371,15 +565,12 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     }
 
     try {
-      const detection = await faceapi
-        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.3 }))
-        .withFaceLandmarks()
-        .withAgeAndGender()
+      const detection = await detectFace(video)
 
       if (!detection) {
         qualityStableCountRef.current = 0
         setFaceDetected(false)
-        setQualityIssue('No face detected. Look directly at the camera.')
+        setQualityIssue('No face detected. Look directly at the camera and ensure your face is well-lit.')
         const c = overlayCanvasRef.current
         if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height)
         animFrameRef.current = requestAnimationFrame(runQualityCheckLoop)
@@ -387,7 +578,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       }
 
       const imageData = getImageData()
-      const issue = imageData ? checkFaceQuality(detection, video.videoWidth, imageData) : 'Waiting for camera frame...'
+      const issue = checkFaceQuality(detection, video.videoWidth, imageData)
 
       setFaceDetected(!issue)
       setQualityIssue(issue || '')
@@ -400,14 +591,15 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       }
 
       qualityStableCountRef.current += 1
-      setStatus('Face quality is good. Hold still, then blink twice.')
+      setStatus('Face detected! Hold still for a moment…')
 
-      if (qualityStableCountRef.current >= 10) {
+      // Require 6 stable frames (down from 10) before starting scan
+      if (qualityStableCountRef.current >= 6) {
         startAgeEstimation()
         return
       }
     } catch {
-      setQualityIssue('Face detection had a temporary issue. Retrying...')
+      setQualityIssue('Face detection had a temporary issue. Retrying…')
     }
 
     if (!abortRef.current && phaseRef.current === 'face-quality') {
@@ -417,10 +609,11 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
 
   const startAgeEstimation = () => {
     setPhase('scanning')
-    setStatus('Scanning now. Please blink twice naturally.')
+    setStatus('Scanning… Blink once and turn your head slightly.')
 
     ageResultsRef.current = []
     landmarkHistoryRef.current = []
+    headPoseHistoryRef.current = []
     livenessRef.current = { blinkCount: 0, eyesClosed: false }
 
     const startedAt = Date.now()
@@ -442,10 +635,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       }
 
       try {
-        const detection = await faceapi
-          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.3 }))
-          .withFaceLandmarks()
-          .withAgeAndGender()
+        const detection = await detectFace(video)
 
         framesCollected++
 
@@ -453,18 +643,34 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
           drawFaceOverlay(detection)
 
           const imageData = getImageData()
-          const issue = imageData ? checkFaceQuality(detection, video.videoWidth, imageData) : null
+          const issue = checkFaceQuality(detection, video.videoWidth, imageData)
+
           if (!issue) {
             validFrames++
             ageResultsRef.current.push(detection.age)
 
-            const nose = detection.landmarks.getNose()[3]
-            landmarkHistoryRef.current.push({ x: nose.x, y: nose.y })
+            // Track nose tip for passive motion liveness
+            const nose = detection.landmarks.getNose()
+            const noseTip = nose[4] || nose[nose.length - 1]
+            if (noseTip) {
+              landmarkHistoryRef.current.push({ x: noseTip.x, y: noseTip.y })
+            }
+
+            // Track head pose for humanization
+            const pose = estimateHeadPose(detection.landmarks)
+            if (pose) {
+              headPoseHistoryRef.current.push(pose)
+              if (headPoseHistoryRef.current.length > HEAD_POSE_HISTORY_LEN) {
+                headPoseHistoryRef.current.shift()
+              }
+            }
+
             updateBlinkLiveness(detection.landmarks)
           }
         }
 
         setProgress({ framesCollected, validFrames, targetFrames: TARGET_FRAMES })
+        setLivenessHint(buildLivenessHint())
       } catch {
         // Continue scanning; transient model errors can happen.
       }
@@ -481,7 +687,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     if (ages.length < MIN_VALID_FRAMES) {
       setFinalVerdict('inconclusive')
       setPhase('inconclusive')
-      setStatus(`Not enough valid frames (${ages.length}/${MIN_VALID_FRAMES}). Retry with better lighting.`)
+      setStatus(`Not enough valid frames (${ages.length}/${MIN_VALID_FRAMES}). Try better lighting or move closer.`)
       goToPage(3)
       stopCamera()
       return
@@ -491,8 +697,12 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     const probabilityOverThreshold = ages.filter(age => age >= AGE_THRESHOLD).length / n
 
     const passiveMotion = checkPassiveLiveness()
+    const headPosePassed = checkHeadPoseHumanization()
     const activeBlinkPassed = livenessRef.current.blinkCount >= ACTIVE_BLINK_MIN_COUNT
-    const livenessPassed = passiveMotion && activeBlinkPassed
+
+    // Liveness passes if ANY TWO of the three checks pass (more lenient)
+    const livenessScore = [passiveMotion, headPosePassed, activeBlinkPassed].filter(Boolean).length
+    const livenessPassed = livenessScore >= 2
 
     let verdict = 'inconclusive'
     if (livenessPassed && probabilityOverThreshold >= PASS_PROBABILITY) verdict = 'adult'
@@ -511,7 +721,9 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
       validFrames: n,
       liveness: {
         passiveMotion,
+        headPosePassed,
         blinkCount: livenessRef.current.blinkCount,
+        livenessScore,
         passed: livenessPassed
       },
       policy: {
@@ -534,7 +746,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     }
 
     setPhase('submitting')
-    setStatus('Finalizing verification...')
+    setStatus('Finalizing verification…')
 
     try {
       const category = verdict === 'adult' ? 'adult' : 'child'
@@ -554,7 +766,9 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
           liveness: {
             passed: localResult.liveness.passed,
             passiveMotion: localResult.liveness.passiveMotion,
-            blinkCount: localResult.liveness.blinkCount
+            headPosePassed: localResult.liveness.headPosePassed,
+            blinkCount: localResult.liveness.blinkCount,
+            livenessScore: localResult.liveness.livenessScore
           },
           meta: {
             validFrames: localResult.validFrames,
@@ -581,13 +795,16 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
     setStatus('')
     setQualityIssue('')
     setFaceDetected(false)
+    setLivenessHint('')
     setResult(null)
     setFinalVerdict(null)
     setProgress({ framesCollected: 0, validFrames: 0, targetFrames: TARGET_FRAMES })
 
     qualityStableCountRef.current = 0
+    tinyFailCountRef.current = 0
     ageResultsRef.current = []
     landmarkHistoryRef.current = []
+    headPoseHistoryRef.current = []
     livenessRef.current = { blinkCount: 0, eyesClosed: false }
 
     abortRef.current = false
@@ -717,7 +934,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
           <ul>
             <li>{t('ageVerification.localHow1', 'Captures a short live camera stream in memory')}</li>
             <li>{t('ageVerification.localHow2', 'Runs face detection, landmarks, age estimation on-device')}</li>
-            <li>{t('ageVerification.localHow3', 'Applies conservative pass/fail thresholds with liveness checks')}</li>
+            <li>{t('ageVerification.localHow3', 'Checks liveness via blinks and natural head movement')}</li>
           </ul>
         </div>
 
@@ -737,6 +954,16 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
             <li>Media devices API: {systemChecks.mediaDevices ? 'OK' : 'Missing'}</li>
             <li>Camera access API: {systemChecks.getUserMedia ? 'OK' : 'Missing'}</li>
             <li>WebGL available: {systemChecks.webgl ? 'OK' : 'Limited'}</li>
+          </ul>
+        </div>
+
+        <div className="info-card">
+          <h4><CameraIcon size={16} /> Tips for Best Results</h4>
+          <ul>
+            <li>Face a window or lamp so light falls on your face</li>
+            <li>Keep your face centred and look at the camera</li>
+            <li>Blink once and slowly turn your head left/right</li>
+            <li>Works in low light – just avoid complete darkness</li>
           </ul>
         </div>
       </div>
@@ -777,7 +1004,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
         )}
 
         {phase === 'face-quality' && !qualityIssue && faceDetected && (
-          <div className="quality-hint">Face quality looks good. Keep steady.</div>
+          <div className="quality-hint quality-hint--good">✓ Face quality looks good. Hold steady…</div>
         )}
 
         {phase === 'scanning' && (
@@ -786,7 +1013,9 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
               <div className="progress-bar-fill" style={{ width: `${Math.min(100, (progress.validFrames / TARGET_FRAMES) * 100)}%` }} />
               <span className="progress-bar-label">{progress.validFrames}/{TARGET_FRAMES} valid frames</span>
             </div>
-            <div className="liveness-banner">Liveness challenge: blink twice during scan.</div>
+            {livenessHint && (
+              <div className="liveness-banner">{livenessHint}</div>
+            )}
           </>
         )}
 
@@ -847,8 +1076,8 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
               <div><strong>Pass/Fail Confidence</strong><span>{(result.confidence * 100).toFixed(1)}%</span></div>
               <div><strong>P(age ≥ {AGE_THRESHOLD})</strong><span>{(result.probabilityOverThreshold * 100).toFixed(1)}%</span></div>
               <div><strong>Valid Frames</strong><span>{result.validFrames}</span></div>
-              <div><strong>Liveness</strong><span>{result.liveness.passed ? 'passed' : 'failed'}</span></div>
-              <div><strong>Passive Motion</strong><span>{result.liveness.passiveMotion ? 'detected' : 'not detected'}</span></div>
+              <div><strong>Liveness</strong><span>{result.liveness.passed ? 'passed' : 'failed'} ({result.liveness.livenessScore}/3)</span></div>
+              <div><strong>Head Movement</strong><span>{result.liveness.headPosePassed ? 'detected' : 'not detected'}</span></div>
               <div><strong>Blinks</strong><span>{result.liveness.blinkCount}</span></div>
             </div>
           )}
@@ -885,7 +1114,7 @@ const AgeVerificationModal = ({ channelName, onClose, onVerified }) => {
         </p>
       ) : (
         <p className="conclude-text">
-          Try again later with better lighting or use your alternative verification path.
+          Try again with better lighting, move closer to the camera, and make sure to blink and turn your head slightly during the scan.
         </p>
       )}
 

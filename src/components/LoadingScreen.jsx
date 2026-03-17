@@ -15,20 +15,26 @@ const VoltageLogo = ({ size = 80 }) => (
 )
 
 // Debounce delay before showing the reconnect overlay.
-// Brief socket hiccups (< 2s) won't show the overlay at all.
-const RECONNECT_SHOW_DELAY_MS = 2000
+// Brief socket hiccups (< 3s) won't show the overlay at all.
+const RECONNECT_SHOW_DELAY_MS = 3000
 
 const ReconnectingOverlay = ({ visible }) => {
   const [show, setShow] = useState(false)
+  const [fadeIn, setFadeIn] = useState(false)
 
   useEffect(() => {
     if (!visible) {
-      // Hide immediately when reconnected
-      setShow(false)
-      return
+      // Fade out first, then hide
+      setFadeIn(false)
+      const timer = setTimeout(() => setShow(false), 300)
+      return () => clearTimeout(timer)
     }
     // Only show overlay after a sustained disconnect
-    const timer = setTimeout(() => setShow(true), RECONNECT_SHOW_DELAY_MS)
+    const timer = setTimeout(() => {
+      setShow(true)
+      // Trigger fade-in after mount
+      requestAnimationFrame(() => setFadeIn(true))
+    }, RECONNECT_SHOW_DELAY_MS)
     return () => clearTimeout(timer)
   }, [visible])
 
@@ -48,7 +54,9 @@ const ReconnectingOverlay = ({ visible }) => {
       backgroundColor: 'rgba(26, 26, 26, 0.85)',
       backdropFilter: 'blur(4px)',
       zIndex: 9998,
-      pointerEvents: 'none'
+      pointerEvents: 'none',
+      opacity: fadeIn ? 1 : 0,
+      transition: 'opacity 300ms ease-in-out'
     }}>
       <div style={{
         animation: 'reconnectPulse 1.2s ease-in-out infinite'

@@ -42,6 +42,7 @@ import { getStoredServer } from '../services/serverConfig'
 import { preloadHostMetadata, getImageBaseForHostSync } from '../services/hostMetadataService'
 import ContextMenu from './ContextMenu'
 import Avatar from './Avatar'
+import GuildTagBadge from './GuildTagBadge'
 import '../assets/styles/MemberSidebar.css'
 
 const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBan, onAddFriend, visible = true, isMobile = false, channelId = null, onClose }) => {
@@ -621,7 +622,14 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                     <div className="member-name" style={roleColor ? { color: roleColor } : {}}>
                       {member.id === server?.ownerId && <TrophyIcon size={12} className="role-dot" style={{ color: '#eab308' }} />}
                       {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
-                      <span>{member.username}</span>
+                      <span>{member.displayName || member.username}</span>
+                      {member.guildTag && (
+                        <GuildTagBadge
+                          tag={member.guildTag}
+                          serverId={member.guildTagServerId}
+                          isPrivate={member.guildTagPrivate}
+                        />
+                      )}
                       {member.isBot && <span className="member-bot-badge">{t('member.bot')}</span>}
                     </div>
                     {memberRoles.length > 0 && (
@@ -700,7 +708,14 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
                     <div className="member-name" style={roleColor ? { color: roleColor } : {}}>
                       {member.id === server?.ownerId && <TrophyIcon size={12} className="role-dot" style={{ color: '#eab308' }} />}
                       {roleColor && roleColor !== '#eab308' && <span className="role-dot" style={{ backgroundColor: roleColor }} />}
-                      <span>{member.username}</span>
+                      <span>{member.displayName || member.username}</span>
+                      {member.guildTag && (
+                        <GuildTagBadge
+                          tag={member.guildTag}
+                          serverId={member.guildTagServerId}
+                          isPrivate={member.guildTagPrivate}
+                        />
+                      )}
                       {member.isBot && <span className="member-bot-badge">{t('member.bot')}</span>}
                     </div>
                     {memberRoles.length > 0 && (

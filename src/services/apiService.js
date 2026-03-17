@@ -239,8 +239,14 @@ export const apiService = {
   submitAgeVerification: (payload) => api.post('/user/age-verification', payload),
   
   // Profile Customization & Theme
-  getProfileTheme: () => api.get('/user/profile/theme'),
-  updateProfileTheme: (data) => api.put('/user/profile/theme', data),
+  getProfileTheme: () => api.get('/themes/settings'),
+  updateProfileTheme: (data) => api.put('/themes/settings', data),
+  
+  // Guild Tags
+  getUserGuildTag: () => api.get('/user/guild-tag'),
+  setUserGuildTag: (serverId) => api.put('/user/guild-tag', { serverId }),
+  getServerGuildTag: (serverId) => api.get(`/servers/${serverId}/guild-tag`),
+  setServerGuildTag: (serverId, tag) => api.put(`/servers/${serverId}/guild-tag`, { tag }),
   
   // Friends
   getFriends: () => api.get('/user/friends'),
@@ -310,6 +316,43 @@ export const apiService = {
     })
   },
   deleteFile: (filename) => api.delete(`/upload/${filename}`),
+
+  // Voice Message - dedicated upload/delete with duration metadata
+  uploadVoiceMessage: (audioBlob, duration, context = 'channel', serverId = null, onProgress = null) => {
+    const formData = new FormData()
+    // Determine extension from MIME type
+    const mime = audioBlob.type || 'audio/webm'
+    const ext = mime.includes('ogg') ? '.ogg' : mime.includes('mp4') ? '.mp4' : mime.includes('wav') ? '.wav' : '.webm'
+    const fileName = `voice_message_${Date.now()}${ext}`
+    formData.append('file', audioBlob, fileName)
+    formData.append('duration', String(Math.round(duration)))
+    formData.append('context', context)
+    if (serverId) formData.append('serverId', serverId)
+
+    if (onProgress) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `${getBaseURL()}/voice-message`)
+        const token = getStoredAccessToken()
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) onProgress((event.loaded / event.total) * 100)
+        })
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.response))
+          else reject(new Error(`Voice message upload failed with status ${xhr.status}`))
+        })
+        xhr.addEventListener('error', () => reject(new Error('Voice message upload failed')))
+        xhr.send(formData)
+      })
+    }
+
+    return api.post('/voice-message', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  deleteVoiceMessage: (fileId) => api.delete(`/voice-message/${fileId}`),
+  getVoiceMessageMetadata: (fileId) => api.get(`/voice-message/metadata/${fileId}`),
 
   getDiscovery: (params) => api.get('/discovery', { params }),
   getDiscoveryCategories: () => api.get('/discovery/categories'),
@@ -616,9 +659,9 @@ export const apiService = {
   // Profile Comments
   getProfileComments: (userId, params) => api.get(`/users/${userId}/comments`, { params }),
   addProfileComment: (userId, content) => api.post(`/users/${userId}/comments`, { content }),
-  deleteProfileComment: (commentId) => api.delete(`/users/comments/${commentId}`),
-  likeProfileComment: (commentId) => api.post(`/users/comments/${commentId}/like`),
-  unlikeProfileComment: (commentId) => api.delete(`/users/comments/${commentId}/like`),
+  deleteProfileComment: (commentId, profileUserId) => api.delete(`/users/comments/${commentId}`, { params: { profileUserId } }),
+  likeProfileComment: (commentId, profileUserId) => api.post(`/users/comments/${commentId}/like`, {}, { params: { profileUserId } }),
+  unlikeProfileComment: (commentId, profileUserId) => api.delete(`/users/comments/${commentId}/like`, { params: { profileUserId } }),
 
   // Discord Import
   importDiscordTemplate: (templateCode, serverId) => api.post('/import/discord/template', { templateCode, serverId }),

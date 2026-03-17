@@ -22,6 +22,8 @@ export const useAppStore = create((set, get) => ({
   // Activity state - tracks active activity sessions
   activeActivities: [], // Array of { id, sessionId, activityId, activityName, contextType, contextId }
   focusedActivityId: null, // The currently focused/interacted activity
+  sidebarVisible: true,
+  showChannelDrawer: false,
   settings: {
     theme: 'dark',
     notifications: true,
@@ -54,6 +56,8 @@ export const useAppStore = create((set, get) => ({
     storeServer(server)
     set({ currentMainServer: server })
   },
+  setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
+  setShowChannelDrawer: (show) => set({ showChannelDrawer: show }),
   updateSettings: (settings) => set((state) => ({ settings: { ...state.settings, ...settings } })),
   
   addServer: (server) => set((state) => ({ servers: [...state.servers, server] })),
