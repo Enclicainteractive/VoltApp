@@ -1,0 +1,709 @@
+/* ─── Collab 3D Modeling Activity ─────────────────────────────────────────── */
+
+.c3d-root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ─── Menu bar ─────────────────────────────────────────────────────────────── */
+.c3d-menubar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #0f0f1a;
+  border-bottom: 1px solid #2a2a4a;
+  padding: 0 6px;
+  height: 28px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+.c3d-menu-title {
+  font-weight: 700;
+  color: #7c6af7;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.c3d-menu-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.c3d-menu-right {
+  margin-left: auto;
+}
+
+.c3d-menu-btn {
+  background: transparent;
+  border: none;
+  color: #c0c0d0;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  border-radius: 3px;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+.c3d-menu-btn:hover {
+  background: #2a2a4a;
+  color: #fff;
+}
+.c3d-menu-btn.active {
+  background: #3a3a6a;
+  color: #a0a0ff;
+}
+.c3d-menu-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ─── Dropdown ─────────────────────────────────────────────────────────────── */
+.c3d-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #1a1a30;
+  border: 1px solid #3a3a6a;
+  border-radius: 4px;
+  min-width: 160px;
+  z-index: 9999;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  padding: 4px 0;
+}
+
+.c3d-dropdown-section {
+  padding: 4px 10px 2px;
+  font-size: 10px;
+  color: #7070a0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.c3d-dropdown-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #c0c0d0;
+  padding: 5px 14px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.1s;
+}
+.c3d-dropdown-item:hover,
+.c3d-dropdown-item.active {
+  background: #2a2a5a;
+  color: #fff;
+}
+
+/* ─── Main layout ──────────────────────────────────────────────────────────── */
+.c3d-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ─── Left toolbar ─────────────────────────────────────────────────────────── */
+.c3d-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: #0f0f1a;
+  border-right: 1px solid #2a2a4a;
+  padding: 6px 4px;
+  width: 36px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.c3d-tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.c3d-tool-divider {
+  width: 24px;
+  height: 1px;
+  background: #2a2a4a;
+  margin: 3px auto;
+}
+
+.c3d-tool-btn {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #a0a0c0;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+  padding: 0;
+  line-height: 1;
+}
+.c3d-tool-btn:hover {
+  background: #2a2a4a;
+  color: #fff;
+  border-color: #4a4a8a;
+}
+.c3d-tool-btn.active {
+  background: #3a3a7a;
+  color: #a0a0ff;
+  border-color: #6060cc;
+}
+
+/* ─── Viewport ─────────────────────────────────────────────────────────────── */
+.c3d-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #1a1a2e;
+  min-width: 0;
+}
+
+.c3d-viewport canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Reference image overlay */
+.c3d-ref-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.c3d-ref-controls {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.7);
+  border: 1px solid #3a3a6a;
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+  font-size: 11px;
+  color: #c0c0d0;
+}
+.c3d-ref-controls input[type=range] {
+  width: 100px;
+}
+
+/* Mode indicator */
+.c3d-mode-indicator {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.c3d-mode-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.c3d-mode-badge.object {
+  background: rgba(74, 158, 255, 0.25);
+  color: #4a9eff;
+  border: 1px solid rgba(74, 158, 255, 0.4);
+}
+.c3d-mode-badge.edit {
+  background: rgba(255, 140, 0, 0.25);
+  color: #ff8c00;
+  border: 1px solid rgba(255, 140, 0, 0.4);
+}
+
+.c3d-shading-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(0,0,0,0.5);
+  color: #a0a0c0;
+  border: 1px solid #3a3a5a;
+}
+
+.c3d-snap-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 200, 0, 0.2);
+  color: #ffc800;
+  border: 1px solid rgba(255, 200, 0, 0.4);
+}
+
+.c3d-prop-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(100, 255, 100, 0.2);
+  color: #64ff64;
+  border: 1px solid rgba(100, 255, 100, 0.4);
+}
+
+/* Status bar */
+.c3d-status {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.75);
+  border-top: 1px solid #2a2a4a;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: #a0a0c0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Numpad view buttons */
+.c3d-numpad-views {
+  position: absolute;
+  top: 8px;
+  right: 90px;
+  display: flex;
+  gap: 3px;
+  z-index: 20;
+}
+
+.c3d-numpad-btn {
+  background: rgba(0,0,0,0.6);
+  border: 1px solid #3a3a5a;
+  border-radius: 3px;
+  color: #a0a0c0;
+  padding: 2px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.c3d-numpad-btn:hover {
+  background: rgba(60,60,120,0.8);
+  color: #fff;
+  border-color: #6060aa;
+}
+
+/* ─── Right panels ─────────────────────────────────────────────────────────── */
+.c3d-panels {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  flex-shrink: 0;
+  background: #0f0f1a;
+  border-left: 1px solid #2a2a4a;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.c3d-panel {
+  border-bottom: 1px solid #2a2a4a;
+}
+
+.c3d-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #1a1a30;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c0c0e0;
+  border-bottom: 1px solid #2a2a4a;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.c3d-panel-count {
+  background: #3a3a6a;
+  color: #a0a0ff;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 10px;
+}
+
+/* ─── Outliner ─────────────────────────────────────────────────────────────── */
+.c3d-outliner-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.c3d-outliner-empty {
+  padding: 12px 10px;
+  color: #606080;
+  font-size: 11px;
+  text-align: center;
+  font-style: italic;
+}
+
+.c3d-outliner-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-bottom: 1px solid #1a1a2a;
+  transition: background 0.1s;
+}
+.c3d-outliner-item:hover {
+  background: #1e1e38;
+}
+.c3d-outliner-item.selected {
+  background: #2a2a5a;
+  border-left: 2px solid #6060cc;
+}
+.c3d-outliner-item.hidden {
+  opacity: 0.4;
+}
+
+.c3d-outliner-icon {
+  font-size: 10px;
+  color: #6060a0;
+  flex-shrink: 0;
+}
+
+.c3d-outliner-name {
+  flex: 1;
+  font-size: 11px;
+  color: #c0c0d0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.c3d-outliner-vis,
+.c3d-outliner-del {
+  background: transparent;
+  border: none;
+  color: #606080;
+  cursor: pointer;
+  padding: 1px 3px;
+  font-size: 11px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+.c3d-outliner-vis:hover { color: #a0a0ff; }
+.c3d-outliner-del:hover { color: #ff6666; }
+
+/* ─── Properties panel ─────────────────────────────────────────────────────── */
+.c3d-prop-section {
+  padding: 6px 8px;
+  border-bottom: 1px solid #1a1a2a;
+}
+
+.c3d-prop-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7070a0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.c3d-prop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+.c3d-prop-label {
+  font-size: 10px;
+  color: #8080a0;
+  min-width: 56px;
+  flex-shrink: 0;
+}
+
+.c3d-prop-xyz {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.c3d-prop-axis {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  font-size: 10px;
+}
+
+.c3d-prop-axis span {
+  font-weight: 700;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.c3d-prop-axis input[type=number] {
+  width: 100%;
+  background: #1a1a30;
+  border: 1px solid #3a3a5a;
+  border-radius: 3px;
+  color: #c0c0e0;
+  padding: 2px 4px;
+  font-size: 10px;
+  min-width: 0;
+}
+.c3d-prop-axis input[type=number]:focus {
+  outline: none;
+  border-color: #6060cc;
+}
+
+.c3d-prop-row input[type=range] {
+  flex: 1;
+  accent-color: #6060cc;
+  min-width: 0;
+}
+
+.c3d-prop-row input[type=checkbox] {
+  accent-color: #6060cc;
+}
+
+.c3d-prop-val {
+  font-size: 10px;
+  color: #8080a0;
+  min-width: 28px;
+  text-align: right;
+}
+
+.c3d-color-picker {
+  width: 36px;
+  height: 22px;
+  border: 1px solid #3a3a5a;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 1px;
+  background: #1a1a30;
+}
+
+/* Quick actions */
+.c3d-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.c3d-quick-btn {
+  background: #2a2a4a;
+  border: 1px solid #3a3a6a;
+  border-radius: 3px;
+  color: #c0c0d0;
+  padding: 3px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.c3d-quick-btn:hover {
+  background: #3a3a6a;
+  color: #fff;
+}
+.c3d-quick-btn.danger {
+  border-color: #6a2a2a;
+  color: #ff8080;
+}
+.c3d-quick-btn.danger:hover {
+  background: #5a2020;
+  color: #ffaaaa;
+}
+
+/* No selection */
+.c3d-no-selection {
+  padding: 16px 12px;
+  color: #606080;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* ─── Context menu ─────────────────────────────────────────────────────────── */
+.c3d-context-menu {
+  position: fixed;
+  background: #1a1a30;
+  border: 1px solid #3a3a6a;
+  border-radius: 6px;
+  min-width: 180px;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 99999;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.7);
+  padding: 4px 0;
+}
+
+.c3d-ctx-section {
+  padding: 4px 12px 2px;
+  font-size: 10px;
+  color: #7070a0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.c3d-ctx-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #c0c0d0;
+  padding: 5px 16px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.1s;
+}
+.c3d-ctx-item:hover {
+  background: #2a2a5a;
+  color: #fff;
+}
+.c3d-ctx-item.danger {
+  color: #ff8080;
+}
+.c3d-ctx-item.danger:hover {
+  background: #5a2020;
+  color: #ffaaaa;
+}
+
+.c3d-ctx-divider {
+  height: 1px;
+  background: #2a2a4a;
+  margin: 3px 0;
+}
+
+/* ─── Modal ────────────────────────────────────────────────────────────────── */
+.c3d-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+.c3d-modal {
+  background: #1a1a30;
+  border: 1px solid #3a3a6a;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 280px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.8);
+}
+
+.c3d-modal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e0e0ff;
+  margin-bottom: 16px;
+}
+
+.c3d-modal-body {
+  margin-bottom: 16px;
+  color: #c0c0d0;
+  font-size: 12px;
+}
+
+.c3d-modal-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.c3d-btn {
+  background: #4a4aaa;
+  border: 1px solid #6060cc;
+  border-radius: 4px;
+  color: #fff;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.c3d-btn:hover {
+  background: #5a5acc;
+}
+.c3d-btn.secondary {
+  background: #2a2a4a;
+  border-color: #3a3a6a;
+  color: #c0c0d0;
+}
+.c3d-btn.secondary:hover {
+  background: #3a3a6a;
+}
+
+/* ─── Shortcuts hint ───────────────────────────────────────────────────────── */
+.c3d-shortcuts-hint {
+  background: #0a0a14;
+  border-top: 1px solid #2a2a4a;
+  padding: 3px 10px;
+  font-size: 10px;
+  color: #505070;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+/* ─── Scrollbar styling ────────────────────────────────────────────────────── */
+.c3d-root *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.c3d-root *::-webkit-scrollbar-track {
+  background: #0f0f1a;
+}
+.c3d-root *::-webkit-scrollbar-thumb {
+  background: #3a3a6a;
+  border-radius: 3px;
+}
+.c3d-root *::-webkit-scrollbar-thumb:hover {
+  background: #5a5aaa;
+}
+
+/* ─── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .c3d-panels {
+    display: none;
+  }
+  .c3d-numpad-views {
+    display: none;
+  }
+}

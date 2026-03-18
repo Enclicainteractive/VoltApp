@@ -814,6 +814,33 @@ export const SocketProvider = ({ children }) => {
     newSocket.on('member:kicked', (...args) => handleMemberRemoveRef.current(...args))
     newSocket.on('member:banned', (...args) => handleMemberRemoveRef.current(...args))
 
+    // Timeout notification - show a toast/alert to the timed-out user
+    newSocket.on('member:timeout', (data) => {
+      const { serverId, memberId, timeoutUntil, reason } = data
+      // Only act if this event is for the current user
+      const currentUserId = newSocket.auth?.userId || newSocket.user?.id
+      if (memberId && currentUserId && memberId !== currentUserId) return
+      if (timeoutUntil) {
+        const until = new Date(timeoutUntil)
+        const remaining = Math.ceil((until - Date.now()) / 1000 / 60)
+        const msg = reason
+          ? `You have been timed out for ${remaining} minute(s). Reason: ${reason}`
+          : `You have been timed out for ${remaining} minute(s).`
+        // Dispatch a custom event so any component can show a notification
+        window.dispatchEvent(new CustomEvent('user:timed-out', { detail: { serverId, timeoutUntil, reason, message: msg } }))
+        console.warn('[Socket] You have been timed out:', msg)
+      } else {
+        window.dispatchEvent(new CustomEvent('user:timed-out', { detail: { serverId, timeoutUntil: null, reason: null, message: 'Your timeout has been removed.' } }))
+      }
+    })
+
+    // Force voice disconnect - server/admin kicked user from voice channel
+    newSocket.on('voice:force-disconnect', (data) => {
+      console.warn('[Socket] Force-disconnected from voice by moderator')
+      // Dispatch event so VoiceChannel/VoiceContext can leave the channel
+      window.dispatchEvent(new CustomEvent('voice:force-disconnect', { detail: data }))
+    })
+
     newSocket.on('bot:added', (data) => {
       console.log('[Socket] Bot added to server:', data)
     })

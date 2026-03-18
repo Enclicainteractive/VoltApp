@@ -12,7 +12,7 @@ import { VoltageLogo } from './LoadingScreen'
 import Avatar from './Avatar'
 import '../assets/styles/ServerSidebar.css'
 
-const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServer, onOpenSettings, onOpenCreate, onOpenJoin, onOpenServerSettings, onLeaveServer, onOpenAdmin, isAdmin, friendRequestCount = 0, dmNotifications = [], serverUnreadCounts = {}, serverEventsMeta = {}, onDMClick }) => {
+const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServer, onOpenSettings, onOpenCreate, onOpenJoin, onOpenServerSettings, onLeaveServer, onOpenAdmin, isAdmin, friendRequestCount = 0, dmNotifications = [], serverUnreadCounts = {}, serverMentionCounts = {}, serverEventsMeta = {}, onDMClick }) => {
   const { user } = useAuth()
   const { t } = useTranslation()
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -207,11 +207,12 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           
           {servers.map(server => {
             const unreadCount = serverUnreadCounts[server.id] || 0
+            const mentionCount = serverMentionCounts[server.id] || 0
             const eventMeta = serverEventsMeta?.[server.id] || null
             return (
             <button
               key={server.id}
-              className={`server-icon ${currentServerId === server.id ? 'active' : ''} ${eventMeta ? 'has-events' : ''} ${eventMeta?.hasToday ? 'has-events-today' : ''}`}
+              className={`server-icon ${currentServerId === server.id ? 'active' : ''} ${eventMeta ? 'has-events' : ''} ${eventMeta?.hasToday ? 'has-events-today' : ''} ${mentionCount > 0 ? 'has-mention' : ''}`}
               onClick={() => onServerChange(server.id)}
               onContextMenu={(e) => {
                 e.preventDefault()

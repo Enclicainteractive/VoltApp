@@ -33,7 +33,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { TrophyIcon, ShieldCheckIcon, UserIcon, ChatBubbleLeftRightIcon, UserPlusIcon, UserMinusIcon, NoSymbolIcon, SpeakerWaveIcon, SpeakerXMarkIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { TrophyIcon, ShieldCheckIcon, UserIcon, ChatBubbleLeftRightIcon, UserPlusIcon, UserMinusIcon, NoSymbolIcon, SpeakerWaveIcon, SpeakerXMarkIcon, XMarkIcon, ClockIcon, PhoneXMarkIcon } from '@heroicons/react/24/outline'
 import { useTranslation } from '../hooks/useTranslation'
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -462,9 +462,35 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
       ...(isModerator && !isSelf && !isOwner ? [
         {
           icon: <SpeakerXMarkIcon size={16} />,
-          label: t('member.mute'),
+          label: t('member.mute') || 'Mute',
           onClick: () => {},
           disabled: true
+        },
+        {
+          icon: <ClockIcon size={16} />,
+          label: 'Timeout',
+          onClick: () => {
+            const durationStr = prompt('Timeout duration in minutes (0 to remove timeout):', '10')
+            if (durationStr === null) return
+            const minutes = parseInt(durationStr, 10)
+            if (isNaN(minutes) || minutes < 0) return alert('Invalid duration')
+            const reason = minutes > 0 ? (prompt('Reason (optional):') || null) : null
+            apiService.timeoutMember(server?.id, member.id, minutes * 60, reason)
+              .then(() => alert(minutes > 0 ? `${member.username || member.id} timed out for ${minutes} minute(s)` : 'Timeout removed'))
+              .catch(err => alert('Failed to timeout: ' + (err?.response?.data?.error || err.message)))
+          },
+          danger: true
+        },
+        {
+          icon: <PhoneXMarkIcon size={16} />,
+          label: 'Disconnect from Voice',
+          onClick: () => {
+            if (!confirm(`Disconnect ${member.username || member.id} from voice?`)) return
+            apiService.voiceDisconnectMember(server?.id, member.id)
+              .then(() => {})
+              .catch(err => alert('Failed to disconnect: ' + (err?.response?.data?.error || err.message)))
+          },
+          danger: false
         },
         {
           icon: <UserMinusIcon size={16} />,

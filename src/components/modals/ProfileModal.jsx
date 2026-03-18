@@ -315,17 +315,37 @@ ${scope} .loading-spinner { border-top-color: ${accentColor} !important; border-
     if (profileBackground) {
       const opacity = profileBackgroundOpacity / 100;
       if (profileBackgroundType === 'image') {
-        parts.push(`${scope} { --profile-bg: #000; background-image: url("${profileBackground}") !important; background-size: cover !important; background-position: center !important; }`);
-        parts.push(`${scope}::before { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,${1 - opacity}); pointer-events: none; z-index: 0; }`);
+        parts.push(`${scope} {
+  --profile-bg: #000;
+  background: url("${profileBackground}") center/cover no-repeat !important;
+}
+${scope}::before {
+  background: rgba(0,0,0,${Math.max(0, 1 - opacity)}) !important;
+}
+${scope} .profile-avatar-img { border-color: rgba(0,0,0,0.6) !important; }
+${scope} .profile-status-badge { border-color: rgba(0,0,0,0.6) !important; }`);
       } else if (profileBackgroundType === 'gradient') {
         // Extract approximate end color for banner fade
         const gradMatch = profileBackground.match(/#([0-9a-fA-F]{3,6})\s*\)?\s*$/)
         const bgEnd = gradMatch ? `#${gradMatch[1]}` : '#0d0d1a'
-        parts.push(`${scope} { --profile-bg: ${bgEnd}; background: ${profileBackground} !important; }`);
+        parts.push(`${scope} {
+  --profile-bg: ${bgEnd};
+  background: ${profileBackground} !important;
+}
+${scope} .profile-banner-bg::after { background: linear-gradient(transparent, ${bgEnd}) !important; }
+${scope} .profile-avatar-img { border-color: ${bgEnd} !important; }
+${scope} .profile-status-badge { border-color: ${bgEnd} !important; }`);
       } else if (profileBackgroundType === 'solid') {
-        parts.push(`${scope} { --profile-bg: ${profileBackground}; background: ${profileBackground} !important; }`);
+        parts.push(`${scope} {
+  --profile-bg: ${profileBackground};
+  background: ${profileBackground} !important;
+}
+${scope} .profile-banner-bg::after { background: linear-gradient(transparent, ${profileBackground}) !important; }
+${scope} .profile-avatar-img { border-color: ${profileBackground} !important; }
+${scope} .profile-status-badge { border-color: ${profileBackground} !important; }`);
       } else if (profileBackgroundType === 'blur') {
-        parts.push(`${scope} { backdrop-filter: blur(${Math.round((1 - opacity) * 20)}px); }`);
+        const blurAmount = Math.round((1 - opacity) * 20);
+        parts.push(`${scope} { backdrop-filter: blur(${blurAmount}px) !important; -webkit-backdrop-filter: blur(${blurAmount}px) !important; }`);
       }
     }
 
@@ -336,7 +356,7 @@ ${scope} .loading-spinner { border-top-color: ${accentColor} !important; border-
 
     // 5. Banner effect class → keyframe animation
     if (bannerEffect && bannerEffect !== 'none') {
-      parts.push(`${scope} .profile-banner-bg { animation: banner-effect-${bannerEffect} 4s ease-in-out infinite; }`);
+      parts.push(`${scope} .profile-banner-bg { animation: banner-effect-${bannerEffect} 4s ease-in-out infinite !important; }`);
     }
 
     // 6. User-authored profile CSS (scoped to this modal)
@@ -1114,13 +1134,13 @@ ${scope} .loading-spinner { border-top-color: ${accentColor} !important; border-
             {/* Banner Section */}
             <div className="profile-banner-area">
               <div
-                className="profile-banner-bg"
+                className={`profile-banner-bg${profile?.bannerEffect && profile.bannerEffect !== 'none' ? ` banner-effect-${profile.bannerEffect}` : ''}${profile?.customization?.bannerEffect && profile.customization.bannerEffect !== 'none' ? ` banner-effect-${profile.customization.bannerEffect}` : ''}`}
                 style={{
                   backgroundImage: (!isBot && bannerSrc)
                     ? `url(${bannerSrc})`
                     : undefined,
                   backgroundColor: isBot || !bannerSrc
-                    ? 'var(--volt-primary)'
+                    ? (profile?.profileAccentColor || profile?.accentColor || profile?.customization?.accentColor || 'var(--volt-primary)')
                     : undefined
                 }}
               />

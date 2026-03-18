@@ -93,6 +93,22 @@
   border-color: rgba(255, 193, 94, 0.82);
 }
 
+/* Mention glow - pulsing red/pink glow for servers with @mentions */
+.server-icon.has-mention {
+  border-color: rgba(237, 66, 69, 0.85);
+  box-shadow: 0 0 0 2px rgba(237, 66, 69, 0.35), 0 0 12px 3px rgba(237, 66, 69, 0.25);
+  animation: mention-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes mention-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(237, 66, 69, 0.35), 0 0 12px 3px rgba(237, 66, 69, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(237, 66, 69, 0.55), 0 0 20px 6px rgba(237, 66, 69, 0.4);
+  }
+}
+
 .server-icon.active::before {
   content: '';
   position: absolute;

@@ -16,6 +16,7 @@ import ColabCreateDAW from './ColabCreateDAW'
 import VoltVerseActivity from './voltverse/VoltVerseActivity'
 import VoltVerseCreator from './voltverse-creator/VoltVerseCreator'
 import VoltCraftActivity from './VoltCraftActivity'
+import Collab3DModelingActivity from './Collab3DModelingActivity'
 
 export const BuiltinActivityComponentMap = {
   'builtin:our-vids': OurVidsActivity,
@@ -35,7 +36,8 @@ export const BuiltinActivityComponentMap = {
   'builtin:daw-sequencer': DAWSequencerActivity,
   'builtin:voltverse': VoltVerseActivity,
   'builtin:voltverse-creator': VoltVerseCreator,
-  'builtin:voltcraft': VoltCraftActivity
+  'builtin:voltcraft': VoltCraftActivity,
+  'builtin:collab-3d-modeling': Collab3DModelingActivity
 }
 
 const BuiltinActivityAliases = {
@@ -67,7 +69,10 @@ const BuiltinActivityAliases = {
   'voltverse-creator': 'builtin:voltverse-creator',
   'vv-creator': 'builtin:voltverse-creator',
   'voltcraft': 'builtin:voltcraft',
-  'volt-craft': 'builtin:voltcraft'
+  'volt-craft': 'builtin:voltcraft',
+  'collab-3d-modeling': 'builtin:collab-3d-modeling',
+  '3d-modeling': 'builtin:collab-3d-modeling',
+  'collab3d': 'builtin:collab-3d-modeling'
 }
 
 export const normalizeBuiltinActivityId = (activityId) => {

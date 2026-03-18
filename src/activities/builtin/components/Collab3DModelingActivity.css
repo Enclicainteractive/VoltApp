@@ -1,0 +1,760 @@
+/* ============================================================
+   VOLT 3D MODELING ACTIVITY
+   ============================================================ */
+
+.m3d-activity {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #0a0a15;
+  color: #f1f5f9;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+}
+
+/* ── Header ── */
+.m3d-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, rgba(30,30,50,0.97) 0%, rgba(20,20,35,0.97) 100%);
+  border-bottom: 1px solid rgba(99,102,241,0.3);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  z-index: 10;
+}
+
+.m3d-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.m3d-title {
+  font-size: 18px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #38bdf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.m3d-subtitle {
+  font-size: 11px;
+  color: #64748b;
+  padding: 3px 8px;
+  background: rgba(99,102,241,0.15);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* ── Toolbar ── */
+.m3d-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.m3d-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.28);
+  border-radius: 7px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.m3d-tool-btn:hover {
+  background: rgba(99,102,241,0.28);
+  border-color: rgba(99,102,241,0.5);
+  transform: translateY(-1px);
+}
+
+.m3d-tool-btn.active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.m3d-tool-btn.danger {
+  background: rgba(239,68,68,0.12);
+  border-color: rgba(239,68,68,0.28);
+  color: #fca5a5;
+}
+
+.m3d-tool-btn.danger:hover {
+  background: rgba(239,68,68,0.28);
+  border-color: rgba(239,68,68,0.5);
+}
+
+.m3d-tool-icon {
+  font-size: 14px;
+}
+
+.m3d-divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(99,102,241,0.25);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.m3d-snap-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.28);
+  border-radius: 7px;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.m3d-snap-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #6366f1;
+}
+
+.m3d-select {
+  padding: 5px 8px;
+  background: rgba(15,15,25,0.9);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.m3d-select.full {
+  width: 100%;
+}
+
+/* ── Collaborators ── */
+.m3d-collab-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.m3d-collab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  background: rgba(30,30,50,0.8);
+  border: 1px solid rgba(99,102,241,0.2);
+  border-radius: 999px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.m3d-collab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #64748b;
+}
+
+.m3d-collab-dot.you {
+  background: #22c55e;
+  box-shadow: 0 0 5px rgba(34,197,94,0.5);
+}
+
+/* ── Notice ── */
+.m3d-notice {
+  padding: 8px 16px;
+  background: rgba(99,102,241,0.2);
+  border-bottom: 1px solid rgba(99,102,241,0.3);
+  color: #a5b4fc;
+  font-size: 12px;
+  text-align: center;
+  flex-shrink: 0;
+  animation: m3d-notice-in 0.2s ease;
+}
+
+@keyframes m3d-notice-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Main layout ── */
+.m3d-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Sidebars ── */
+.m3d-sidebar {
+  width: 260px;
+  min-width: 220px;
+  max-width: 300px;
+  background: rgba(15,15,28,0.97);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.m3d-sidebar-left {
+  border-right: 1px solid rgba(99,102,241,0.2);
+}
+
+.m3d-sidebar-right {
+  border-left: 1px solid rgba(99,102,241,0.2);
+}
+
+.m3d-sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(99,102,241,0.15);
+  flex-shrink: 0;
+}
+
+.m3d-tab {
+  flex: 1;
+  padding: 10px 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.m3d-tab:hover {
+  color: #f1f5f9;
+  background: rgba(99,102,241,0.08);
+}
+
+.m3d-tab.active {
+  color: #818cf8;
+  border-bottom-color: #6366f1;
+  background: rgba(99,102,241,0.1);
+}
+
+.m3d-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.m3d-sidebar-content::-webkit-scrollbar { width: 5px; }
+.m3d-sidebar-content::-webkit-scrollbar-track { background: transparent; }
+.m3d-sidebar-content::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
+
+/* ── Panel & sections ── */
+.m3d-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.m3d-section {
+  background: rgba(25,25,45,0.6);
+  border: 1px solid rgba(99,102,241,0.12);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.m3d-section h3 {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 0 0 10px 0;
+}
+
+/* ── Primitives grid ── */
+.m3d-primitive-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.m3d-primitive-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 4px;
+  background: rgba(99,102,241,0.08);
+  border: 1px solid rgba(99,102,241,0.18);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.m3d-primitive-btn:hover {
+  background: rgba(99,102,241,0.22);
+  border-color: #6366f1;
+  transform: translateY(-2px);
+}
+
+.m3d-prim-icon {
+  font-size: 18px;
+}
+
+/* ── Object list ── */
+.m3d-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.m3d-object-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+  text-align: left;
+  width: 100%;
+}
+
+.m3d-object-item:hover {
+  background: rgba(99,102,241,0.1);
+}
+
+.m3d-object-item.selected {
+  background: rgba(99,102,241,0.2);
+  border-color: rgba(99,102,241,0.5);
+}
+
+.m3d-object-item.hidden {
+  opacity: 0.45;
+}
+
+.m3d-object-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.m3d-object-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m3d-object-type {
+  font-size: 10px;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.m3d-vis-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.m3d-vis-btn:hover { opacity: 1; }
+
+/* ── Form controls ── */
+.m3d-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.m3d-form-group:last-child { margin-bottom: 0; }
+
+.m3d-form-group label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.m3d-form-group.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.m3d-form-group.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.m3d-form-group input[type="range"] {
+  width: 100%;
+  height: 4px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.m3d-form-group input[type="color"] {
+  width: 100%;
+  height: 30px;
+  padding: 2px;
+  background: rgba(15,15,25,0.8);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.m3d-form-group input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.m3d-input {
+  padding: 7px 10px;
+  background: rgba(10,10,20,0.8);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.m3d-input:focus { border-color: #6366f1; }
+
+/* ── Vector inputs ── */
+.m3d-vector-group {
+  margin-bottom: 10px;
+}
+
+.m3d-vector-label {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 5px;
+}
+
+.m3d-vector-inputs {
+  display: flex;
+  gap: 5px;
+}
+
+.m3d-vector-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.m3d-axis-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.m3d-axis-x { color: #ef4444; }
+.m3d-axis-y { color: #22c55e; }
+.m3d-axis-z { color: #3b82f6; }
+
+.m3d-vector-field input {
+  width: 100%;
+  padding: 5px 4px;
+  background: rgba(10,10,20,0.8);
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: 5px;
+  color: #f1f5f9;
+  font-size: 11px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.m3d-vector-field input:focus { border-color: #6366f1; }
+
+/* ── Color swatches ── */
+.m3d-color-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.m3d-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.m3d-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.m3d-swatch:hover { transform: scale(1.15); }
+
+.m3d-swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px #6366f1;
+}
+
+/* ── Buttons ── */
+.m3d-reset-btn {
+  width: 100%;
+  padding: 7px;
+  background: rgba(99,102,241,0.1);
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: 6px;
+  color: #a5b4fc;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 4px;
+}
+
+.m3d-reset-btn:hover {
+  background: rgba(99,102,241,0.22);
+}
+
+.m3d-object-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.m3d-action-btn {
+  flex: 1;
+  padding: 8px;
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: 7px;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.m3d-action-btn:hover {
+  background: rgba(99,102,241,0.25);
+}
+
+.m3d-action-btn.danger {
+  background: rgba(239,68,68,0.1);
+  border-color: rgba(239,68,68,0.25);
+  color: #fca5a5;
+}
+
+.m3d-action-btn.danger:hover {
+  background: rgba(239,68,68,0.25);
+}
+
+/* ── Reference images ── */
+.m3d-hint {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.m3d-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px;
+  background: rgba(99,102,241,0.1);
+  border: 1px dashed rgba(99,102,241,0.35);
+  border-radius: 8px;
+  color: #a5b4fc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+.m3d-upload-btn:hover {
+  background: rgba(99,102,241,0.2);
+  border-style: solid;
+}
+
+.m3d-ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.m3d-ref-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(10,10,20,0.6);
+  border: 1px solid rgba(99,102,241,0.15);
+  border-radius: 8px;
+}
+
+.m3d-ref-thumb {
+  width: 52px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+  border: 1px solid rgba(99,102,241,0.2);
+}
+
+.m3d-ref-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.m3d-ref-name {
+  font-size: 11px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m3d-ref-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.m3d-ref-opacity {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.m3d-ref-opacity input[type="range"] {
+  flex: 1;
+  height: 3px;
+  accent-color: #6366f1;
+}
+
+.m3d-ref-vis,
+.m3d-ref-del {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+.m3d-ref-vis:hover { background: rgba(99,102,241,0.2); }
+.m3d-ref-del:hover { background: rgba(239,68,68,0.2); }
+
+/* ── Viewport ── */
+.m3d-viewport {
+  flex: 1;
+  position: relative;
+  background: #0a0a15;
+  min-width: 0;
+  min-height: 0;
+}
+
+.m3d-viewport canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.m3d-viewport-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(transparent, rgba(10,10,21,0.75));
+  pointer-events: none;
+}
+
+.m3d-viewport-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: rgba(148,163,184,0.8);
+}
+
+.m3d-viewport-info strong {
+  color: #a5b4fc;
+}
+
+.m3d-shortcut-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: rgba(100,116,139,0.7);
+}
+
+/* ── Empty state ── */
+.m3d-empty {
+  font-size: 11px;
+  color: #475569;
+  text-align: center;
+  padding: 12px 8px;
+  font-style: italic;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .m3d-sidebar { width: 220px; min-width: 180px; }
+}
+
+@media (max-width: 800px) {
+  .m3d-sidebar-right { display: none; }
+  .m3d-sidebar { width: 200px; min-width: 160px; }
+  .m3d-primitive-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .m3d-header { flex-direction: column; align-items: flex-start; }
+  .m3d-collab-row { margin-left: 0; }
+  .m3d-sidebar-left { width: 180px; min-width: 150px; }
+}

@@ -30,6 +30,27 @@
   position: relative;
   box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
   animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Allow custom background/image set via profile CSS injection */
+  background-size: cover !important;
+  background-position: center !important;
+  background-attachment: local !important;
+  isolation: isolate;
+}
+
+/* Overlay pseudo-element for custom background dimming (used by JS injection) */
+.profile-modal-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+/* All direct children sit above the ::before overlay */
+.profile-modal-container > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Close Button */
@@ -80,6 +101,7 @@
   left: 0;
   right: 0;
   height: 60px;
+  /* Fade to the custom profile background color, or the modal bg as fallback */
   background: linear-gradient(transparent, var(--profile-bg, var(--volt-bg-secondary)));
 }
 
@@ -189,7 +211,7 @@
   align-items: flex-start;
   gap: 16px;
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 .profile-names-area {
@@ -353,6 +375,12 @@
   gap: 4px;
   padding: 0 24px;
   border-bottom: 1px solid var(--volt-border);
+  /* Semi-transparent so custom background shows through */
+  background: rgba(var(--volt-bg-secondary-rgb, 30, 31, 34), 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  position: relative;
+  z-index: 2;
 }
 
 .profile-tab-btn {
@@ -386,6 +414,8 @@
   overflow-y: auto;
   padding: 20px 24px;
   max-height: 400px;
+  position: relative;
+  z-index: 2;
 }
 
 .profile-tab-content {
@@ -396,7 +426,9 @@
 
 /* Profile Section */
 .profile-section {
-  background: var(--volt-bg-tertiary);
+  background: rgba(var(--volt-bg-tertiary-rgb, 24, 25, 28), 0.88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border-radius: 12px;
   padding: 16px;
 }
@@ -872,6 +904,80 @@
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* ─── Profile entrance animations ─────────────────────────────────────────── */
+@keyframes profile-entrance-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes profile-entrance-slide {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes profile-entrance-bounce {
+  0%   { opacity: 0; transform: scale(0.85); }
+  60%  { opacity: 1; transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+@keyframes profile-entrance-pulse {
+  0%   { opacity: 0; transform: scale(0.95); }
+  50%  { opacity: 1; transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+@keyframes profile-entrance-wave {
+  0%   { opacity: 0; transform: translateX(-20px) rotate(-1deg); }
+  60%  { opacity: 1; transform: translateX(4px) rotate(0.5deg); }
+  100% { transform: translateX(0) rotate(0); }
+}
+
+/* ─── Banner effect keyframe animations ───────────────────────────────────── */
+@keyframes banner-effect-gradient-shift {
+  0%   { filter: hue-rotate(0deg) brightness(1); }
+  50%  { filter: hue-rotate(30deg) brightness(1.15); }
+  100% { filter: hue-rotate(0deg) brightness(1); }
+}
+
+@keyframes banner-effect-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.85; transform: scale(1.02); }
+}
+
+@keyframes banner-effect-wave {
+  0%, 100% { transform: translateX(0) scaleY(1); }
+  25%       { transform: translateX(-4px) scaleY(1.02); }
+  75%       { transform: translateX(4px) scaleY(0.98); }
+}
+
+@keyframes banner-effect-aurora {
+  0%   { filter: hue-rotate(0deg) saturate(1.2) brightness(1); }
+  33%  { filter: hue-rotate(40deg) saturate(1.5) brightness(1.1); }
+  66%  { filter: hue-rotate(-20deg) saturate(1.3) brightness(0.95); }
+  100% { filter: hue-rotate(0deg) saturate(1.2) brightness(1); }
+}
+
+@keyframes banner-effect-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Shimmer effect needs a special override on the banner bg */
+.profile-banner-bg.banner-effect-shimmer,
+[data-profile-id] .profile-banner-bg.banner-effect-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.12) 40%,
+    rgba(255,255,255,0.22) 50%,
+    rgba(255,255,255,0.12) 60%,
+    transparent 100%
+  ) !important;
+  background-size: 200% 100% !important;
+  animation: banner-effect-shimmer 2.5s linear infinite !important;
 }
 
 /* ─── Profile Comments ─────────────────────────────────────────────────────── */

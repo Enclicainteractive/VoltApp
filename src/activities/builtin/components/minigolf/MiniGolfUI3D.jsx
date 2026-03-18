@@ -41,7 +41,7 @@ export function LobbyPanel3D({
         const isSelected = course.id === selectedCourseId
         const bgColor = isSelected ? '#1e3a5f' : isLeading ? '#14532d' : '#1f2937'
         return (
-          <ScreenButton
+          <HtmlButton
             key={course.id}
             x={16} y={110 + i * 36} w={320} h={30}
             label={`${course.name}${isVoted ? '  ✓' : isLeading ? '  ★' : ''}`}
@@ -65,7 +65,7 @@ export function LobbyPanel3D({
       <HtmlDivider x={12} y={340} w={536} />
 
       {/* Action buttons */}
-      <ScreenButton
+      <HtmlButton
         x={16} y={352} w={180} h={36}
         label={isReady ? '✓ Ready!' : 'Mark Ready'}
         color={isReady ? '#14532d' : '#1d4ed8'}
@@ -73,7 +73,7 @@ export function LobbyPanel3D({
         onClick={onToggleReady}
       />
       {canStart && (
-        <ScreenButton
+        <HtmlButton
           x={208} y={352} w={180} h={36}
           label="▶ Start Game"
           color="#7c3aed"
@@ -85,7 +85,7 @@ export function LobbyPanel3D({
       {/* Ball color picker */}
       <HtmlText x={16} y={400} text="Ball Color:" fontSize={13} color="#9ca3af" />
       {BALL_COLOR_OPTIONS.slice(0, 12).map((opt, i) => (
-        <ScreenColorSwatch
+        <HtmlColorSwatch
           key={opt.value}
           x={100 + i * 28} y={396}
           size={20}
@@ -119,7 +119,7 @@ export function PlayingHUD3D({
         <HtmlText x={12} y={10} text="Scores" fontSize={14} color="#f9fafb" fontWeight="bold" />
         <HtmlDivider x={8} y={28} w={164} />
         {players.slice(0, 6).map((p, i) => (
-          <ScreenText
+          <HtmlText
             key={p.id}
             x={12} y={34 + i * 24}
             text={`${p.id === currentPlayer?.id ? '▶ ' : ''}${p.username || 'P'}: ${p.totalStrokes ?? 0}`}
@@ -175,7 +175,7 @@ export function HoleSummaryPanel3D({ leaderboard, onAdvanceHole, isLastHole, hol
           />
         </HtmlPanel>
       ))}
-      <ScreenButton
+      <HtmlButton
         x={100} y={leaderboard.length * 36 + 76} w={200} h={36}
         label={isLastHole ? '🏆 See Final Results' : '▶ Next Hole'}
         color="#7c3aed" hoverColor="#6d28d9"
@@ -205,7 +205,7 @@ export function FinishedPanel3D({ leaderboard, winner, onRematch }) {
           />
         </HtmlPanel>
       ))}
-      <ScreenButton
+      <HtmlButton
         x={110} y={leaderboard.length * 36 + 106} w={200} h={36}
         label="🔄 Play Again"
         color="#7c3aed" hoverColor="#6d28d9"
@@ -249,7 +249,7 @@ export function SettingsPanel3D({ settings, onChangeSetting, onClose, ballColors
       {/* Ball color */}
       <HtmlText x={12} y={44} text="Ball Color" fontSize={13} color="#9ca3af" />
       {ballColors.slice(0, 10).map((opt, i) => (
-        <ScreenColorSwatch
+        <HtmlColorSwatch
           key={opt.value}
           x={12 + i * 30} y={62}
           size={22}

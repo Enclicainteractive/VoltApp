@@ -276,6 +276,17 @@ export const VoltmeterIcon = (props) => (
   </svg>
 )
 
+// Collab3DModeling - 3D cube with wireframe and cursor
+export const Collab3DModelingIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3z"/>
+    <path d="M12 3v9M4 7.5l8 4.5 8-4.5"/>
+    <path d="M12 12v9" opacity="0.4"/>
+    <circle cx="19" cy="5" r="2.5" fill="currentColor" fillOpacity="0.2" stroke="currentColor" strokeWidth="1.5"/>
+    <path d="M18 4.5l2 1-1 2" strokeWidth="1.2"/>
+  </svg>
+)
+
 // Default - gear/settings
 export const DefaultActivityIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -400,6 +411,8 @@ export const ActivityIconMap = {
   'video-sync': VideoSyncIcon,
   'p2p-lobby': P2PLobbyIcon,
   'voltmeter': VoltmeterIcon,
+  'collab-3d-modeling': Collab3DModelingIcon,
+  '3d-modeling': Collab3DModelingIcon,
 }
 
 // Category icon mapping

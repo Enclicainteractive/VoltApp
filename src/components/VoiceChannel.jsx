@@ -618,6 +618,16 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
     return () => window.removeEventListener('activity:fullscreen', handleFullscreen)
   }, [focusedActivityId])
 
+  // Handle force-disconnect from voice (admin/moderator action)
+  useEffect(() => {
+    const handleForceDisconnect = () => {
+      console.warn('[VoiceChannel] Force-disconnected from voice by moderator')
+      handleLeave()
+    }
+    window.addEventListener('voice:force-disconnect', handleForceDisconnect)
+    return () => window.removeEventListener('voice:force-disconnect', handleForceDisconnect)
+  }, [])
+
   // Activity socket event handlers
   useEffect(() => {
     if (!socket || !channel?.id) return
@@ -1183,6 +1193,8 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
   
   // Exponential backoff state for reconnect attempts
   const reconnectBackoffRef = useRef({ attempts: 0, lastAttemptAt: 0 })
+  // Periodic participant reconciliation interval ref
+  const reconcileIntervalRef = useRef(null)
   
   // Notify parent of participants changes (for sidebar display)
   useEffect(() => {
@@ -4115,6 +4127,15 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
 
     socket.on('connect', onReconnectJoin)
 
+    // Periodic participant reconciliation: every 30s request the authoritative
+    // participant list from the server and auto-remove any stale participants
+    // that are no longer in the server's voice state (e.g. after force-disconnect).
+    reconcileIntervalRef.current = setInterval(() => {
+      if (socket?.connected && channelIdRef.current && hasJoinedRef.current) {
+        socket.emit('voice:get-participants', { channelId: channelIdRef.current })
+      }
+    }, 30000)
+
     socket.on('voice:participants', (data) => {
       if (data.channelId !== channelIdRef.current) return
       applyLowDelayModeToAllPeers()
@@ -4726,6 +4747,7 @@ socket.on('voice:force-reconnect', (data) => {
       socket.off('voice:resync-request')
       socket.off('voice:force-reconnect')
       socket.off('connect', onReconnectJoin)
+      clearInterval(reconcileIntervalRef.current)
       
       // Clean up if we joined and are either:
       // 1. Switching to a different voice channel (isChannelChange)

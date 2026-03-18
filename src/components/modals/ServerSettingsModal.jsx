@@ -146,7 +146,12 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     setImportSuccess('')
 
     try {
-      const response = await apiService.importDiscordTemplate(importTemplateCode.trim(), server.id)
+      // Normalise discord.new/<code> → extract just the code
+      const normalizedCode = importTemplateCode.trim()
+        .replace(/^https?:\/\/discord\.new\//, '')
+        .replace(/^https?:\/\/discord\.com\/template\//, '')
+        .trim()
+      const response = await apiService.importDiscordTemplate(normalizedCode, server.id)
       setImportSuccess(`Successfully imported "${response.data.server.name}" with ${response.data.channels.length} channels and ${response.data.roles.length} roles!`)
       setImportTemplateCode('')
       setRoles(response.data.roles || [])
@@ -217,8 +222,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const [editingCategory, setEditingCategory] = useState(null)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [saving, setSaving] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleteInput, setDeleteInput] = useState('')
+  const [deleteStage, setDeleteStage] = useState(0) // 0=idle, 1=first confirm, 2=second confirm, 3=final confirm
   const [uploadingBanner, setUploadingBanner] = useState(false)
   const [uploadingBackground, setUploadingBackground] = useState(false)
   const [uploadingIcon, setUploadingIcon] = useState(false)
@@ -715,7 +719,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const handleDeleteServer = async () => {
-    if (deleteInput !== server.name) return
+    if (deleteStage < 3) return
     try {
       await apiService.deleteServer(server.id)
       onDelete?.()
@@ -1133,7 +1137,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                         value={importTemplateCode}
                         onChange={(e) => setImportTemplateCode(e.target.value)}
                       />
-                      <span className="input-hint">{t('serverSettings.templateHint', 'Example: https://discord.com/template/H7DQGTv6wMU9')}</span>
+                      <span className="input-hint">{t('serverSettings.templateHint', 'Supports: https://discord.com/template/… · https://discord.new/… · or bare code')}</span>
                     </div>
                     
                     {importError && (
@@ -2341,29 +2345,51 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     <h4>{t('servers.deleteServer', 'Delete Server')}</h4>
                     <p>{t('serverSettings.deleteServerWarning', 'Once you delete a server, there is no going back. Please be certain.')}</p>
                   </div>
-                  {!confirmDelete ? (
-                    <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>
+                  {deleteStage === 0 && (
+                    <button className="btn btn-danger" onClick={() => setDeleteStage(1)}>
                       {t('servers.deleteServer', 'Delete Server')}
                     </button>
-                  ) : (
+                  )}
+                  {deleteStage === 1 && (
                     <div className="confirm-delete">
-                      <p>{t('serverSettings.typeServerNameConfirm', 'Type {{name}} to confirm:', { name: server.name })}</p>
-                      <input
-                        type="text"
-                        className="input"
-                        value={deleteInput}
-                        onChange={e => setDeleteInput(e.target.value)}
-                        placeholder={server.name}
-                      />
+                      <p style={{ color: 'var(--danger, #ed4245)', fontWeight: 600 }}>
+                        ⚠️ {t('serverSettings.deleteConfirmStep1', 'Are you sure? This will permanently delete the server and all its channels and messages.')}
+                      </p>
                       <div className="confirm-buttons">
-                        <button className="btn btn-secondary" onClick={() => { setConfirmDelete(false); setDeleteInput('') }}>
+                        <button className="btn btn-secondary" onClick={() => setDeleteStage(0)}>
                           {t('common.cancel', 'Cancel')}
                         </button>
-                        <button 
-                          className="btn btn-danger" 
-                          onClick={handleDeleteServer}
-                          disabled={deleteInput !== server.name}
-                        >
+                        <button className="btn btn-danger" onClick={() => setDeleteStage(2)}>
+                          {t('serverSettings.yesDeleteServer', 'Yes, delete server')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {deleteStage === 2 && (
+                    <div className="confirm-delete">
+                      <p style={{ color: 'var(--danger, #ed4245)', fontWeight: 600 }}>
+                        🚨 {t('serverSettings.deleteConfirmStep2', 'Final warning: This cannot be undone. All members will lose access immediately.')}
+                      </p>
+                      <div className="confirm-buttons">
+                        <button className="btn btn-secondary" onClick={() => setDeleteStage(0)}>
+                          {t('common.cancel', 'Cancel')}
+                        </button>
+                        <button className="btn btn-danger" onClick={() => setDeleteStage(3)}>
+                          {t('serverSettings.iUnderstand', 'I understand, proceed')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {deleteStage === 3 && (
+                    <div className="confirm-delete">
+                      <p style={{ color: 'var(--danger, #ed4245)', fontWeight: 700, fontSize: 15 }}>
+                        💀 {t('serverSettings.deleteConfirmStep3', 'Click below to permanently delete "{name}". There is no undo.', { name: server.name })}
+                      </p>
+                      <div className="confirm-buttons">
+                        <button className="btn btn-secondary" onClick={() => setDeleteStage(0)}>
+                          {t('common.cancel', 'Cancel')}
+                        </button>
+                        <button className="btn btn-danger" onClick={handleDeleteServer}>
                           {t('serverSettings.deleteForever', 'Delete Forever')}
                         </button>
                       </div>

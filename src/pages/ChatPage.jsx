@@ -181,6 +181,7 @@ const ChatPage = () => {
   const [friendRequestCount, setFriendRequestCount] = useState(0)
   const [dmNotifications, setDmNotifications] = useState([])
   const [serverUnreadCounts, setServerUnreadCounts] = useState({})
+  const [serverMentionCounts, setServerMentionCounts] = useState({})
   const [unreadChannelsByServer, setUnreadChannelsByServer] = useState({})
   const [upcomingEvents, setUpcomingEvents] = useState([])
   const notificationsCooldownUntilRef = useRef(0)
@@ -720,6 +721,68 @@ const ChatPage = () => {
     }
   }, [socket, loadUpcomingEvents])
 
+  // Track @mention counts per server for sidebar glow
+  useEffect(() => {
+    if (!socket || !connected) return undefined
+
+    const handleMentionNotification = (payload) => {
+      const mentionServerId = payload?.serverId
+      if (!mentionServerId) return
+      // Only count if not currently viewing that server
+      if (mentionServerId === serverId) return
+      setServerMentionCounts(prev => ({
+        ...prev,
+        [mentionServerId]: (prev[mentionServerId] || 0) + 1
+      }))
+    }
+
+    socket.on('notification:mention', handleMentionNotification)
+    return () => {
+      socket.off('notification:mention', handleMentionNotification)
+    }
+  }, [socket, connected, serverId])
+
+  // Clear mention count when user navigates to a server
+  useEffect(() => {
+    if (serverId && serverId !== 'null' && serverId !== 'home' && serverId !== 'friends' && serverId !== 'dms' && serverId !== 'discovery') {
+      setServerMentionCounts(prev => {
+        if (!prev[serverId]) return prev
+        const next = { ...prev }
+        delete next[serverId]
+        return next
+      })
+    }
+  }, [serverId])
+
+  // Handle being kicked or banned from a server - immediately remove from list
+  useEffect(() => {
+    if (!socket || !user?.id) return undefined
+
+    const handleSelfKickedOrBanned = (payload) => {
+      const kickedServerId = payload?.serverId
+      const kickedUserId = payload?.memberId || payload?.userId || payload?.id
+      if (!kickedServerId || kickedUserId !== user.id) return
+
+      console.log('[ChatPage] Current user was kicked/banned from server:', kickedServerId)
+
+      // Remove server from list immediately
+      setServers(prev => prev.filter(s => s.id !== kickedServerId))
+
+      // If currently viewing that server, navigate away
+      if (currentServer?.id === kickedServerId) {
+        setCurrentServer(null)
+        navigate('/chat', { replace: true })
+      }
+    }
+
+    socket.on('member:kicked', handleSelfKickedOrBanned)
+    socket.on('member:banned', handleSelfKickedOrBanned)
+    return () => {
+      socket.off('member:kicked', handleSelfKickedOrBanned)
+      socket.off('member:banned', handleSelfKickedOrBanned)
+    }
+  }, [socket, user?.id, currentServer?.id, navigate])
+
   const checkAdminStatus = async () => {
     try {
       const res = await apiService.getMyAdminRole()
@@ -919,7 +982,12 @@ const ChatPage = () => {
   useEffect(() => {
     if (!serverId || !channelId || serverId === 'null' || channelId === 'null') return
     clearChannelUnread(serverId, channelId)
-  }, [serverId, channelId, clearChannelUnread])
+    // Mark channel as read on the server so unread counts update
+    apiService.markChannelRead(channelId).catch(() => {})
+    // Refresh server unread counts after a short delay
+    const timer = setTimeout(() => loadNotifications(), 1500)
+    return () => clearTimeout(timer)
+  }, [serverId, channelId, clearChannelUnread, loadNotifications])
 
   // Save current channel state before switching
   const saveCurrentChannelState = useCallback((scrollTop) => {
@@ -2174,6 +2242,7 @@ const ChatPage = () => {
           friendRequestCount={friendRequestCount}
           dmNotifications={dmNotifications}
           serverUnreadCounts={serverUnreadCounts}
+          serverMentionCounts={serverMentionCounts}
           serverEventsMeta={serverEventsMeta}
           onDMClick={handleDMClick}
         />

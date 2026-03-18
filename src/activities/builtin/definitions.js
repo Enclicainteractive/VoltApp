@@ -15,7 +15,8 @@ export const CLIENT_BUILTIN_ACTIVITIES = [
   { id: 'builtin:minigolf', key: 'minigolf', iconKey: 'minigolf', name: 'MiniGolf', description: 'Shared mini golf with stylized 3D courses and rotating turns.', category: 'Games', icon: 'board', participantCap: 8, minPlayers: 2, gameType: 'turn-based' },
   { id: 'builtin:voltcraft', key: 'voltcraft', iconKey: 'voltcraft', name: 'VoltCraft', description: 'Shared voxel sandbox with 16x16 chunks, mining, crafting, creative or survival play, and multiplayer block sync.', category: 'Games', icon: 'board', participantCap: 16, minPlayers: 1, gameType: 'sandbox' },
   { id: 'builtin:voltverse', key: 'voltverse', iconKey: 'voltverse', name: 'VoltVerse', description: 'Full 3D social VR platform with shared avatars, worlds, custom shaders, level editor, avatar editor, portals, triggers, teleportation, and real-time P2P networking. Supports VR and desktop.', category: 'Social', icon: 'vr', participantCap: 64 },
-  { id: 'builtin:voltverse-creator', key: 'voltverse-creator', iconKey: 'voltverse-creator', name: 'VoltVerse Creator', description: 'Collaborative WYSIWYG world and avatar editor. Create custom 3D worlds with objects, imported models, lighting, portals, triggers, shaders, and shared editing. Design avatars with customizable body parts, colors, presets, and imported 3D models. Export as .voltworld or .voltavatar files.', category: 'Creative', icon: 'edit', participantCap: 8 }
+  { id: 'builtin:voltverse-creator', key: 'voltverse-creator', iconKey: 'voltverse-creator', name: 'VoltVerse Creator', description: 'Collaborative WYSIWYG world and avatar editor. Create custom 3D worlds with objects, imported models, lighting, portals, triggers, shaders, and shared editing. Design avatars with customizable body parts, colors, presets, and imported 3D models. Export as .voltworld or .voltavatar files.', category: 'Creative', icon: 'edit', participantCap: 8 },
+  { id: 'builtin:collab-3d-modeling', key: 'collab-3d-modeling', iconKey: 'collab-3d-modeling', name: '3D Modeling Studio', description: 'Real-time collaborative 3D modeling with Three.js. Add primitives, transform objects, apply materials, upload reference images, and build 3D models together with your group.', category: 'Creative', icon: '3d-modeling', participantCap: 8 }
 ].map((item, idx) => ({
   ...item,
   isBuiltinClient: true,
@@ -64,7 +65,10 @@ const BUILTIN_DEFINITION_ALIASES = {
   'voltverse3d': 'builtin:voltverse',
   'voltverse-creator': 'builtin:voltverse-creator',
   'voltverse-creator': 'builtin:voltverse-creator',
-  'vv-creator': 'builtin:voltverse-creator'
+  'vv-creator': 'builtin:voltverse-creator',
+  'collab-3d-modeling': 'builtin:collab-3d-modeling',
+  '3d-modeling': 'builtin:collab-3d-modeling',
+  'collab3d': 'builtin:collab-3d-modeling'
 }
 
 export const normalizeBuiltinDefinitionId = (activityId) => {

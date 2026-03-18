@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { XMarkIcon, Squares2X2Icon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useAppStore } from '../store/useAppStore'
 import { soundService } from '../services/soundService'
@@ -26,11 +26,14 @@ const ActivityStrip = ({ socket, contextType, contextId, onActivityFocus }) => {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [prevFocusedId, setPrevFocusedId] = useState(null)
   
-  // Filter activities for this context - show all activities in this voice/call context
-  const activitiesForContext = activeActivities.filter(
-    a => a.contextType === contextType && 
-         a.contextId === contextId &&
-         a.sessionId // Must have sessionId
+  // Filter activities for this context - memoized to avoid re-renders on unrelated state changes
+  const activitiesForContext = useMemo(
+    () => activeActivities.filter(
+      a => a.contextType === contextType &&
+           a.contextId === contextId &&
+           a.sessionId // Must have sessionId
+    ),
+    [activeActivities, contextType, contextId]
   )
 
   // Play sound when activity focus changes
@@ -106,17 +109,6 @@ const ActivityStrip = ({ socket, contextType, contextId, onActivityFocus }) => {
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
-
-  // Debug logging
-  useEffect(() => {
-    if (activitiesForContext.length > 0) {
-      console.log('[ActivityStrip] Valid activities:', activitiesForContext.map(a => ({
-        id: a.sessionId,
-        name: a.activityName,
-        activityId: a.activityId
-      })))
-    }
-  }, [activitiesForContext])
 
   if (activitiesForContext.length === 0) {
     return null
