@@ -449,7 +449,7 @@ class MiniGolfSoundManager {
       // Master volume swells dramatically with proximity
       this.blackHoleGain.gain.cancelScheduledValues(now)
       this.blackHoleGain.gain.linearRampToValueAtTime(
-        0.0001 + proximity * proximity * 0.28,
+        Math.min(0.3, 0.0001 + proximity * proximity * 0.14),
         now + 0.12
       )
 
