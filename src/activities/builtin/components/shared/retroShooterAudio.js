@@ -1,18 +1,19 @@
 /**
- * retroShooterAudio.js  –  OPL3-style FM synthesis engine
+ * retroShooterAudio.js  –  8-Voice FM Synthesis Engine
  *
- * Emulates the Yamaha OPL3 (YMF262) sound card used in DOS-era games:
- *  • 18 channels (vs OPL2's 9)
- *  • 4-operator (4-op) FM synthesis for richer timbres
- *  • Native stereo panning per channel
- *  • 8 waveforms: sine, half-sine, absolute-sine, pulse-sine,
- *    sine-even, absolute-sine-even, square, derived-square
- *  • Envelope: Attack / Decay / Sustain / Release (ADSR)
- *  • Vibrato and tremolo LFOs
- *  • Background music sequencer with multiple tracks
+ * Full 8-operator FM synthesis engine inspired by Yamaha DX7/OPL3.
+ * Voices:
+ *   1. Distorted Guitar (4-op FM, high modulation index, feedback)
+ *   2. Power Chord Layer (parallel 4-op, detuned)
+ *   3. Bass Guitar (4-op series, sub-heavy)
+ *   4. Kick Drum (2-op FM, pitch sweep)
+ *   5. Snare (noise-modulated FM)
+ *   6. Hi-Hat (high-freq FM noise burst)
+ *   7. Screaming Lead (4-op parallel, extreme FM)
+ *   8. Dark Pad / Atmosphere (slow-attack FM cluster)
  *
- * The Web Audio API doesn't have native OPL3 hardware, so we build it
- * from oscillators + gain nodes + custom periodic waves.
+ * Combat track: E Phrygian/Locrian, tritones everywhere, BPM 185.
+ * No happy intervals. Demons incoming.
  */
 
 const getAudioContextCtor = () => {
@@ -20,666 +21,759 @@ const getAudioContextCtor = () => {
   return window.AudioContext || window.webkitAudioContext || null
 }
 
+const MIDI_TO_HZ = (note) => 440 * Math.pow(2, (note - 69) / 12)
+
 // ─── OPL3 waveform table ──────────────────────────────────────────────────────
-// Each waveform is described as a PeriodicWave built from Fourier coefficients.
-// We approximate the 8 OPL3 waveforms using harmonic series.
 const buildOpl3Wave = (ctx, waveId) => {
   const N = 64
   const real = new Float32Array(N)
   const imag = new Float32Array(N)
-
   switch (waveId) {
-    case 0: // Sine (standard)
-      imag[1] = 1
-      break
-    case 1: // Half-sine (positive half only)
-      // Fourier series of half-wave rectified sine
+    case 0: imag[1] = 1; break
+    case 1:
       real[0] = 2 / Math.PI
       for (let k = 1; k < N; k += 1) {
         if (k === 1) { imag[1] = 0.5; continue }
         if (k % 2 === 0) real[k] = (2 / Math.PI) * (1 / (1 - k * k)) * (k % 4 === 0 ? 1 : -1)
       }
       break
-    case 2: // Absolute sine (full-wave rectified)
+    case 2:
       real[0] = 4 / Math.PI
       for (let k = 1; k < N / 2; k += 1) {
         real[k * 2] = (4 / Math.PI) * (1 / (1 - 4 * k * k)) * (k % 2 === 0 ? 1 : -1)
       }
       break
-    case 3: // Pulse-sine (quarter-wave)
-      imag[1] = 0.8
-      imag[3] = 0.2
-      imag[5] = 0.1
+    case 3: imag[1] = 0.8; imag[3] = 0.2; imag[5] = 0.1; break
+    case 4: imag[2] = 1; imag[4] = 0.3; break
+    case 5: real[0] = 0.5; real[2] = 0.6; real[4] = 0.2; real[6] = 0.08; break
+    case 6:
+      for (let k = 0; k < N / 2; k += 1) { const n = 2 * k + 1; if (n < N) imag[n] = (4 / Math.PI) / n }
       break
-    case 4: // Sine even-periods only (OPL3 wave 4)
-      imag[2] = 1
-      imag[4] = 0.3
+    case 7:
+      for (let k = 0; k < N / 2; k += 1) { const n = 2 * k + 1; if (n < N) imag[n] = (4 / Math.PI) / n * (k % 2 === 0 ? 1 : 0.7) }
       break
-    case 5: // Absolute-sine even (OPL3 wave 5)
-      real[0] = 0.5
-      real[2] = 0.6
-      real[4] = 0.2
-      real[6] = 0.08
-      break
-    case 6: // Square
-      for (let k = 0; k < N / 2; k += 1) {
-        const n = 2 * k + 1
-        if (n < N) imag[n] = (4 / Math.PI) / n
-      }
-      break
-    case 7: // Derived square (OPL3 wave 7 – square with extra harmonics)
-      for (let k = 0; k < N / 2; k += 1) {
-        const n = 2 * k + 1
-        if (n < N) imag[n] = (4 / Math.PI) / n * (k % 2 === 0 ? 1 : 0.7)
-      }
-      break
-    default:
-      imag[1] = 1
+    default: imag[1] = 1
   }
-
-  try {
-    return ctx.createPeriodicWave(real, imag, { disableNormalization: false })
-  } catch {
-    return null
-  }
+  try { return ctx.createPeriodicWave(real, imag, { disableNormalization: false }) } catch { return null }
 }
 
-// ─── FM operator (carrier or modulator) ──────────────────────────────────────
-// An OPL3 operator = oscillator + ADSR envelope + optional vibrato LFO
-class FmOperator {
-  constructor(ctx, masterGain) {
-    this.ctx = ctx
-    this.masterGain = masterGain
-    this.osc = null
-    this.envGain = null
-    this.panNode = null
-    this.vibratoLfo = null
-    this.vibratoGain = null
-    this.tremoloLfo = null
-    this.tremoloGain = null
-  }
-
-  // Start a note with full OPL3-style parameters
-  // Returns the output gain node so it can be connected as a modulator
-  start({
-    freq = 440,
-    waveId = 0,
-    volume = 0.2,
-    attack = 0.004,
-    decay = 0.08,
-    sustain = 0.6,
-    release = 0.12,
-    duration = 0.3,
-    pan = 0,           // -1 (left) to +1 (right)
-    freqMult = 1,      // OPL3 frequency multiplier (MULT field)
-    vibrato = false,   // OPL3 vibrato flag
-    tremolo = false,   // OPL3 tremolo flag
-    delay = 0,
-    modInput = null,   // optional gain node from a modulator operator
-    wave = null,       // pre-built PeriodicWave (optional)
-  } = {}) {
-    if (!this.ctx) return null
-    const now = this.ctx.currentTime + delay
-    const actualFreq = freq * freqMult
-
-    this.osc = this.ctx.createOscillator()
-    this.envGain = this.ctx.createGain()
-
-    // Set waveform
-    if (wave) {
-      try { this.osc.setPeriodicWave(wave) } catch { this.osc.type = 'sine' }
-    } else {
-      this.osc.type = 'sine'
-    }
-
-    this.osc.frequency.setValueAtTime(actualFreq, now)
-
-    // Vibrato LFO (OPL3 uses ~6.1 Hz vibrato)
-    if (vibrato) {
-      this.vibratoLfo = this.ctx.createOscillator()
-      this.vibratoGain = this.ctx.createGain()
-      this.vibratoLfo.type = 'sine'
-      this.vibratoLfo.frequency.value = 6.1
-      this.vibratoGain.gain.value = actualFreq * 0.007  // ~0.7% pitch deviation
-      this.vibratoLfo.connect(this.vibratoGain)
-      this.vibratoGain.connect(this.osc.frequency)
-      this.vibratoLfo.start(now)
-    }
-
-    // Tremolo LFO (OPL3 uses ~3.7 Hz tremolo)
-    if (tremolo) {
-      this.tremoloLfo = this.ctx.createOscillator()
-      this.tremoloGain = this.ctx.createGain()
-      this.tremoloLfo.type = 'sine'
-      this.tremoloLfo.frequency.value = 3.7
-      this.tremoloGain.gain.value = volume * 0.12
-      this.tremoloLfo.connect(this.tremoloGain)
-      this.tremoloGain.connect(this.envGain.gain)
-      this.tremoloLfo.start(now)
-    }
-
-    // FM modulation input (modulator feeds into carrier frequency)
-    if (modInput) {
-      modInput.connect(this.osc.frequency)
-    }
-
-    // ADSR envelope
-    this.envGain.gain.setValueAtTime(0.0001, now)
-    this.envGain.gain.linearRampToValueAtTime(volume, now + attack)
-    this.envGain.gain.linearRampToValueAtTime(volume * sustain, now + attack + decay)
-    this.envGain.gain.setValueAtTime(volume * sustain, now + duration - release)
-    this.envGain.gain.linearRampToValueAtTime(0.0001, now + duration)
-
-    // Stereo pan
-    if (pan !== 0 && this.ctx.createStereoPanner) {
-      this.panNode = this.ctx.createStereoPanner()
-      this.panNode.pan.value = pan
-      this.osc.connect(this.envGain)
-      this.envGain.connect(this.panNode)
-      this.panNode.connect(this.masterGain)
-    } else {
-      this.osc.connect(this.envGain)
-      this.envGain.connect(this.masterGain)
-    }
-
-    this.osc.start(now)
-    this.osc.stop(now + duration + 0.05)
-
-    return this.envGain  // return so caller can chain as modulator
-  }
-
-  stop() {
-    try { this.osc?.stop() } catch {}
-    try { this.vibratoLfo?.stop() } catch {}
-    try { this.tremoloLfo?.stop() } catch {}
-  }
-}
-
-// ─── 4-operator FM channel ────────────────────────────────────────────────────
-// OPL3 4-op mode: two 2-op cells chained together
-// Algorithm: MOD1 → CAR1 → MOD2 → CAR2 (series) or parallel variants
-const fm4op = (ctx, master, {
+// ─── Core FM note builder ─────────────────────────────────────────────────────
+// Builds an N-operator FM chain and connects to output
+// ops = array of { waveId, freqMult, modIndex, attack, decay, sustain, release, volume }
+// algorithm: 'chain' (each op modulates next), 'parallel' (all carriers to output)
+const fmNote = (ctx, out, {
   freq = 440,
-  volume = 0.18,
-  duration = 0.4,
+  duration = 0.3,
   delay = 0,
-  pan: panValue = 0,
-  // Operator 1 (modulator)
-  op1Wave = 0, op1Mult = 1, op1ModIndex = 80, op1Attack = 0.004, op1Decay = 0.06, op1Sustain = 0.7,
-  // Operator 2 (carrier 1)
-  op2Wave = 0, op2Mult = 1, op2Attack = 0.006, op2Decay = 0.1, op2Sustain = 0.6,
-  // Operator 3 (modulator 2)
-  op3Wave = 6, op3Mult = 2, op3ModIndex = 40, op3Attack = 0.002, op3Decay = 0.04, op3Sustain = 0.5,
-  // Operator 4 (carrier 2)
-  op4Wave = 0, op4Mult = 1, op4Attack = 0.008, op4Decay = 0.12, op4Sustain = 0.55,
-  vibrato = false, tremolo = false,
-  algorithm = 'series',  // 'series' | 'parallel' | 'fm2'
+  pan = 0,
+  volume = 0.15,
+  ops = [],
+  algorithm = 'chain',
 } = {}) => {
-  if (!ctx || !master) return
-
+  if (!ctx || !out || !ops.length) return
   const now = ctx.currentTime + delay
-  const waves = [0, 1, 2, 3, 4, 5, 6, 7].map(id => buildOpl3Wave(ctx, id))
+  const stopAt = now + duration + 0.12
 
-  const makeOsc = (waveId, freqMult, modGain = null) => {
+  const panNode = pan !== 0 && ctx.createStereoPanner ? ctx.createStereoPanner() : null
+  if (panNode) { panNode.pan.value = pan; panNode.connect(out) }
+  const dest = panNode || out
+
+  const nodes = ops.map((op) => {
     const osc = ctx.createOscillator()
     const env = ctx.createGain()
-    const w = waves[waveId % 8]
+    const w = buildOpl3Wave(ctx, op.waveId || 0)
     if (w) { try { osc.setPeriodicWave(w) } catch { osc.type = 'sine' } } else { osc.type = 'sine' }
-    osc.frequency.setValueAtTime(freq * freqMult, now)
-    if (modGain) modGain.connect(osc.frequency)
+    osc.frequency.setValueAtTime(freq * (op.freqMult || 1), now)
     osc.connect(env)
-    return { osc, env }
-  }
+    return { osc, env, op }
+  })
 
-  const makeEnv = (env, vol, attack, decay, sustain, dur) => {
-    env.gain.setValueAtTime(0.0001, now)
-    env.gain.linearRampToValueAtTime(vol, now + attack)
-    env.gain.linearRampToValueAtTime(vol * sustain, now + attack + decay)
-    env.gain.setValueAtTime(vol * sustain, now + dur - 0.05)
-    env.gain.linearRampToValueAtTime(0.0001, now + dur)
-  }
-
-  const panNode = ctx.createStereoPanner ? ctx.createStereoPanner() : null
-  if (panNode) { panNode.pan.value = panValue; panNode.connect(master) }
-  const out = panNode || master
-
-  if (algorithm === 'series') {
-    // MOD1 → CAR1 → MOD2 → CAR2 (full 4-op chain)
-    const mod1Env = ctx.createGain()
-    mod1Env.gain.setValueAtTime(op1ModIndex, now)
-    const { osc: mod1Osc } = makeOsc(op1Wave, op1Mult)
-    mod1Osc.connect(mod1Env)
-
-    const { osc: car1Osc, env: car1Env } = makeOsc(op2Wave, op2Mult, mod1Env)
-    makeEnv(car1Env, volume * 0.5, op2Attack, op2Decay, op2Sustain, duration)
-
-    const mod2Env = ctx.createGain()
-    mod2Env.gain.setValueAtTime(op3ModIndex, now)
-    const { osc: mod2Osc } = makeOsc(op3Wave, op3Mult)
-    mod2Osc.connect(mod2Env)
-
-    const { osc: car2Osc, env: car2Env } = makeOsc(op4Wave, op4Mult, mod2Env)
-    makeEnv(car2Env, volume * 0.5, op4Attack, op4Decay, op4Sustain, duration)
-
-    car1Env.connect(out)
-    car2Env.connect(out)
-
-    const stopAt = now + duration + 0.08
-    ;[mod1Osc, car1Osc, mod2Osc, car2Osc].forEach(o => { o.start(now); o.stop(stopAt) })
-
-  } else if (algorithm === 'parallel') {
-    // Two independent 2-op cells mixed together (OPL3 parallel mode)
-    const mod1Env = ctx.createGain()
-    mod1Env.gain.setValueAtTime(op1ModIndex, now)
-    const { osc: mod1Osc } = makeOsc(op1Wave, op1Mult)
-    mod1Osc.connect(mod1Env)
-    const { osc: car1Osc, env: car1Env } = makeOsc(op2Wave, op2Mult, mod1Env)
-    makeEnv(car1Env, volume * 0.55, op2Attack, op2Decay, op2Sustain, duration)
-    car1Env.connect(out)
-
-    const mod2Env = ctx.createGain()
-    mod2Env.gain.setValueAtTime(op3ModIndex, now)
-    const { osc: mod3Osc } = makeOsc(op3Wave, op3Mult)
-    mod3Osc.connect(mod2Env)
-    const { osc: car2Osc, env: car2Env } = makeOsc(op4Wave, op4Mult * 1.5, mod2Env)
-    makeEnv(car2Env, volume * 0.45, op4Attack, op4Decay, op4Sustain, duration)
-    car2Env.connect(out)
-
-    const stopAt = now + duration + 0.08
-    ;[mod1Osc, car1Osc, mod3Osc, car2Osc].forEach(o => { o.start(now); o.stop(stopAt) })
-
+  if (algorithm === 'chain') {
+    // ops[0] = deepest modulator, ops[last] = carrier
+    for (let i = 0; i < nodes.length - 1; i += 1) {
+      const modGain = ctx.createGain()
+      modGain.gain.setValueAtTime(nodes[i].op.modIndex || 60, now)
+      modGain.gain.exponentialRampToValueAtTime(Math.max((nodes[i].op.modIndex || 60) * (nodes[i].op.sustain || 0.5), 0.001), now + duration)
+      nodes[i].env.connect(modGain)
+      modGain.connect(nodes[i + 1].osc.frequency)
+    }
+    // Carrier envelope
+    const carrier = nodes[nodes.length - 1]
+    const { attack = 0.004, decay = 0.08, sustain = 0.6, release = 0.1 } = carrier.op
+    carrier.env.gain.setValueAtTime(0.0001, now)
+    carrier.env.gain.linearRampToValueAtTime(volume, now + attack)
+    carrier.env.gain.linearRampToValueAtTime(volume * sustain, now + attack + decay)
+    carrier.env.gain.setValueAtTime(volume * sustain, now + duration - release)
+    carrier.env.gain.linearRampToValueAtTime(0.0001, now + duration)
+    carrier.env.connect(dest)
   } else {
-    // fm2: simple 2-op FM (OPL2 compatible)
-    const modEnv = ctx.createGain()
-    modEnv.gain.setValueAtTime(op1ModIndex, now)
-    const { osc: modOsc } = makeOsc(op1Wave, op1Mult)
-    modOsc.connect(modEnv)
-    const { osc: carOsc, env: carEnv } = makeOsc(op2Wave, op2Mult, modEnv)
-    makeEnv(carEnv, volume, op2Attack, op2Decay, op2Sustain, duration)
-    carEnv.connect(out)
-    const stopAt = now + duration + 0.08
-    ;[modOsc, carOsc].forEach(o => { o.start(now); o.stop(stopAt) })
+    // parallel: each op is an independent carrier, all connect to dest
+    nodes.forEach((node) => {
+      const { attack = 0.004, decay = 0.08, sustain = 0.6, release = 0.1, vol = volume } = node.op
+      node.env.gain.setValueAtTime(0.0001, now)
+      node.env.gain.linearRampToValueAtTime(vol || volume, now + attack)
+      node.env.gain.linearRampToValueAtTime((vol || volume) * sustain, now + attack + decay)
+      node.env.gain.setValueAtTime((vol || volume) * sustain, now + duration - release)
+      node.env.gain.linearRampToValueAtTime(0.0001, now + duration)
+      node.env.connect(dest)
+    })
   }
+
+  nodes.forEach(({ osc }) => { osc.start(now); osc.stop(stopAt) })
 }
 
-// ─── OPL3 music sequencer ─────────────────────────────────────────────────────
-// Tracks are arrays of { note, delay, duration, channel } objects.
-// note = MIDI note number (60 = C4), channel = instrument preset index
-//
-// Instrument presets emulate classic OPL3 patches:
-//  0 = Piano (2-op FM)
-//  1 = Bass (4-op series)
-//  2 = Lead synth (4-op parallel)
-//  3 = Pad (2-op with tremolo)
-//  4 = Percussion hit
-//  5 = Arpeggio lead (4-op)
-//  6 = Chord stab (parallel)
-//  7 = Flute/whistle (2-op vibrato)
+// ─── Voice 1: Distorted Guitar ────────────────────────────────────────────────
+// 4-op FM chain: noise modulator → harmonic modulator → distortion modulator → carrier
+// High modulation indices create the "power chord crunch" of a distorted guitar
+const guitarNote = (ctx, out, { freq = 82, duration = 0.35, delay = 0, pan = 0, volume = 0.22 } = {}) => {
+  fmNote(ctx, out, {
+    freq, duration, delay, pan, volume,
+    algorithm: 'chain',
+    ops: [
+      // Op1: sub-harmonic noise modulator (creates the "pick attack" transient)
+      { waveId: 7, freqMult: 0.5, modIndex: 320, attack: 0.001, decay: 0.02, sustain: 0.05, release: 0.01 },
+      // Op2: harmonic distortion modulator (creates odd harmonics like a clipped waveform)
+      { waveId: 6, freqMult: 2, modIndex: 180, attack: 0.001, decay: 0.04, sustain: 0.4, release: 0.05 },
+      // Op3: feedback modulator (self-modulation approximation via high-index FM)
+      { waveId: 7, freqMult: 1, modIndex: 95, attack: 0.002, decay: 0.06, sustain: 0.6, release: 0.08 },
+      // Op4: carrier (the actual pitch)
+      { waveId: 6, freqMult: 1, attack: 0.002, decay: 0.08, sustain: 0.7, release: 0.12 },
+    ],
+  })
+}
 
-const MIDI_TO_HZ = (note) => 440 * Math.pow(2, (note - 69) / 12)
+// ─── Voice 2: Power Chord Layer ───────────────────────────────────────────────
+// Two detuned guitar voices a perfect 5th apart (power chord = root + 5th)
+// Plus a sub-octave for thickness
+const powerChord = (ctx, out, { freq = 82, duration = 0.35, delay = 0, pan = 0, volume = 0.18 } = {}) => {
+  // Root
+  guitarNote(ctx, out, { freq, duration, delay, pan: pan - 0.15, volume: volume * 0.55 })
+  // Perfect 5th (×1.5)
+  guitarNote(ctx, out, { freq: freq * 1.498, duration, delay, pan: pan + 0.15, volume: volume * 0.45 })
+  // Sub-octave (×0.5) – adds the "wall of sound" low end
+  fmNote(ctx, out, {
+    freq: freq * 0.5, duration, delay, pan, volume: volume * 0.35,
+    algorithm: 'chain',
+    ops: [
+      { waveId: 6, freqMult: 1, modIndex: 200, attack: 0.001, decay: 0.03, sustain: 0.8, release: 0.05 },
+      { waveId: 7, freqMult: 1, modIndex: 100, attack: 0.001, decay: 0.05, sustain: 0.75, release: 0.08 },
+      { waveId: 6, freqMult: 1, attack: 0.001, decay: 0.06, sustain: 0.8, release: 0.1 },
+    ],
+  })
+}
 
-const OPL3_PRESETS = {
-  piano: {
-    algorithm: 'fm2',
-    op1Wave: 1, op1Mult: 1, op1ModIndex: 120, op1Attack: 0.002, op1Decay: 0.08, op1Sustain: 0.4,
-    op2Wave: 0, op2Mult: 1, op2Attack: 0.002, op2Decay: 0.12, op2Sustain: 0.35,
-    volume: 0.14,
-  },
-  // Heavy distorted bass – sawtooth carrier, high FM index, square modulator
-  bass: {
-    algorithm: 'series',
-    op1Wave: 7, op1Mult: 1, op1ModIndex: 110, op1Attack: 0.001, op1Decay: 0.03, op1Sustain: 0.9,
-    op2Wave: 6, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.04, op2Sustain: 0.85,
-    op3Wave: 7, op3Mult: 2, op3ModIndex: 55, op3Attack: 0.001, op3Decay: 0.02, op3Sustain: 0.75,
-    op4Wave: 6, op4Mult: 1, op4Attack: 0.001, op4Decay: 0.05, op4Sustain: 0.8,
-    volume: 0.22,
-  },
-  // Screaming distorted lead – high FM index, sawtooth, no vibrato (raw aggression)
-  lead: {
+// ─── Voice 3: Bass Guitar ─────────────────────────────────────────────────────
+// 4-op series: heavy sub-bass with pick attack transient
+const bassNote = (ctx, out, { freq = 41, duration = 0.25, delay = 0, pan = -0.3, volume = 0.28 } = {}) => {
+  fmNote(ctx, out, {
+    freq, duration, delay, pan, volume,
+    algorithm: 'chain',
+    ops: [
+      // Pick attack transient
+      { waveId: 7, freqMult: 3, modIndex: 280, attack: 0.001, decay: 0.015, sustain: 0.02, release: 0.01 },
+      // Mid harmonic
+      { waveId: 6, freqMult: 2, modIndex: 140, attack: 0.001, decay: 0.03, sustain: 0.5, release: 0.04 },
+      // Sub modulator
+      { waveId: 7, freqMult: 1, modIndex: 70, attack: 0.001, decay: 0.04, sustain: 0.85, release: 0.06 },
+      // Sub carrier
+      { waveId: 6, freqMult: 1, attack: 0.001, decay: 0.05, sustain: 0.9, release: 0.08 },
+    ],
+  })
+}
+
+// ─── Voice 4: Kick Drum ───────────────────────────────────────────────────────
+// 2-op FM with rapid pitch sweep (classic FM kick)
+const kickDrum = (ctx, out, { delay = 0, volume = 0.45 } = {}) => {
+  if (!ctx || !out) return
+  const now = ctx.currentTime + delay
+  const dur = 0.28
+
+  const modOsc = ctx.createOscillator()
+  const modEnv = ctx.createGain()
+  modOsc.type = 'sine'
+  modOsc.frequency.setValueAtTime(180, now)
+  modOsc.frequency.exponentialRampToValueAtTime(30, now + 0.06)
+  modEnv.gain.setValueAtTime(400, now)
+  modEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
+  modOsc.connect(modEnv)
+
+  const carOsc = ctx.createOscillator()
+  const carEnv = ctx.createGain()
+  carOsc.type = 'sine'
+  carOsc.frequency.setValueAtTime(80, now)
+  carOsc.frequency.exponentialRampToValueAtTime(28, now + 0.12)
+  modEnv.connect(carOsc.frequency)
+  carEnv.gain.setValueAtTime(0.0001, now)
+  carEnv.gain.linearRampToValueAtTime(volume, now + 0.003)
+  carEnv.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+  carOsc.connect(carEnv)
+  carEnv.connect(out)
+
+  // Click transient (adds the "thud")
+  const clickOsc = ctx.createOscillator()
+  const clickEnv = ctx.createGain()
+  clickOsc.type = 'square'
+  clickOsc.frequency.setValueAtTime(220, now)
+  clickEnv.gain.setValueAtTime(volume * 0.4, now)
+  clickEnv.gain.exponentialRampToValueAtTime(0.0001, now + 0.018)
+  clickOsc.connect(clickEnv)
+  clickEnv.connect(out)
+
+  modOsc.start(now); modOsc.stop(now + dur + 0.05)
+  carOsc.start(now); carOsc.stop(now + dur + 0.05)
+  clickOsc.start(now); clickOsc.stop(now + 0.025)
+}
+
+// ─── Voice 5: Snare Drum ──────────────────────────────────────────────────────
+// FM tone + noise burst (classic FM snare)
+const snareDrum = (ctx, out, { delay = 0, volume = 0.32 } = {}) => {
+  if (!ctx || !out) return
+  const now = ctx.currentTime + delay
+  const dur = 0.18
+
+  // Tonal body (FM)
+  const modOsc = ctx.createOscillator()
+  const modEnv = ctx.createGain()
+  modOsc.type = 'sine'
+  modOsc.frequency.setValueAtTime(220, now)
+  modEnv.gain.setValueAtTime(180, now)
+  modEnv.gain.exponentialRampToValueAtTime(0.001, now + 0.06)
+  modOsc.connect(modEnv)
+
+  const carOsc = ctx.createOscillator()
+  const carEnv = ctx.createGain()
+  carOsc.type = 'sine'
+  carOsc.frequency.setValueAtTime(185, now)
+  modEnv.connect(carOsc.frequency)
+  carEnv.gain.setValueAtTime(0.0001, now)
+  carEnv.gain.linearRampToValueAtTime(volume * 0.5, now + 0.002)
+  carEnv.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+  carOsc.connect(carEnv)
+  carEnv.connect(out)
+
+  // Noise burst (the "snare wire" rattle)
+  const bufSize = ctx.sampleRate * 0.15
+  const noiseBuffer = ctx.createBuffer(1, bufSize, ctx.sampleRate)
+  const data = noiseBuffer.getChannelData(0)
+  for (let i = 0; i < bufSize; i += 1) data[i] = Math.random() * 2 - 1
+  const noiseSource = ctx.createBufferSource()
+  noiseSource.buffer = noiseBuffer
+  const noiseFilter = ctx.createBiquadFilter()
+  noiseFilter.type = 'bandpass'
+  noiseFilter.frequency.value = 3200
+  noiseFilter.Q.value = 0.8
+  const noiseEnv = ctx.createGain()
+  noiseEnv.gain.setValueAtTime(0.0001, now)
+  noiseEnv.gain.linearRampToValueAtTime(volume * 0.7, now + 0.002)
+  noiseEnv.gain.exponentialRampToValueAtTime(0.0001, now + dur * 0.8)
+  noiseSource.connect(noiseFilter)
+  noiseFilter.connect(noiseEnv)
+  noiseEnv.connect(out)
+
+  modOsc.start(now); modOsc.stop(now + dur + 0.05)
+  carOsc.start(now); carOsc.stop(now + dur + 0.05)
+  noiseSource.start(now); noiseSource.stop(now + dur)
+}
+
+// ─── Voice 6: Hi-Hat ──────────────────────────────────────────────────────────
+// High-frequency FM noise burst
+const hiHat = (ctx, out, { delay = 0, volume = 0.18, open = false } = {}) => {
+  if (!ctx || !out) return
+  const now = ctx.currentTime + delay
+  const dur = open ? 0.22 : 0.055
+
+  // Six detuned square oscillators (classic hi-hat synthesis)
+  const freqs = [205.3, 369.4, 415.3, 461.6, 580.3, 812.0]
+  freqs.forEach((f) => {
+    const osc = ctx.createOscillator()
+    const env = ctx.createGain()
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'highpass'
+    filter.frequency.value = 7000
+    osc.type = 'square'
+    osc.frequency.value = f
+    env.gain.setValueAtTime(0.0001, now)
+    env.gain.linearRampToValueAtTime(volume / freqs.length, now + 0.001)
+    env.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+    osc.connect(filter)
+    filter.connect(env)
+    env.connect(out)
+    osc.start(now); osc.stop(now + dur + 0.02)
+  })
+}
+
+// ─── Voice 7: Screaming Lead ──────────────────────────────────────────────────
+// 4-op parallel FM, extreme modulation, no vibrato – raw demonic scream
+const leadNote = (ctx, out, { freq = 330, duration = 0.2, delay = 0, pan = 0.1, volume = 0.16 } = {}) => {
+  fmNote(ctx, out, {
+    freq, duration, delay, pan, volume,
     algorithm: 'parallel',
-    op1Wave: 7, op1Mult: 1, op1ModIndex: 160, op1Attack: 0.002, op1Decay: 0.06, op1Sustain: 0.8,
-    op2Wave: 6, op2Mult: 1, op2Attack: 0.002, op2Decay: 0.08, op2Sustain: 0.75,
-    op3Wave: 7, op3Mult: 3, op3ModIndex: 80, op3Attack: 0.001, op3Decay: 0.04, op3Sustain: 0.6,
-    op4Wave: 6, op4Mult: 2, op4Attack: 0.001, op4Decay: 0.06, op4Sustain: 0.55,
-    volume: 0.17,
-    vibrato: false,
-  },
-  // Dark atmospheric pad – slow attack, dissonant FM
-  pad: {
-    algorithm: 'fm2',
-    op1Wave: 6, op1Mult: 1, op1ModIndex: 55, op1Attack: 0.08, op1Decay: 0.3, op1Sustain: 0.7,
-    op2Wave: 7, op2Mult: 1, op2Attack: 0.1, op2Decay: 0.35, op2Sustain: 0.65,
-    volume: 0.12,
-    tremolo: true,
-  },
-  // Brutal chord stab – instant attack, heavy square distortion
-  stab: {
-    algorithm: 'parallel',
-    op1Wave: 7, op1Mult: 1, op1ModIndex: 130, op1Attack: 0.001, op1Decay: 0.04, op1Sustain: 0.2,
-    op2Wave: 6, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.05, op2Sustain: 0.15,
-    op3Wave: 7, op3Mult: 2, op3ModIndex: 65, op3Attack: 0.001, op3Decay: 0.03, op3Sustain: 0.12,
-    op4Wave: 6, op4Mult: 3, op4Attack: 0.001, op4Decay: 0.04, op4Sustain: 0.1,
-    volume: 0.16,
-  },
-  flute: {
-    algorithm: 'fm2',
-    op1Wave: 0, op1Mult: 1, op1ModIndex: 25, op1Attack: 0.04, op1Decay: 0.06, op1Sustain: 0.85,
-    op2Wave: 0, op2Mult: 1, op2Attack: 0.05, op2Decay: 0.08, op2Sustain: 0.8,
-    volume: 0.1,
-    vibrato: true,
-  },
-  // Demonic arp – tritone-heavy, maximum FM distortion
-  arp: {
-    algorithm: 'series',
-    op1Wave: 7, op1Mult: 1, op1ModIndex: 180, op1Attack: 0.001, op1Decay: 0.03, op1Sustain: 0.6,
-    op2Wave: 6, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.04, op2Sustain: 0.55,
-    op3Wave: 7, op3Mult: 4, op3ModIndex: 90, op3Attack: 0.001, op3Decay: 0.02, op3Sustain: 0.45,
-    op4Wave: 6, op4Mult: 1, op4Attack: 0.001, op4Decay: 0.05, op4Sustain: 0.4,
-    volume: 0.14,
-  },
-  // Sub-bass rumble for demonic low-end
-  subbass: {
-    algorithm: 'fm2',
-    op1Wave: 6, op1Mult: 1, op1ModIndex: 200, op1Attack: 0.001, op1Decay: 0.02, op1Sustain: 0.95,
-    op2Wave: 7, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.03, op2Sustain: 0.9,
-    volume: 0.2,
-  },
+    ops: [
+      // Voice A: heavily distorted carrier
+      { waveId: 7, freqMult: 1, modIndex: 200, attack: 0.002, decay: 0.05, sustain: 0.75, release: 0.08, vol: volume * 0.45 },
+      // Voice B: octave up, slightly detuned
+      { waveId: 6, freqMult: 2.003, modIndex: 120, attack: 0.002, decay: 0.06, sustain: 0.65, release: 0.09, vol: volume * 0.3 },
+      // Voice C: tritone layer (adds the demonic dissonance)
+      { waveId: 7, freqMult: 1.414, modIndex: 90, attack: 0.003, decay: 0.07, sustain: 0.55, release: 0.1, vol: volume * 0.15 },
+      // Voice D: sub-octave growl
+      { waveId: 6, freqMult: 0.5, modIndex: 160, attack: 0.001, decay: 0.04, sustain: 0.8, release: 0.07, vol: volume * 0.1 },
+    ],
+  })
+}
+
+// ─── Voice 8: Dark Pad / Atmosphere ──────────────────────────────────────────
+// Slow-attack FM cluster, dissonant intervals, tremolo
+const padNote = (ctx, out, { freq = 82, duration = 2.0, delay = 0, pan = 0, volume = 0.1 } = {}) => {
+  if (!ctx || !out) return
+  const now = ctx.currentTime + delay
+  const stopAt = now + duration + 0.2
+
+  // Three detuned FM voices forming a dissonant cluster
+  const detunes = [1.0, 1.007, 0.994]
+  detunes.forEach((detune, i) => {
+    const modOsc = ctx.createOscillator()
+    const modEnv = ctx.createGain()
+    const carOsc = ctx.createOscillator()
+    const carEnv = ctx.createGain()
+    const tremoloLfo = ctx.createOscillator()
+    const tremoloGain = ctx.createGain()
+
+    const w = buildOpl3Wave(ctx, 6)
+    if (w) { try { modOsc.setPeriodicWave(w) } catch { modOsc.type = 'square' } } else { modOsc.type = 'square' }
+    modOsc.frequency.setValueAtTime(freq * detune * 2, now)
+    modEnv.gain.setValueAtTime(55, now)
+    modEnv.gain.linearRampToValueAtTime(35, now + duration)
+    modOsc.connect(modEnv)
+    modEnv.connect(carOsc.frequency)
+
+    const w2 = buildOpl3Wave(ctx, 7)
+    if (w2) { try { carOsc.setPeriodicWave(w2) } catch { carOsc.type = 'square' } } else { carOsc.type = 'square' }
+    carOsc.frequency.setValueAtTime(freq * detune, now)
+
+    tremoloLfo.type = 'sine'
+    tremoloLfo.frequency.value = 3.2 + i * 0.4
+    tremoloGain.gain.value = volume * 0.08
+    tremoloLfo.connect(tremoloGain)
+    tremoloGain.connect(carEnv.gain)
+
+    carEnv.gain.setValueAtTime(0.0001, now)
+    carEnv.gain.linearRampToValueAtTime(volume / detunes.length, now + 0.18)
+    carEnv.gain.setValueAtTime(volume / detunes.length, now + duration - 0.3)
+    carEnv.gain.linearRampToValueAtTime(0.0001, now + duration)
+
+    const panNode = ctx.createStereoPanner ? ctx.createStereoPanner() : null
+    if (panNode) {
+      panNode.pan.value = pan + (i - 1) * 0.25
+      carOsc.connect(carEnv)
+      carEnv.connect(panNode)
+      panNode.connect(out)
+    } else {
+      carOsc.connect(carEnv)
+      carEnv.connect(out)
+    }
+
+    modOsc.start(now); modOsc.stop(stopAt)
+    carOsc.start(now); carOsc.stop(stopAt)
+    tremoloLfo.start(now); tremoloLfo.stop(stopAt)
+  })
+}
+
+// ─── Simple 2-op FM pulse (SFX) ──────────────────────────────────────────────
+const fmPulse = (ctx, sfxGain, { freq = 440, duration = 0.09, waveId = 6, volume = 0.2, sweep = 0, modIndex = 60, modMult = 1, delay = 0, pan = 0 } = {}) => {
+  if (!ctx || !sfxGain) return
+  const now = ctx.currentTime + delay
+  const modOsc = ctx.createOscillator()
+  const modEnv = ctx.createGain()
+  modOsc.type = 'sine'
+  modOsc.frequency.setValueAtTime(freq * modMult, now)
+  modEnv.gain.setValueAtTime(modIndex, now)
+  modEnv.gain.exponentialRampToValueAtTime(0.001, now + duration)
+  modOsc.connect(modEnv)
+
+  const carOsc = ctx.createOscillator()
+  const carEnv = ctx.createGain()
+  const w = buildOpl3Wave(ctx, waveId)
+  if (w) { try { carOsc.setPeriodicWave(w) } catch { carOsc.type = 'square' } } else { carOsc.type = 'square' }
+  carOsc.frequency.setValueAtTime(freq, now)
+  if (sweep) carOsc.frequency.linearRampToValueAtTime(freq + sweep, now + duration)
+  modEnv.connect(carOsc.frequency)
+  carEnv.gain.setValueAtTime(0.0001, now)
+  carEnv.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0002), now + 0.006)
+  carEnv.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+  carOsc.connect(carEnv)
+
+  if (pan !== 0 && ctx.createStereoPanner) {
+    const panNode = ctx.createStereoPanner()
+    panNode.pan.value = pan
+    carEnv.connect(panNode)
+    panNode.connect(sfxGain)
+  } else {
+    carEnv.connect(sfxGain)
+  }
+
+  modOsc.start(now); modOsc.stop(now + duration + 0.04)
+  carOsc.start(now); carOsc.stop(now + duration + 0.04)
 }
 
 // ─── Music tracks ─────────────────────────────────────────────────────────────
-// Each track is a sequence of { note (MIDI), delay (s), duration (s), preset, pan }
-// Inspired by classic DOS FPS music (Doom, Quake, Duke3D era)
+// Each note: { voice, freq (Hz), delay (s), dur (s), pan, vol }
+// Voices: 'guitar', 'power', 'bass', 'kick', 'snare', 'hat', 'hatOpen', 'lead', 'pad'
 
 const TRACKS = {
-  // Lobby: tense, atmospheric, slow arpeggios + pad
+  // Lobby: dark atmospheric tension – slow bass, dissonant pad, sparse hi-hats
   lobby: {
-    bpm: 100,
     loopSeconds: 16,
     notes: [
-      // Bass line
-      { note: 36, delay: 0,    dur: 0.45, preset: 'bass',  pan: -0.3 },
-      { note: 36, delay: 0.6,  dur: 0.35, preset: 'bass',  pan: -0.3 },
-      { note: 38, delay: 1.2,  dur: 0.45, preset: 'bass',  pan: -0.3 },
-      { note: 36, delay: 2.4,  dur: 0.45, preset: 'bass',  pan: -0.3 },
-      { note: 33, delay: 3.0,  dur: 0.45, preset: 'bass',  pan: -0.3 },
-      { note: 31, delay: 3.6,  dur: 0.6,  preset: 'bass',  pan: -0.3 },
-      { note: 36, delay: 4.8,  dur: 0.45, preset: 'bass',  pan: -0.3 },
-      { note: 38, delay: 5.4,  dur: 0.35, preset: 'bass',  pan: -0.3 },
-      { note: 40, delay: 6.0,  dur: 0.45, preset: 'bass',  pan: -0.3 },
-      { note: 38, delay: 7.2,  dur: 0.45, preset: 'bass',  pan: -0.3 },
-      { note: 36, delay: 7.8,  dur: 0.6,  preset: 'bass',  pan: -0.3 },
-      // Pad chords
-      { note: 48, delay: 0,    dur: 2.4,  preset: 'pad',   pan: 0.1 },
-      { note: 52, delay: 0,    dur: 2.4,  preset: 'pad',   pan: 0.2 },
-      { note: 55, delay: 0,    dur: 2.4,  preset: 'pad',   pan: -0.1 },
-      { note: 48, delay: 2.4,  dur: 2.4,  preset: 'pad',   pan: 0.1 },
-      { note: 50, delay: 2.4,  dur: 2.4,  preset: 'pad',   pan: 0.2 },
-      { note: 53, delay: 2.4,  dur: 2.4,  preset: 'pad',   pan: -0.1 },
-      { note: 45, delay: 4.8,  dur: 2.4,  preset: 'pad',   pan: 0.1 },
-      { note: 48, delay: 4.8,  dur: 2.4,  preset: 'pad',   pan: 0.2 },
-      { note: 52, delay: 4.8,  dur: 2.4,  preset: 'pad',   pan: -0.1 },
-      { note: 43, delay: 7.2,  dur: 2.4,  preset: 'pad',   pan: 0.1 },
-      { note: 47, delay: 7.2,  dur: 2.4,  preset: 'pad',   pan: 0.2 },
-      { note: 50, delay: 7.2,  dur: 2.4,  preset: 'pad',   pan: -0.1 },
-      // Arp lead
-      { note: 60, delay: 0,    dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 64, delay: 0.18, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 67, delay: 0.36, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 72, delay: 0.54, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 67, delay: 0.72, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 64, delay: 0.9,  dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 62, delay: 2.4,  dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 65, delay: 2.58, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 69, delay: 2.76, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 74, delay: 2.94, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 69, delay: 3.12, dur: 0.18, preset: 'arp',   pan: 0.4 },
-      { note: 65, delay: 3.3,  dur: 0.18, preset: 'arp',   pan: 0.4 },
-      // Flute melody
-      { note: 72, delay: 9.6,  dur: 0.5,  preset: 'flute', pan: 0.2 },
-      { note: 71, delay: 10.2, dur: 0.4,  preset: 'flute', pan: 0.2 },
-      { note: 69, delay: 10.7, dur: 0.4,  preset: 'flute', pan: 0.2 },
-      { note: 67, delay: 11.2, dur: 0.6,  preset: 'flute', pan: 0.2 },
-      { note: 65, delay: 12.0, dur: 0.4,  preset: 'flute', pan: 0.2 },
-      { note: 64, delay: 12.5, dur: 0.4,  preset: 'flute', pan: 0.2 },
-      { note: 62, delay: 13.0, dur: 0.4,  preset: 'flute', pan: 0.2 },
-      { note: 60, delay: 13.5, dur: 0.8,  preset: 'flute', pan: 0.2 },
+      // Kick pattern (4/4 at ~90 BPM, beat = 0.667s)
+      { voice: 'kick',  delay: 0 },
+      { voice: 'kick',  delay: 1.333 },
+      { voice: 'kick',  delay: 2.667 },
+      { voice: 'kick',  delay: 4.0 },
+      { voice: 'kick',  delay: 5.333 },
+      { voice: 'kick',  delay: 6.667 },
+      { voice: 'kick',  delay: 8.0 },
+      { voice: 'kick',  delay: 9.333 },
+      { voice: 'kick',  delay: 10.667 },
+      { voice: 'kick',  delay: 12.0 },
+      { voice: 'kick',  delay: 13.333 },
+      // Sparse snare (beats 2 and 4)
+      { voice: 'snare', delay: 1.333 },
+      { voice: 'snare', delay: 4.0 },
+      { voice: 'snare', delay: 6.667 },
+      { voice: 'snare', delay: 9.333 },
+      { voice: 'snare', delay: 12.0 },
+      // Sparse hi-hats
+      { voice: 'hat',   delay: 0.667 },
+      { voice: 'hat',   delay: 2.0 },
+      { voice: 'hat',   delay: 3.333 },
+      { voice: 'hat',   delay: 5.333 },
+      { voice: 'hat',   delay: 7.333 },
+      { voice: 'hat',   delay: 10.0 },
+      { voice: 'hat',   delay: 12.667 },
+      // Bass: E1 chromatic descent
+      { voice: 'bass', freq: MIDI_TO_HZ(28), delay: 0,     dur: 0.55 }, // E1
+      { voice: 'bass', freq: MIDI_TO_HZ(28), delay: 0.667, dur: 0.45 },
+      { voice: 'bass', freq: MIDI_TO_HZ(27), delay: 1.333, dur: 0.55 }, // Eb1
+      { voice: 'bass', freq: MIDI_TO_HZ(26), delay: 2.667, dur: 0.55 }, // D1
+      { voice: 'bass', freq: MIDI_TO_HZ(25), delay: 4.0,   dur: 0.7  }, // C#1
+      { voice: 'bass', freq: MIDI_TO_HZ(26), delay: 5.333, dur: 0.55 },
+      { voice: 'bass', freq: MIDI_TO_HZ(28), delay: 6.667, dur: 0.55 },
+      { voice: 'bass', freq: MIDI_TO_HZ(28), delay: 7.333, dur: 0.45 },
+      { voice: 'bass', freq: MIDI_TO_HZ(27), delay: 8.0,   dur: 0.55 },
+      { voice: 'bass', freq: MIDI_TO_HZ(25), delay: 9.333, dur: 0.7  },
+      { voice: 'bass', freq: MIDI_TO_HZ(24), delay: 10.667,dur: 0.7  }, // C1
+      { voice: 'bass', freq: MIDI_TO_HZ(25), delay: 12.0,  dur: 0.55 },
+      { voice: 'bass', freq: MIDI_TO_HZ(26), delay: 13.333,dur: 0.55 },
+      // Dark pad clusters (E Phrygian: E+F+Bb)
+      { voice: 'pad', freq: MIDI_TO_HZ(40), delay: 0,    dur: 4.0 }, // E2
+      { voice: 'pad', freq: MIDI_TO_HZ(41), delay: 0.1,  dur: 4.0 }, // F2 – flat-2
+      { voice: 'pad', freq: MIDI_TO_HZ(46), delay: 0.2,  dur: 4.0 }, // Bb2 – tritone
+      { voice: 'pad', freq: MIDI_TO_HZ(38), delay: 4.0,  dur: 4.0 }, // D2
+      { voice: 'pad', freq: MIDI_TO_HZ(44), delay: 4.1,  dur: 4.0 }, // Ab2 – tritone from D
+      { voice: 'pad', freq: MIDI_TO_HZ(36), delay: 8.0,  dur: 4.0 }, // C2
+      { voice: 'pad', freq: MIDI_TO_HZ(42), delay: 8.1,  dur: 4.0 }, // F#2 – tritone from C
+      { voice: 'pad', freq: MIDI_TO_HZ(40), delay: 12.0, dur: 4.0 },
+      { voice: 'pad', freq: MIDI_TO_HZ(46), delay: 12.1, dur: 4.0 },
     ]
   },
 
-  // Combat: DOOM-style demonic assault – E Phrygian/Locrian, tritones, no mercy
-  // BPM 185 – relentless. Bass uses chromatic descent. Lead uses flat-2 and tritone.
-  // No happy intervals. Everything resolves downward into darkness.
+  // Combat: DOOM-style demonic assault
+  // BPM 185 → beat = 0.324s, 16th = 0.081s, 8th = 0.162s, half = 0.649s
+  // E Phrygian/Locrian: E F G Ab Bb C D (tritones everywhere)
   combat: {
-    bpm: 185,
-    loopSeconds: 14,
+    loopSeconds: 13,
     notes: [
-      // ── Sub-bass pulse (E1=28, Eb1=27, D1=26, C#1=25) – chromatic grind ──
-      { note: 28, delay: 0,    dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 0.16, dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 0.32, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 27, delay: 0.65, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 27, delay: 0.81, dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 26, delay: 0.97, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 25, delay: 1.3,  dur: 0.28, preset: 'subbass', pan: -0.5 },
-      { note: 26, delay: 1.62, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 1.95, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 2.11, dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 27, delay: 2.6,  dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 26, delay: 2.76, dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 25, delay: 2.92, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 24, delay: 3.25, dur: 0.35, preset: 'subbass', pan: -0.5 },
-      { note: 25, delay: 3.6,  dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 26, delay: 3.76, dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 3.92, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 4.25, dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 27, delay: 4.41, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 25, delay: 4.74, dur: 0.28, preset: 'subbass', pan: -0.5 },
-      { note: 24, delay: 5.07, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 23, delay: 5.4,  dur: 0.35, preset: 'subbass', pan: -0.5 },
-      { note: 24, delay: 5.75, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 26, delay: 5.91, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 6.24, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 6.4,  dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 28, delay: 6.56, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 27, delay: 6.89, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 26, delay: 7.05, dur: 0.14, preset: 'subbass', pan: -0.5 },
-      { note: 25, delay: 7.21, dur: 0.18, preset: 'subbass', pan: -0.5 },
-      { note: 24, delay: 7.54, dur: 0.35, preset: 'subbass', pan: -0.5 },
+      // ── DRUMS ──────────────────────────────────────────────────────────────
+      // Kick: beats 1, 1.5, 2.5, 3, 3.5, 4 (double-kick pattern)
+      { voice: 'kick',    delay: 0 },
+      { voice: 'kick',    delay: 0.162 },
+      { voice: 'kick',    delay: 0.649 },
+      { voice: 'kick',    delay: 0.973 },
+      { voice: 'kick',    delay: 1.297 },
+      { voice: 'kick',    delay: 1.622 },
+      { voice: 'kick',    delay: 1.946 },
+      { voice: 'kick',    delay: 2.27 },
+      { voice: 'kick',    delay: 2.595 },
+      { voice: 'kick',    delay: 2.757 },
+      { voice: 'kick',    delay: 3.243 },
+      { voice: 'kick',    delay: 3.568 },
+      { voice: 'kick',    delay: 3.892 },
+      { voice: 'kick',    delay: 4.054 },
+      { voice: 'kick',    delay: 4.541 },
+      { voice: 'kick',    delay: 4.865 },
+      { voice: 'kick',    delay: 5.189 },
+      { voice: 'kick',    delay: 5.351 },
+      { voice: 'kick',    delay: 5.838 },
+      { voice: 'kick',    delay: 6.162 },
+      { voice: 'kick',    delay: 6.486 },
+      { voice: 'kick',    delay: 6.649 },
+      { voice: 'kick',    delay: 7.135 },
+      { voice: 'kick',    delay: 7.459 },
+      { voice: 'kick',    delay: 7.784 },
+      { voice: 'kick',    delay: 7.946 },
+      { voice: 'kick',    delay: 8.432 },
+      { voice: 'kick',    delay: 8.757 },
+      { voice: 'kick',    delay: 9.081 },
+      { voice: 'kick',    delay: 9.243 },
+      { voice: 'kick',    delay: 9.73 },
+      { voice: 'kick',    delay: 10.054 },
+      { voice: 'kick',    delay: 10.378 },
+      { voice: 'kick',    delay: 10.541 },
+      { voice: 'kick',    delay: 11.027 },
+      { voice: 'kick',    delay: 11.351 },
+      { voice: 'kick',    delay: 11.676 },
+      { voice: 'kick',    delay: 11.838 },
+      { voice: 'kick',    delay: 12.324 },
+      { voice: 'kick',    delay: 12.649 },
+      // Snare: beats 2 and 4 (every 0.649s offset by 0.649)
+      { voice: 'snare',   delay: 0.649 },
+      { voice: 'snare',   delay: 1.297 },
+      { voice: 'snare',   delay: 1.946 },
+      { voice: 'snare',   delay: 2.595 },
+      { voice: 'snare',   delay: 3.243 },
+      { voice: 'snare',   delay: 3.892 },
+      { voice: 'snare',   delay: 4.541 },
+      { voice: 'snare',   delay: 5.189 },
+      { voice: 'snare',   delay: 5.838 },
+      { voice: 'snare',   delay: 6.486 },
+      { voice: 'snare',   delay: 7.135 },
+      { voice: 'snare',   delay: 7.784 },
+      { voice: 'snare',   delay: 8.432 },
+      { voice: 'snare',   delay: 9.081 },
+      { voice: 'snare',   delay: 9.73 },
+      { voice: 'snare',   delay: 10.378 },
+      { voice: 'snare',   delay: 11.027 },
+      { voice: 'snare',   delay: 11.676 },
+      { voice: 'snare',   delay: 12.324 },
+      // Hi-hat: 16th notes throughout
+      ...[...Array(80)].map((_, i) => ({ voice: i % 8 === 7 ? 'hatOpen' : 'hat', delay: i * 0.081 })),
 
-      // ── Distorted bass riff (E2=40, F2=41, Bb2=46 tritone, D2=38) ──
-      { note: 40, delay: 0,    dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 40, delay: 0.32, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 41, delay: 0.49, dur: 0.16, preset: 'bass', pan: -0.35 }, // flat-2 (Phrygian)
-      { note: 40, delay: 0.65, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 46, delay: 0.97, dur: 0.22, preset: 'bass', pan: -0.35 }, // tritone Bb
-      { note: 40, delay: 1.3,  dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 38, delay: 1.62, dur: 0.16, preset: 'bass', pan: -0.35 }, // D – minor 7th
-      { note: 36, delay: 1.95, dur: 0.22, preset: 'bass', pan: -0.35 }, // C – minor 6th
-      { note: 40, delay: 2.6,  dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 40, delay: 2.76, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 41, delay: 2.92, dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 46, delay: 3.25, dur: 0.22, preset: 'bass', pan: -0.35 },
-      { note: 43, delay: 3.6,  dur: 0.16, preset: 'bass', pan: -0.35 }, // G – minor 3rd
-      { note: 41, delay: 3.76, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 40, delay: 3.92, dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 38, delay: 4.25, dur: 0.28, preset: 'bass', pan: -0.35 },
-      { note: 40, delay: 5.07, dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 41, delay: 5.23, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 46, delay: 5.4,  dur: 0.22, preset: 'bass', pan: -0.35 },
-      { note: 40, delay: 5.75, dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 38, delay: 5.91, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 36, delay: 6.07, dur: 0.16, preset: 'bass', pan: -0.35 },
-      { note: 34, delay: 6.4,  dur: 0.16, preset: 'bass', pan: -0.35 }, // Bb – tritone from E
-      { note: 33, delay: 6.56, dur: 0.28, preset: 'bass', pan: -0.35 }, // A – minor 4th
-      { note: 34, delay: 6.89, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 36, delay: 7.05, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 38, delay: 7.21, dur: 0.12, preset: 'bass', pan: -0.35 },
-      { note: 40, delay: 7.54, dur: 0.35, preset: 'bass', pan: -0.35 },
+      // ── POWER CHORDS (guitar + 5th + sub) ──────────────────────────────────
+      // Riff: E5 E5 F5 E5 Bb4 E5 D5 C5 (classic metal riff pattern)
+      // E2 = 82.4 Hz, F2 = 87.3, Bb1 = 58.3, D2 = 73.4, C2 = 65.4, Ab1 = 51.9
+      { voice: 'power', freq: 82.4,  delay: 0,     dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 0.162, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 87.3,  delay: 0.324, dur: 0.14, pan: 0 }, // F – flat-2
+      { voice: 'power', freq: 82.4,  delay: 0.486, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 58.3,  delay: 0.649, dur: 0.22, pan: 0 }, // Bb – tritone
+      { voice: 'power', freq: 82.4,  delay: 0.973, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 73.4,  delay: 1.135, dur: 0.14, pan: 0 }, // D – minor 7th
+      { voice: 'power', freq: 65.4,  delay: 1.297, dur: 0.22, pan: 0 }, // C – minor 6th
+      { voice: 'power', freq: 82.4,  delay: 1.622, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 1.784, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 87.3,  delay: 1.946, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 2.108, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 58.3,  delay: 2.27,  dur: 0.22, pan: 0 },
+      { voice: 'power', freq: 51.9,  delay: 2.595, dur: 0.28, pan: 0 }, // Ab – tritone from D
+      { voice: 'power', freq: 82.4,  delay: 3.243, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 3.405, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 87.3,  delay: 3.568, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 3.73,  dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 58.3,  delay: 3.892, dur: 0.22, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 4.216, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 73.4,  delay: 4.378, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 65.4,  delay: 4.541, dur: 0.28, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 4.865, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 87.3,  delay: 5.027, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 5.189, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 58.3,  delay: 5.351, dur: 0.22, pan: 0 },
+      { voice: 'power', freq: 73.4,  delay: 5.676, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 65.4,  delay: 5.838, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 51.9,  delay: 6.0,   dur: 0.35, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 6.486, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 6.649, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 87.3,  delay: 6.811, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 6.973, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 58.3,  delay: 7.135, dur: 0.22, pan: 0 },
+      { voice: 'power', freq: 82.4,  delay: 7.459, dur: 0.12, pan: 0 },
+      { voice: 'power', freq: 73.4,  delay: 7.622, dur: 0.14, pan: 0 },
+      { voice: 'power', freq: 65.4,  delay: 7.784, dur: 0.28, pan: 0 },
 
-      // ── Tritone stabs (E+Bb = diabolus in musica) ──
-      { note: 52, delay: 0,    dur: 0.1,  preset: 'stab', pan: 0.55 }, // E4
-      { note: 58, delay: 0,    dur: 0.1,  preset: 'stab', pan: 0.55 }, // Bb4 – tritone
-      { note: 52, delay: 0.65, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 58, delay: 0.65, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 53, delay: 1.3,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // F4 – flat-2
-      { note: 59, delay: 1.3,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // B4 – major 7th (dissonant)
-      { note: 52, delay: 1.95, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 58, delay: 1.95, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 50, delay: 2.6,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // D4 – minor 7th
-      { note: 56, delay: 2.6,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // Ab4 – tritone from D
-      { note: 48, delay: 3.25, dur: 0.14, preset: 'stab', pan: 0.55 }, // C4 – minor 6th
-      { note: 54, delay: 3.25, dur: 0.14, preset: 'stab', pan: 0.55 }, // F#4 – tritone from C
-      { note: 52, delay: 3.92, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 58, delay: 3.92, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 52, delay: 4.57, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 58, delay: 4.57, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 53, delay: 5.07, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 59, delay: 5.07, dur: 0.1,  preset: 'stab', pan: 0.55 },
-      { note: 46, delay: 5.75, dur: 0.14, preset: 'stab', pan: 0.55 }, // Bb3 – tritone from E
-      { note: 52, delay: 5.75, dur: 0.14, preset: 'stab', pan: 0.55 },
-      { note: 45, delay: 6.4,  dur: 0.14, preset: 'stab', pan: 0.55 }, // A3 – minor 4th
-      { note: 51, delay: 6.4,  dur: 0.14, preset: 'stab', pan: 0.55 }, // Eb4 – tritone from A
-      { note: 52, delay: 7.05, dur: 0.18, preset: 'stab', pan: 0.55 },
-      { note: 58, delay: 7.05, dur: 0.18, preset: 'stab', pan: 0.55 },
+      // ── BASS (follows guitar root notes) ───────────────────────────────────
+      { voice: 'bass', freq: 41.2,  delay: 0,     dur: 0.14 }, // E1
+      { voice: 'bass', freq: 41.2,  delay: 0.162, dur: 0.12 },
+      { voice: 'bass', freq: 43.65, delay: 0.324, dur: 0.14 }, // F1
+      { voice: 'bass', freq: 41.2,  delay: 0.486, dur: 0.12 },
+      { voice: 'bass', freq: 29.14, delay: 0.649, dur: 0.22 }, // Bb0 – tritone
+      { voice: 'bass', freq: 41.2,  delay: 0.973, dur: 0.12 },
+      { voice: 'bass', freq: 36.71, delay: 1.135, dur: 0.14 }, // D1
+      { voice: 'bass', freq: 32.7,  delay: 1.297, dur: 0.22 }, // C1
+      { voice: 'bass', freq: 41.2,  delay: 1.622, dur: 0.14 },
+      { voice: 'bass', freq: 43.65, delay: 1.946, dur: 0.14 },
+      { voice: 'bass', freq: 29.14, delay: 2.27,  dur: 0.22 },
+      { voice: 'bass', freq: 25.96, delay: 2.595, dur: 0.28 }, // Ab0 – tritone from D
+      { voice: 'bass', freq: 41.2,  delay: 3.243, dur: 0.14 },
+      { voice: 'bass', freq: 43.65, delay: 3.568, dur: 0.14 },
+      { voice: 'bass', freq: 29.14, delay: 3.892, dur: 0.22 },
+      { voice: 'bass', freq: 41.2,  delay: 4.216, dur: 0.12 },
+      { voice: 'bass', freq: 36.71, delay: 4.378, dur: 0.14 },
+      { voice: 'bass', freq: 32.7,  delay: 4.541, dur: 0.28 },
+      { voice: 'bass', freq: 41.2,  delay: 4.865, dur: 0.14 },
+      { voice: 'bass', freq: 43.65, delay: 5.027, dur: 0.12 },
+      { voice: 'bass', freq: 29.14, delay: 5.351, dur: 0.22 },
+      { voice: 'bass', freq: 36.71, delay: 5.676, dur: 0.14 },
+      { voice: 'bass', freq: 25.96, delay: 6.0,   dur: 0.35 },
+      { voice: 'bass', freq: 41.2,  delay: 6.486, dur: 0.14 },
+      { voice: 'bass', freq: 43.65, delay: 6.811, dur: 0.14 },
+      { voice: 'bass', freq: 29.14, delay: 7.135, dur: 0.22 },
+      { voice: 'bass', freq: 36.71, delay: 7.622, dur: 0.14 },
+      { voice: 'bass', freq: 32.7,  delay: 7.784, dur: 0.28 },
 
-      // ── Screaming lead – E Phrygian chromatic descent, no happy notes ──
+      // ── SCREAMING LEAD (E Phrygian chromatic descent, tritone arps) ────────
       // Phrase 1: E5→F5→E5→D5→C5→B4→Bb4 (chromatic + tritone landing)
-      { note: 76, delay: 0,    dur: 0.16, preset: 'lead', pan: 0.15 }, // E5
-      { note: 77, delay: 0.16, dur: 0.12, preset: 'lead', pan: 0.15 }, // F5 – flat-2
-      { note: 76, delay: 0.32, dur: 0.16, preset: 'lead', pan: 0.15 }, // E5
-      { note: 74, delay: 0.49, dur: 0.12, preset: 'lead', pan: 0.15 }, // D5
-      { note: 72, delay: 0.65, dur: 0.12, preset: 'lead', pan: 0.15 }, // C5
-      { note: 71, delay: 0.81, dur: 0.12, preset: 'lead', pan: 0.15 }, // B4
-      { note: 70, delay: 0.97, dur: 0.22, preset: 'lead', pan: 0.15 }, // Bb4 – tritone from E
-      // Phrase 2: G5→F#5→F5→E5→Eb5 (chromatic descent into tritone)
-      { note: 79, delay: 1.3,  dur: 0.16, preset: 'lead', pan: 0.15 }, // G5
-      { note: 78, delay: 1.46, dur: 0.12, preset: 'lead', pan: 0.15 }, // F#5
-      { note: 77, delay: 1.62, dur: 0.12, preset: 'lead', pan: 0.15 }, // F5
-      { note: 76, delay: 1.78, dur: 0.12, preset: 'lead', pan: 0.15 }, // E5
-      { note: 75, delay: 1.95, dur: 0.28, preset: 'lead', pan: 0.15 }, // Eb5 – minor 2nd below E
-      // Phrase 3: E5→D5→C5→B4→Bb4→A4 (grinding descent)
-      { note: 76, delay: 2.6,  dur: 0.14, preset: 'lead', pan: 0.15 },
-      { note: 74, delay: 2.76, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 72, delay: 2.92, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 71, delay: 3.08, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 70, delay: 3.25, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 69, delay: 3.41, dur: 0.28, preset: 'lead', pan: 0.15 }, // A4 – minor 4th
-      // Phrase 4: Bb4→C5→Eb5→F5→Bb5 (tritone arpeggio upward – demonic)
-      { note: 70, delay: 3.92, dur: 0.12, preset: 'lead', pan: 0.15 }, // Bb4
-      { note: 72, delay: 4.08, dur: 0.12, preset: 'lead', pan: 0.15 }, // C5
-      { note: 75, delay: 4.25, dur: 0.12, preset: 'lead', pan: 0.15 }, // Eb5
-      { note: 77, delay: 4.41, dur: 0.12, preset: 'lead', pan: 0.15 }, // F5
-      { note: 82, delay: 4.57, dur: 0.35, preset: 'lead', pan: 0.15 }, // Bb5 – tritone from E
-      // Phrase 5: E5→F5→G5→Ab5→G5→F5→E5 (Phrygian run with chromatic)
-      { note: 76, delay: 5.07, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 77, delay: 5.23, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 79, delay: 5.4,  dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 80, delay: 5.56, dur: 0.12, preset: 'lead', pan: 0.15 }, // Ab5 – minor 6th
-      { note: 79, delay: 5.72, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 77, delay: 5.88, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 76, delay: 6.07, dur: 0.28, preset: 'lead', pan: 0.15 },
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 0,     dur: 0.14 }, // E5
+      { voice: 'lead', freq: MIDI_TO_HZ(77), delay: 0.162, dur: 0.12 }, // F5 – flat-2
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 0.324, dur: 0.14 }, // E5
+      { voice: 'lead', freq: MIDI_TO_HZ(74), delay: 0.486, dur: 0.12 }, // D5
+      { voice: 'lead', freq: MIDI_TO_HZ(72), delay: 0.649, dur: 0.12 }, // C5
+      { voice: 'lead', freq: MIDI_TO_HZ(71), delay: 0.811, dur: 0.12 }, // B4
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 0.973, dur: 0.22 }, // Bb4 – tritone
+      // Phrase 2: G5→F#5→F5→E5→Eb5
+      { voice: 'lead', freq: MIDI_TO_HZ(79), delay: 1.297, dur: 0.14 }, // G5
+      { voice: 'lead', freq: MIDI_TO_HZ(78), delay: 1.459, dur: 0.12 }, // F#5
+      { voice: 'lead', freq: MIDI_TO_HZ(77), delay: 1.622, dur: 0.12 }, // F5
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 1.784, dur: 0.12 }, // E5
+      { voice: 'lead', freq: MIDI_TO_HZ(75), delay: 1.946, dur: 0.28 }, // Eb5
+      // Phrase 3: E5→D5→C5→B4→Bb4→A4
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 2.595, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(74), delay: 2.757, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(72), delay: 2.919, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(71), delay: 3.081, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 3.243, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(69), delay: 3.405, dur: 0.28 }, // A4
+      // Phrase 4: Bb4→C5→Eb5→F5→Bb5 (tritone arpeggio upward)
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 3.892, dur: 0.12 }, // Bb4
+      { voice: 'lead', freq: MIDI_TO_HZ(72), delay: 4.054, dur: 0.12 }, // C5
+      { voice: 'lead', freq: MIDI_TO_HZ(75), delay: 4.216, dur: 0.12 }, // Eb5
+      { voice: 'lead', freq: MIDI_TO_HZ(77), delay: 4.378, dur: 0.12 }, // F5
+      { voice: 'lead', freq: MIDI_TO_HZ(82), delay: 4.541, dur: 0.35 }, // Bb5 – tritone from E
+      // Phrase 5: E5→F5→G5→Ab5→G5→F5→E5
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 5.189, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(77), delay: 5.351, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(79), delay: 5.514, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(80), delay: 5.676, dur: 0.12 }, // Ab5
+      { voice: 'lead', freq: MIDI_TO_HZ(79), delay: 5.838, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(77), delay: 6.0,   dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 6.162, dur: 0.28 },
       // Phrase 6: Bb4→Ab4→G4→F#4→F4→E4 (chromatic descent to root)
-      { note: 70, delay: 6.56, dur: 0.12, preset: 'lead', pan: 0.15 },
-      { note: 68, delay: 6.72, dur: 0.12, preset: 'lead', pan: 0.15 }, // Ab4
-      { note: 67, delay: 6.89, dur: 0.12, preset: 'lead', pan: 0.15 }, // G4
-      { note: 66, delay: 7.05, dur: 0.12, preset: 'lead', pan: 0.15 }, // F#4
-      { note: 65, delay: 7.21, dur: 0.12, preset: 'lead', pan: 0.15 }, // F4
-      { note: 64, delay: 7.38, dur: 0.35, preset: 'lead', pan: 0.15 }, // E4 – root, but no resolution
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 6.649, dur: 0.12 },
+      { voice: 'lead', freq: MIDI_TO_HZ(68), delay: 6.811, dur: 0.12 }, // Ab4
+      { voice: 'lead', freq: MIDI_TO_HZ(67), delay: 6.973, dur: 0.12 }, // G4
+      { voice: 'lead', freq: MIDI_TO_HZ(66), delay: 7.135, dur: 0.12 }, // F#4
+      { voice: 'lead', freq: MIDI_TO_HZ(65), delay: 7.297, dur: 0.12 }, // F4
+      { voice: 'lead', freq: MIDI_TO_HZ(64), delay: 7.459, dur: 0.35 }, // E4 – root, no resolution
+      // Phrase 7: fast tritone arp E4+Bb4 alternating
+      { voice: 'lead', freq: MIDI_TO_HZ(64), delay: 8.108, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 8.189, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(64), delay: 8.27,  dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 8.351, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(65), delay: 8.432, dur: 0.08 }, // F4
+      { voice: 'lead', freq: MIDI_TO_HZ(71), delay: 8.514, dur: 0.08 }, // B4
+      { voice: 'lead', freq: MIDI_TO_HZ(65), delay: 8.595, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(71), delay: 8.676, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(64), delay: 8.757, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 8.838, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(62), delay: 8.919, dur: 0.08 }, // D4
+      { voice: 'lead', freq: MIDI_TO_HZ(68), delay: 9.0,   dur: 0.08 }, // Ab4 – tritone from D
+      { voice: 'lead', freq: MIDI_TO_HZ(60), delay: 9.081, dur: 0.08 }, // C4
+      { voice: 'lead', freq: MIDI_TO_HZ(66), delay: 9.162, dur: 0.08 }, // F#4 – tritone from C
+      { voice: 'lead', freq: MIDI_TO_HZ(59), delay: 9.243, dur: 0.08 }, // B3
+      { voice: 'lead', freq: MIDI_TO_HZ(65), delay: 9.324, dur: 0.08 }, // F4 – tritone from B
+      // Phrase 8: screaming high run
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 9.73,  dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(79), delay: 9.811, dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(82), delay: 9.892, dur: 0.08 }, // Bb5
+      { voice: 'lead', freq: MIDI_TO_HZ(84), delay: 9.973, dur: 0.08 }, // C6
+      { voice: 'lead', freq: MIDI_TO_HZ(82), delay: 10.054,dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(80), delay: 10.135,dur: 0.08 }, // Ab5
+      { voice: 'lead', freq: MIDI_TO_HZ(79), delay: 10.216,dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(77), delay: 10.297,dur: 0.08 },
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 10.378,dur: 0.35 },
+      // Phrase 9: final descent
+      { voice: 'lead', freq: MIDI_TO_HZ(75), delay: 10.865,dur: 0.12 }, // Eb5
+      { voice: 'lead', freq: MIDI_TO_HZ(73), delay: 11.027,dur: 0.12 }, // Db5
+      { voice: 'lead', freq: MIDI_TO_HZ(72), delay: 11.189,dur: 0.12 }, // C5
+      { voice: 'lead', freq: MIDI_TO_HZ(70), delay: 11.351,dur: 0.12 }, // Bb4
+      { voice: 'lead', freq: MIDI_TO_HZ(68), delay: 11.514,dur: 0.12 }, // Ab4
+      { voice: 'lead', freq: MIDI_TO_HZ(67), delay: 11.676,dur: 0.12 }, // G4
+      { voice: 'lead', freq: MIDI_TO_HZ(65), delay: 11.838,dur: 0.12 }, // F4
+      { voice: 'lead', freq: MIDI_TO_HZ(64), delay: 12.0,  dur: 0.5  }, // E4 – root
 
-      // ── Demonic arp – tritone patterns, relentless 16th notes ──
-      // E+Bb tritone arp pattern
-      { note: 64, delay: 8.0,  dur: 0.09, preset: 'arp', pan: -0.2 }, // E4
-      { note: 70, delay: 8.09, dur: 0.09, preset: 'arp', pan: -0.2 }, // Bb4 – tritone
-      { note: 64, delay: 8.18, dur: 0.09, preset: 'arp', pan: -0.2 },
-      { note: 70, delay: 8.27, dur: 0.09, preset: 'arp', pan: -0.2 },
-      { note: 65, delay: 8.36, dur: 0.09, preset: 'arp', pan: -0.2 }, // F4 – flat-2
-      { note: 71, delay: 8.45, dur: 0.09, preset: 'arp', pan: -0.2 }, // B4 – maj7 dissonance
-      { note: 65, delay: 8.54, dur: 0.09, preset: 'arp', pan: -0.2 },
-      { note: 71, delay: 8.63, dur: 0.09, preset: 'arp', pan: -0.2 },
-      { note: 64, delay: 8.72, dur: 0.09, preset: 'arp', pan: -0.2 },
-      { note: 70, delay: 8.81, dur: 0.09, preset: 'arp', pan: -0.2 },
-      { note: 62, delay: 8.9,  dur: 0.09, preset: 'arp', pan: -0.2 }, // D4
-      { note: 68, delay: 8.99, dur: 0.09, preset: 'arp', pan: -0.2 }, // Ab4 – tritone from D
-      { note: 60, delay: 9.08, dur: 0.09, preset: 'arp', pan: -0.2 }, // C4
-      { note: 66, delay: 9.17, dur: 0.09, preset: 'arp', pan: -0.2 }, // F#4 – tritone from C
-      { note: 59, delay: 9.26, dur: 0.09, preset: 'arp', pan: -0.2 }, // B3
-      { note: 65, delay: 9.35, dur: 0.09, preset: 'arp', pan: -0.2 }, // F4 – tritone from B
-      // Second arp phrase – faster, more chaotic
-      { note: 64, delay: 9.6,  dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 70, delay: 9.68, dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 67, delay: 9.76, dur: 0.08, preset: 'arp', pan: 0.2 }, // G4
-      { note: 73, delay: 9.84, dur: 0.08, preset: 'arp', pan: 0.2 }, // Db5 – tritone from G
-      { note: 65, delay: 9.92, dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 71, delay: 10.0, dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 64, delay: 10.08,dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 70, delay: 10.16,dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 63, delay: 10.24,dur: 0.08, preset: 'arp', pan: 0.2 }, // Eb4
-      { note: 69, delay: 10.32,dur: 0.08, preset: 'arp', pan: 0.2 }, // A4 – tritone from Eb
-      { note: 62, delay: 10.4, dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 68, delay: 10.48,dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 61, delay: 10.56,dur: 0.08, preset: 'arp', pan: 0.2 }, // Db4
-      { note: 67, delay: 10.64,dur: 0.08, preset: 'arp', pan: 0.2 }, // G4 – tritone from Db
-      { note: 60, delay: 10.72,dur: 0.08, preset: 'arp', pan: 0.2 },
-      { note: 66, delay: 10.8, dur: 0.08, preset: 'arp', pan: 0.2 },
-
-      // ── Dark pad – dissonant cluster, slow swell ──
-      { note: 40, delay: 11.0, dur: 1.8,  preset: 'pad', pan: 0 },  // E2
-      { note: 41, delay: 11.0, dur: 1.8,  preset: 'pad', pan: 0.1 }, // F2 – minor 2nd cluster
-      { note: 46, delay: 11.0, dur: 1.8,  preset: 'pad', pan: -0.1 }, // Bb2 – tritone
-      { note: 52, delay: 11.2, dur: 1.6,  preset: 'pad', pan: 0.2 }, // E3
-      { note: 58, delay: 11.2, dur: 1.6,  preset: 'pad', pan: -0.2 }, // Bb3 – tritone
-      { note: 64, delay: 11.5, dur: 1.3,  preset: 'pad', pan: 0 },  // E4
+      // ── DARK PAD (dissonant cluster swells) ────────────────────────────────
+      { voice: 'pad', freq: MIDI_TO_HZ(40), delay: 0,    dur: 3.5 }, // E2
+      { voice: 'pad', freq: MIDI_TO_HZ(41), delay: 0.05, dur: 3.5 }, // F2 – minor 2nd
+      { voice: 'pad', freq: MIDI_TO_HZ(46), delay: 0.1,  dur: 3.5 }, // Bb2 – tritone
+      { voice: 'pad', freq: MIDI_TO_HZ(38), delay: 3.5,  dur: 3.5 }, // D2
+      { voice: 'pad', freq: MIDI_TO_HZ(44), delay: 3.55, dur: 3.5 }, // Ab2 – tritone from D
+      { voice: 'pad', freq: MIDI_TO_HZ(36), delay: 7.0,  dur: 3.5 }, // C2
+      { voice: 'pad', freq: MIDI_TO_HZ(42), delay: 7.05, dur: 3.5 }, // F#2 – tritone from C
+      { voice: 'pad', freq: MIDI_TO_HZ(40), delay: 10.5, dur: 2.5 },
+      { voice: 'pad', freq: MIDI_TO_HZ(46), delay: 10.55,dur: 2.5 },
     ]
   },
 
-  // Victory: triumphant fanfare
+  // Victory: still dark but with a triumphant edge
   victory: {
-    bpm: 120,
     loopSeconds: 10,
     notes: [
-      { note: 60, delay: 0,    dur: 0.2,  preset: 'stab',  pan: -0.2 },
-      { note: 64, delay: 0.2,  dur: 0.2,  preset: 'stab',  pan: -0.2 },
-      { note: 67, delay: 0.4,  dur: 0.2,  preset: 'stab',  pan: -0.2 },
-      { note: 72, delay: 0.6,  dur: 0.5,  preset: 'stab',  pan: -0.2 },
-      { note: 71, delay: 1.2,  dur: 0.2,  preset: 'lead',  pan: 0.2 },
-      { note: 72, delay: 1.5,  dur: 0.6,  preset: 'lead',  pan: 0.2 },
-      { note: 67, delay: 2.4,  dur: 0.3,  preset: 'lead',  pan: 0.2 },
-      { note: 69, delay: 2.8,  dur: 0.3,  preset: 'lead',  pan: 0.2 },
-      { note: 71, delay: 3.2,  dur: 0.3,  preset: 'lead',  pan: 0.2 },
-      { note: 72, delay: 3.6,  dur: 0.8,  preset: 'lead',  pan: 0.2 },
-      { note: 48, delay: 0,    dur: 0.4,  preset: 'bass',  pan: -0.4 },
-      { note: 52, delay: 0.5,  dur: 0.4,  preset: 'bass',  pan: -0.4 },
-      { note: 55, delay: 1.0,  dur: 0.4,  preset: 'bass',  pan: -0.4 },
-      { note: 60, delay: 1.5,  dur: 0.6,  preset: 'bass',  pan: -0.4 },
-      { note: 55, delay: 2.4,  dur: 0.4,  preset: 'bass',  pan: -0.4 },
-      { note: 57, delay: 2.9,  dur: 0.4,  preset: 'bass',  pan: -0.4 },
-      { note: 59, delay: 3.4,  dur: 0.4,  preset: 'bass',  pan: -0.4 },
-      { note: 60, delay: 3.9,  dur: 0.8,  preset: 'bass',  pan: -0.4 },
-      { note: 76, delay: 5.0,  dur: 0.25, preset: 'arp',   pan: 0.4 },
-      { note: 74, delay: 5.25, dur: 0.25, preset: 'arp',   pan: 0.4 },
-      { note: 72, delay: 5.5,  dur: 0.25, preset: 'arp',   pan: 0.4 },
-      { note: 71, delay: 5.75, dur: 0.25, preset: 'arp',   pan: 0.4 },
-      { note: 72, delay: 6.0,  dur: 0.5,  preset: 'arp',   pan: 0.4 },
-      { note: 67, delay: 6.6,  dur: 0.25, preset: 'arp',   pan: 0.4 },
-      { note: 69, delay: 6.85, dur: 0.25, preset: 'arp',   pan: 0.4 },
-      { note: 71, delay: 7.1,  dur: 0.25, preset: 'arp',   pan: 0.4 },
-      { note: 72, delay: 7.35, dur: 0.8,  preset: 'arp',   pan: 0.4 },
+      { voice: 'kick',  delay: 0 },
+      { voice: 'kick',  delay: 0.5 },
+      { voice: 'snare', delay: 1.0 },
+      { voice: 'kick',  delay: 1.5 },
+      { voice: 'kick',  delay: 2.0 },
+      { voice: 'snare', delay: 2.5 },
+      { voice: 'kick',  delay: 3.0 },
+      { voice: 'kick',  delay: 3.5 },
+      { voice: 'snare', delay: 4.0 },
+      { voice: 'kick',  delay: 4.5 },
+      { voice: 'kick',  delay: 5.0 },
+      { voice: 'snare', delay: 5.5 },
+      { voice: 'kick',  delay: 6.0 },
+      { voice: 'kick',  delay: 6.5 },
+      { voice: 'snare', delay: 7.0 },
+      { voice: 'kick',  delay: 7.5 },
+      { voice: 'kick',  delay: 8.0 },
+      { voice: 'snare', delay: 8.5 },
+      { voice: 'kick',  delay: 9.0 },
+      { voice: 'kick',  delay: 9.5 },
+      { voice: 'power', freq: 82.4,  delay: 0,   dur: 0.4 },
+      { voice: 'power', freq: 87.3,  delay: 0.5, dur: 0.3 },
+      { voice: 'power', freq: 98.0,  delay: 1.0, dur: 0.4 }, // G2
+      { voice: 'power', freq: 110.0, delay: 1.5, dur: 0.6 }, // A2
+      { voice: 'power', freq: 82.4,  delay: 2.5, dur: 0.4 },
+      { voice: 'power', freq: 87.3,  delay: 3.0, dur: 0.3 },
+      { voice: 'power', freq: 98.0,  delay: 3.5, dur: 0.4 },
+      { voice: 'power', freq: 123.5, delay: 4.0, dur: 0.8 }, // B2
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 0,   dur: 0.3 },
+      { voice: 'lead', freq: MIDI_TO_HZ(79), delay: 0.4, dur: 0.3 },
+      { voice: 'lead', freq: MIDI_TO_HZ(82), delay: 0.8, dur: 0.3 },
+      { voice: 'lead', freq: MIDI_TO_HZ(84), delay: 1.2, dur: 0.6 },
+      { voice: 'lead', freq: MIDI_TO_HZ(82), delay: 2.0, dur: 0.3 },
+      { voice: 'lead', freq: MIDI_TO_HZ(79), delay: 2.4, dur: 0.3 },
+      { voice: 'lead', freq: MIDI_TO_HZ(76), delay: 2.8, dur: 0.6 },
+      { voice: 'bass', freq: 41.2,  delay: 0,   dur: 0.4 },
+      { voice: 'bass', freq: 43.65, delay: 0.5, dur: 0.3 },
+      { voice: 'bass', freq: 49.0,  delay: 1.0, dur: 0.4 },
+      { voice: 'bass', freq: 55.0,  delay: 1.5, dur: 0.6 },
+      { voice: 'bass', freq: 41.2,  delay: 2.5, dur: 0.4 },
+      { voice: 'bass', freq: 43.65, delay: 3.0, dur: 0.3 },
+      { voice: 'bass', freq: 49.0,  delay: 3.5, dur: 0.4 },
+      { voice: 'bass', freq: 61.74, delay: 4.0, dur: 0.8 },
     ]
   }
 }
 
 // ─── Main audio class ─────────────────────────────────────────────────────────
 export class RetroShooterAudio {
-  constructor(volume = 0.16) {
+  constructor(volume = 0.14) {
     this.ctx = null
     this.master = null
     this.musicGain = null
     this.sfxGain = null
     this.volume = volume
-    this.musicVolume = 0.38
+    this.musicVolume = 0.42
     this.currentTrack = null
     this.musicTimer = null
-    this._waveCache = new Map()
   }
 
   ensure() {
@@ -691,125 +785,45 @@ export class RetroShooterAudio {
       this.master = this.ctx.createGain()
       this.master.gain.value = this.volume
       this.master.connect(this.ctx.destination)
-
       this.sfxGain = this.ctx.createGain()
       this.sfxGain.gain.value = 1.0
       this.sfxGain.connect(this.master)
-
       this.musicGain = this.ctx.createGain()
       this.musicGain.gain.value = this.musicVolume
       this.musicGain.connect(this.master)
-
       return true
     } catch {
-      this.ctx = null
-      this.master = null
-      return false
+      this.ctx = null; this.master = null; return false
     }
   }
 
   _resume() {
-    if (this.ctx?.state === 'suspended') {
-      void this.ctx.resume().catch(() => {})
-    }
+    if (this.ctx?.state === 'suspended') void this.ctx.resume().catch(() => {})
   }
 
-  _getWave(waveId) {
-    if (!this.ctx) return null
-    if (this._waveCache.has(waveId)) return this._waveCache.get(waveId)
-    const w = buildOpl3Wave(this.ctx, waveId)
-    if (w) this._waveCache.set(waveId, w)
-    return w
-  }
-
-  // Simple 2-op FM pulse for SFX
-  pulse({ freq = 440, duration = 0.09, waveId = 6, volume = 0.2, sweep = 0, modIndex = 60, modMult = 1, delay = 0, pan = 0 } = {}) {
-    if (!this.ensure() || !this.ctx || !this.sfxGain) return
-    this._resume()
-    const now = this.ctx.currentTime + delay
-
-    // Modulator
-    const modOsc = this.ctx.createOscillator()
-    const modEnv = this.ctx.createGain()
-    modOsc.type = 'sine'
-    modOsc.frequency.setValueAtTime(freq * modMult, now)
-    modEnv.gain.setValueAtTime(modIndex, now)
-    modEnv.gain.exponentialRampToValueAtTime(0.001, now + duration)
-    modOsc.connect(modEnv)
-
-    // Carrier
-    const carOsc = this.ctx.createOscillator()
-    const carEnv = this.ctx.createGain()
-    const w = this._getWave(waveId)
-    if (w) { try { carOsc.setPeriodicWave(w) } catch { carOsc.type = 'square' } } else { carOsc.type = 'square' }
-    carOsc.frequency.setValueAtTime(freq, now)
-    if (sweep) carOsc.frequency.linearRampToValueAtTime(freq + sweep, now + duration)
-    modEnv.connect(carOsc.frequency)
-
-    carEnv.gain.setValueAtTime(0.0001, now)
-    carEnv.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0002), now + 0.006)
-    carEnv.gain.exponentialRampToValueAtTime(0.0001, now + duration)
-    carOsc.connect(carEnv)
-
-    if (pan !== 0 && this.ctx.createStereoPanner) {
-      const panNode = this.ctx.createStereoPanner()
-      panNode.pan.value = pan
-      carEnv.connect(panNode)
-      panNode.connect(this.sfxGain)
-    } else {
-      carEnv.connect(this.sfxGain)
-    }
-
-    modOsc.start(now); modOsc.stop(now + duration + 0.04)
-    carOsc.start(now); carOsc.stop(now + duration + 0.04)
-  }
-
-  // Play a music note using an OPL3 preset
-  _musicNote(note, preset, delay, duration, pan = 0) {
+  _playNote(note) {
     if (!this.ctx || !this.musicGain) return
-    const freq = MIDI_TO_HZ(note)
-    const p = OPL3_PRESETS[preset] || OPL3_PRESETS.piano
-    fm4op(this.ctx, this.musicGain, {
-      freq,
-      volume: p.volume || 0.12,
-      duration,
-      delay,
-      pan,
-      algorithm: p.algorithm || 'fm2',
-      op1Wave: p.op1Wave || 0,
-      op1Mult: p.op1Mult || 1,
-      op1ModIndex: p.op1ModIndex || 60,
-      op1Attack: p.op1Attack || 0.004,
-      op1Decay: p.op1Decay || 0.08,
-      op1Sustain: p.op1Sustain || 0.6,
-      op2Wave: p.op2Wave || 0,
-      op2Mult: p.op2Mult || 1,
-      op2Attack: p.op2Attack || 0.006,
-      op2Decay: p.op2Decay || 0.1,
-      op2Sustain: p.op2Sustain || 0.55,
-      op3Wave: p.op3Wave || 6,
-      op3Mult: p.op3Mult || 2,
-      op3ModIndex: p.op3ModIndex || 40,
-      op3Attack: p.op3Attack || 0.002,
-      op3Decay: p.op3Decay || 0.04,
-      op3Sustain: p.op3Sustain || 0.5,
-      op4Wave: p.op4Wave || 0,
-      op4Mult: p.op4Mult || 1,
-      op4Attack: p.op4Attack || 0.008,
-      op4Decay: p.op4Decay || 0.12,
-      op4Sustain: p.op4Sustain || 0.55,
-      vibrato: p.vibrato || false,
-      tremolo: p.tremolo || false,
-    })
+    const { voice, freq = 82.4, delay = 0, dur = 0.25, pan = 0, vol } = note
+    const volume = vol || this.musicVolume * 0.5
+    switch (voice) {
+      case 'guitar': guitarNote(this.ctx, this.musicGain, { freq, duration: dur, delay, pan, volume }); break
+      case 'power':  powerChord(this.ctx, this.musicGain, { freq, duration: dur, delay, pan, volume }); break
+      case 'bass':   bassNote(this.ctx, this.musicGain, { freq, duration: dur, delay, pan, volume }); break
+      case 'kick':   kickDrum(this.ctx, this.musicGain, { delay, volume: volume * 1.8 }); break
+      case 'snare':  snareDrum(this.ctx, this.musicGain, { delay, volume: volume * 1.4 }); break
+      case 'hat':    hiHat(this.ctx, this.musicGain, { delay, volume: volume * 0.9, open: false }); break
+      case 'hatOpen':hiHat(this.ctx, this.musicGain, { delay, volume: volume * 0.7, open: true }); break
+      case 'lead':   leadNote(this.ctx, this.musicGain, { freq, duration: dur, delay, pan, volume }); break
+      case 'pad':    padNote(this.ctx, this.musicGain, { freq, duration: dur, delay, pan, volume: volume * 0.7 }); break
+      default: break
+    }
   }
 
   _playTrack(trackName) {
     if (!this.ensure() || !this.ctx || !this.musicGain) return
     this._resume()
     const track = TRACKS[trackName] || TRACKS.lobby
-    track.notes.forEach(n => {
-      this._musicNote(n.note, n.preset, n.delay, n.dur, n.pan || 0)
-    })
+    track.notes.forEach((note) => this._playNote(note))
     if (this.musicTimer) clearTimeout(this.musicTimer)
     this.musicTimer = setTimeout(() => {
       if (this.currentTrack === trackName) this._playTrack(trackName)
@@ -832,42 +846,41 @@ export class RetroShooterAudio {
   }
 
   // ── SFX ──────────────────────────────────────────────────────────────────────
+  pulse(opts = {}) {
+    if (!this.ensure() || !this.ctx || !this.sfxGain) return
+    this._resume()
+    fmPulse(this.ctx, this.sfxGain, opts)
+  }
+
   shoot() {
-    // OPL3-style laser: sawtooth carrier, fast FM sweep
-    this.pulse({ freq: 130, duration: 0.08, waveId: 6, volume: 0.26, sweep: -35, modIndex: 80, modMult: 2, pan: 0 })
+    this.pulse({ freq: 130, duration: 0.08, waveId: 6, volume: 0.26, sweep: -35, modIndex: 80, modMult: 2 })
   }
 
   hit() {
-    // Impact: square wave with downward pitch sweep
     this.pulse({ freq: 96, duration: 0.14, waveId: 6, volume: 0.22, sweep: -24, modIndex: 40, modMult: 1 })
   }
 
   pickup() {
-    // Pickup chime: triangle + FM shimmer
     this.pulse({ freq: 560, duration: 0.08, waveId: 0, volume: 0.14, sweep: 90, modIndex: 30, modMult: 3, pan: 0.2 })
     this.pulse({ freq: 840, duration: 0.1, waveId: 0, volume: 0.1, sweep: 60, modIndex: 20, modMult: 2, delay: 0.06, pan: -0.2 })
   }
 
   ready() {
-    // Ready beep: two-tone OPL3 chord
     this.pulse({ freq: 480, duration: 0.07, waveId: 0, volume: 0.12, sweep: 60, modIndex: 25, modMult: 2 })
     this.pulse({ freq: 720, duration: 0.09, waveId: 0, volume: 0.1, sweep: 40, modIndex: 20, modMult: 2, delay: 0.05 })
   }
 
   countdown(step = 0) {
-    // Countdown tick: OPL3 square pulse
     this.pulse({ freq: 360 + Number(step || 0) * 70, duration: 0.07, waveId: 6, volume: 0.12, sweep: 16, modIndex: 15, modMult: 1 })
   }
 
   respawn() {
-    // Respawn: ascending FM arpeggio
     this.pulse({ freq: 300, duration: 0.08, waveId: 2, volume: 0.12, sweep: 60, modIndex: 40, modMult: 2 })
     this.pulse({ freq: 450, duration: 0.08, waveId: 2, volume: 0.11, sweep: 80, modIndex: 35, modMult: 2, delay: 0.07 })
     this.pulse({ freq: 600, duration: 0.1, waveId: 2, volume: 0.1, sweep: 100, modIndex: 30, modMult: 2, delay: 0.14 })
   }
 
   win() {
-    // Victory: OPL3 fanfare
     this.pulse({ freq: 523, duration: 0.12, waveId: 0, volume: 0.16, sweep: 0, modIndex: 50, modMult: 2 })
     this.pulse({ freq: 659, duration: 0.12, waveId: 0, volume: 0.15, sweep: 0, modIndex: 45, modMult: 2, delay: 0.1 })
     this.pulse({ freq: 784, duration: 0.12, waveId: 0, volume: 0.15, sweep: 0, modIndex: 40, modMult: 2, delay: 0.2 })
@@ -877,12 +890,8 @@ export class RetroShooterAudio {
   dispose() {
     this.stopMusic()
     try { this.master?.disconnect?.() } catch {}
-    if (this.ctx?.close) { void this.ctx.close().catch(() => {}) }
-    this.ctx = null
-    this.master = null
-    this.sfxGain = null
-    this.musicGain = null
-    this._waveCache.clear()
+    if (this.ctx?.close) void this.ctx.close().catch(() => {})
+    this.ctx = null; this.master = null; this.sfxGain = null; this.musicGain = null
   }
 }
 
