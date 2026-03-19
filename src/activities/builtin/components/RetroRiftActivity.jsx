@@ -337,7 +337,9 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
     if (b.frags !== a.frags) return b.frags - a.frags
     return a.deaths - b.deaths
   })
-  const allReady = players.length >= 1 && players.every((player) => player.ready)
+  // Launch is allowed when the host is ready. Requiring ALL players to be ready
+  // blocks the game if any stale/disconnected player never marks ready.
+  const allReady = players.length >= 1 && players.some((player) => player.ready)
   const countdown = phase === 'countdown' ? Math.max(0, Math.ceil((countdownEndsAt - countdownNow) / 1000)) : 0
   const matchTimeRemaining = phase === 'live' && matchEndsAt > 0 ? Math.max(0, matchEndsAt - matchClockNow) : 0
 
