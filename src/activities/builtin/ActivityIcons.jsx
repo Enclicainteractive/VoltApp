@@ -159,6 +159,19 @@ export const ConnectFourIcon = (props) => (
   </svg>
 )
 
+// 8BallPool - cue ball and corner pocket
+export const EightBallPoolIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <circle cx="9" cy="12" r="3.2" fill="currentColor" fillOpacity="0.1" />
+    <circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="16.5" cy="10" r="2.4" />
+    <path d="M18.8 7.2 22 4" />
+    <circle cx="4.6" cy="6.6" r="1" fill="currentColor" stroke="none" />
+    <circle cx="19.4" cy="17.4" r="1" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 // VoltVerse - 3D world/globe with grid
 export const VoltVerseIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -396,6 +409,7 @@ export const ActivityIconMap = {
   'chess-arena': ChessArenaIcon,
   'tic-tac-toe': TicTacToeIcon,
   'connect-four': ConnectFourIcon,
+  '8ball-pool': EightBallPoolIcon,
   'collaborative-drawing': CollaborativeDrawingIcon,
   'voltcraft': VoltCraftIcon,
   'colabcreate': DAWStudioIcon,

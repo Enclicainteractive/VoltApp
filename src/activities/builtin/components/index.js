@@ -10,6 +10,7 @@ import ChessArenaActivity from './ChessArenaActivity'
 import TicTacToeActivity from './TicTacToeActivity'
 import ConnectFourActivity from './ConnectFourActivity'
 import MiniGolfActivity from './MiniGolfActivity'
+import EightBallPoolActivity from './EightBallPoolActivity'
 import CollaborativeDrawingActivity from './CollaborativeDrawingActivity'
 import DAWSequencerActivity from './DAWSequencerActivity'
 import ColabCreateDAW from './ColabCreateDAW'
@@ -31,6 +32,7 @@ export const BuiltinActivityComponentMap = {
   'builtin:tic-tac-toe': TicTacToeActivity,
   'builtin:connect-four': ConnectFourActivity,
   'builtin:minigolf': MiniGolfActivity,
+  'builtin:8ball-pool': EightBallPoolActivity,
   'builtin:collaborative-drawing': CollaborativeDrawingActivity,
   'builtin:colabcreate': ColabCreateDAW,
   'builtin:daw-sequencer': DAWSequencerActivity,
@@ -59,6 +61,10 @@ const BuiltinActivityAliases = {
   'tic-tac-toe': 'builtin:tic-tac-toe',
   'connect-four': 'builtin:connect-four',
   'minigolf': 'builtin:minigolf',
+  '8ball-pool': 'builtin:8ball-pool',
+  '8-ball-pool': 'builtin:8ball-pool',
+  'eightball-pool': 'builtin:8ball-pool',
+  'eight-ball-pool': 'builtin:8ball-pool',
   'collaborative-drawing': 'builtin:collaborative-drawing',
   'daw-sequencer': 'builtin:colabcreate',
   'daw-studio': 'builtin:colabcreate',
