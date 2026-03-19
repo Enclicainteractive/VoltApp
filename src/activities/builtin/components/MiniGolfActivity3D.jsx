@@ -1174,13 +1174,8 @@ function SceneCamera({ followTarget, teePosition, cup, holeBounds, playbackRef, 
           if (!camRef.current || !orbitControlsRef?.current) return
           offsetRef.current.copy(camRef.current.position).sub(orbitControlsRef.current.target)
         }}
-        keys={{
-          LEFT: 'ArrowLeft',
-          UP: 'ArrowUp',
-          RIGHT: 'ArrowRight',
-          BOTTOM: 'ArrowDown',
-        }}
-        keyPanSpeed={18}
+        enableKeys={false}
+        keyPanSpeed={0}
         // Left button = disabled (used for aiming), middle = pan, right = orbit
         mouseButtons={{
           LEFT: null,
@@ -2237,6 +2232,53 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
     if (!isMyTurn) return
     handleAimDrag({ angle: aimState.angle, power: aimState.power }, { commit: true })
   }, [isMyTurn, aimState, handleAimDrag])
+
+  // Keyboard controls: WASD / arrows for aiming, Space/Enter to shoot
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return
+      switch (e.key) {
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          e.preventDefault()
+          setAimState(prev => ({ ...prev, active: true, angle: (prev.angle || 0) - 0.1 }))
+          break
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          e.preventDefault()
+          setAimState(prev => ({ ...prev, active: true, angle: (prev.angle || 0) + 0.1 }))
+          break
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          e.preventDefault()
+          setAimState(prev => ({ ...prev, active: true, power: Math.min(1, (prev.power || 0.25) + 0.05) }))
+          break
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          e.preventDefault()
+          setAimState(prev => ({ ...prev, active: true, power: Math.max(0.05, (prev.power || 0.25) - 0.05) }))
+          break
+        case ' ':
+        case 'Enter':
+          e.preventDefault()
+          setAimState(prev => {
+            if (prev.power >= 0.08) {
+              setTimeout(() => handleShoot(), 0)
+            }
+            return prev
+          })
+          break
+        default:
+          break
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleShoot])
 
   const handleChangeSetting = useCallback((key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }))
