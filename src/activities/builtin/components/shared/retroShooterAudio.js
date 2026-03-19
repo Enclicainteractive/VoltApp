@@ -325,37 +325,41 @@ const OPL3_PRESETS = {
     op2Wave: 0, op2Mult: 1, op2Attack: 0.002, op2Decay: 0.12, op2Sustain: 0.35,
     volume: 0.14,
   },
+  // Heavy distorted bass – sawtooth carrier, high FM index, square modulator
   bass: {
     algorithm: 'series',
-    op1Wave: 6, op1Mult: 1, op1ModIndex: 60, op1Attack: 0.001, op1Decay: 0.04, op1Sustain: 0.8,
-    op2Wave: 0, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.06, op2Sustain: 0.7,
-    op3Wave: 6, op3Mult: 2, op3ModIndex: 20, op3Attack: 0.001, op3Decay: 0.03, op3Sustain: 0.6,
-    op4Wave: 0, op4Mult: 1, op4Attack: 0.001, op4Decay: 0.08, op4Sustain: 0.65,
-    volume: 0.18,
+    op1Wave: 7, op1Mult: 1, op1ModIndex: 110, op1Attack: 0.001, op1Decay: 0.03, op1Sustain: 0.9,
+    op2Wave: 6, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.04, op2Sustain: 0.85,
+    op3Wave: 7, op3Mult: 2, op3ModIndex: 55, op3Attack: 0.001, op3Decay: 0.02, op3Sustain: 0.75,
+    op4Wave: 6, op4Mult: 1, op4Attack: 0.001, op4Decay: 0.05, op4Sustain: 0.8,
+    volume: 0.22,
   },
+  // Screaming distorted lead – high FM index, sawtooth, no vibrato (raw aggression)
   lead: {
     algorithm: 'parallel',
-    op1Wave: 0, op1Mult: 1, op1ModIndex: 90, op1Attack: 0.006, op1Decay: 0.1, op1Sustain: 0.7,
-    op2Wave: 2, op2Mult: 1, op2Attack: 0.006, op2Decay: 0.12, op2Sustain: 0.65,
-    op3Wave: 4, op3Mult: 2, op3ModIndex: 45, op3Attack: 0.004, op3Decay: 0.08, op3Sustain: 0.5,
-    op4Wave: 0, op4Mult: 2, op4Attack: 0.004, op4Decay: 0.1, op4Sustain: 0.45,
-    volume: 0.13,
-    vibrato: true,
+    op1Wave: 7, op1Mult: 1, op1ModIndex: 160, op1Attack: 0.002, op1Decay: 0.06, op1Sustain: 0.8,
+    op2Wave: 6, op2Mult: 1, op2Attack: 0.002, op2Decay: 0.08, op2Sustain: 0.75,
+    op3Wave: 7, op3Mult: 3, op3ModIndex: 80, op3Attack: 0.001, op3Decay: 0.04, op3Sustain: 0.6,
+    op4Wave: 6, op4Mult: 2, op4Attack: 0.001, op4Decay: 0.06, op4Sustain: 0.55,
+    volume: 0.17,
+    vibrato: false,
   },
+  // Dark atmospheric pad – slow attack, dissonant FM
   pad: {
     algorithm: 'fm2',
-    op1Wave: 0, op1Mult: 1, op1ModIndex: 30, op1Attack: 0.12, op1Decay: 0.2, op1Sustain: 0.8,
-    op2Wave: 0, op2Mult: 1, op2Attack: 0.14, op2Decay: 0.22, op2Sustain: 0.75,
-    volume: 0.1,
+    op1Wave: 6, op1Mult: 1, op1ModIndex: 55, op1Attack: 0.08, op1Decay: 0.3, op1Sustain: 0.7,
+    op2Wave: 7, op2Mult: 1, op2Attack: 0.1, op2Decay: 0.35, op2Sustain: 0.65,
+    volume: 0.12,
     tremolo: true,
   },
+  // Brutal chord stab – instant attack, heavy square distortion
   stab: {
     algorithm: 'parallel',
-    op1Wave: 6, op1Mult: 1, op1ModIndex: 70, op1Attack: 0.001, op1Decay: 0.05, op1Sustain: 0.3,
-    op2Wave: 0, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.06, op2Sustain: 0.25,
-    op3Wave: 2, op3Mult: 2, op3ModIndex: 35, op3Attack: 0.001, op3Decay: 0.04, op3Sustain: 0.2,
-    op4Wave: 0, op4Mult: 2, op4Attack: 0.001, op4Decay: 0.05, op4Sustain: 0.18,
-    volume: 0.12,
+    op1Wave: 7, op1Mult: 1, op1ModIndex: 130, op1Attack: 0.001, op1Decay: 0.04, op1Sustain: 0.2,
+    op2Wave: 6, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.05, op2Sustain: 0.15,
+    op3Wave: 7, op3Mult: 2, op3ModIndex: 65, op3Attack: 0.001, op3Decay: 0.03, op3Sustain: 0.12,
+    op4Wave: 6, op4Mult: 3, op4Attack: 0.001, op4Decay: 0.04, op4Sustain: 0.1,
+    volume: 0.16,
   },
   flute: {
     algorithm: 'fm2',
@@ -364,13 +368,21 @@ const OPL3_PRESETS = {
     volume: 0.1,
     vibrato: true,
   },
+  // Demonic arp – tritone-heavy, maximum FM distortion
   arp: {
     algorithm: 'series',
-    op1Wave: 2, op1Mult: 1, op1ModIndex: 100, op1Attack: 0.001, op1Decay: 0.04, op1Sustain: 0.5,
-    op2Wave: 0, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.05, op2Sustain: 0.45,
-    op3Wave: 4, op3Mult: 3, op3ModIndex: 50, op3Attack: 0.001, op3Decay: 0.03, op3Sustain: 0.4,
-    op4Wave: 0, op4Mult: 1, op4Attack: 0.001, op4Decay: 0.06, op4Sustain: 0.38,
-    volume: 0.11,
+    op1Wave: 7, op1Mult: 1, op1ModIndex: 180, op1Attack: 0.001, op1Decay: 0.03, op1Sustain: 0.6,
+    op2Wave: 6, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.04, op2Sustain: 0.55,
+    op3Wave: 7, op3Mult: 4, op3ModIndex: 90, op3Attack: 0.001, op3Decay: 0.02, op3Sustain: 0.45,
+    op4Wave: 6, op4Mult: 1, op4Attack: 0.001, op4Decay: 0.05, op4Sustain: 0.4,
+    volume: 0.14,
+  },
+  // Sub-bass rumble for demonic low-end
+  subbass: {
+    algorithm: 'fm2',
+    op1Wave: 6, op1Mult: 1, op1ModIndex: 200, op1Attack: 0.001, op1Decay: 0.02, op1Sustain: 0.95,
+    op2Wave: 7, op2Mult: 1, op2Attack: 0.001, op2Decay: 0.03, op2Sustain: 0.9,
+    volume: 0.2,
   },
 }
 
@@ -434,75 +446,189 @@ const TRACKS = {
     ]
   },
 
-  // Combat: fast, aggressive, driving rhythm
+  // Combat: DOOM-style demonic assault – E Phrygian/Locrian, tritones, no mercy
+  // BPM 185 – relentless. Bass uses chromatic descent. Lead uses flat-2 and tritone.
+  // No happy intervals. Everything resolves downward into darkness.
   combat: {
-    bpm: 160,
-    loopSeconds: 12,
+    bpm: 185,
+    loopSeconds: 14,
     notes: [
-      // Driving bass
-      { note: 33, delay: 0,    dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 33, delay: 0.37, dur: 0.18, preset: 'bass',  pan: -0.4 },
-      { note: 36, delay: 0.75, dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 33, delay: 1.12, dur: 0.18, preset: 'bass',  pan: -0.4 },
-      { note: 31, delay: 1.5,  dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 31, delay: 1.87, dur: 0.18, preset: 'bass',  pan: -0.4 },
-      { note: 33, delay: 2.25, dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 36, delay: 2.62, dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 38, delay: 3.0,  dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 38, delay: 3.37, dur: 0.18, preset: 'bass',  pan: -0.4 },
-      { note: 40, delay: 3.75, dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 38, delay: 4.12, dur: 0.18, preset: 'bass',  pan: -0.4 },
-      { note: 36, delay: 4.5,  dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 33, delay: 4.87, dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 31, delay: 5.25, dur: 0.22, preset: 'bass',  pan: -0.4 },
-      { note: 29, delay: 5.62, dur: 0.35, preset: 'bass',  pan: -0.4 },
-      // Chord stabs (right channel)
-      { note: 57, delay: 0,    dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 60, delay: 0,    dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 64, delay: 0,    dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 57, delay: 0.75, dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 60, delay: 0.75, dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 64, delay: 0.75, dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 55, delay: 1.5,  dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 59, delay: 1.5,  dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 62, delay: 1.5,  dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 53, delay: 2.25, dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 57, delay: 2.25, dur: 0.12, preset: 'stab',  pan: 0.5 },
-      { note: 60, delay: 2.25, dur: 0.12, preset: 'stab',  pan: 0.5 },
-      // Lead melody
-      { note: 69, delay: 0,    dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 71, delay: 0.37, dur: 0.18, preset: 'lead',  pan: 0.1 },
-      { note: 72, delay: 0.75, dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 71, delay: 1.12, dur: 0.18, preset: 'lead',  pan: 0.1 },
-      { note: 69, delay: 1.5,  dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 67, delay: 1.87, dur: 0.18, preset: 'lead',  pan: 0.1 },
-      { note: 65, delay: 2.25, dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 64, delay: 2.62, dur: 0.35, preset: 'lead',  pan: 0.1 },
-      { note: 67, delay: 3.0,  dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 69, delay: 3.37, dur: 0.18, preset: 'lead',  pan: 0.1 },
-      { note: 71, delay: 3.75, dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 72, delay: 4.12, dur: 0.18, preset: 'lead',  pan: 0.1 },
-      { note: 74, delay: 4.5,  dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 72, delay: 4.87, dur: 0.18, preset: 'lead',  pan: 0.1 },
-      { note: 71, delay: 5.25, dur: 0.22, preset: 'lead',  pan: 0.1 },
-      { note: 69, delay: 5.62, dur: 0.45, preset: 'lead',  pan: 0.1 },
-      // Fast arp (center)
-      { note: 60, delay: 6.0,  dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 64, delay: 6.12, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 67, delay: 6.24, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 72, delay: 6.36, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 67, delay: 6.48, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 64, delay: 6.6,  dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 60, delay: 6.72, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 57, delay: 6.84, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 62, delay: 7.5,  dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 65, delay: 7.62, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 69, delay: 7.74, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 74, delay: 7.86, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 69, delay: 7.98, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 65, delay: 8.1,  dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 62, delay: 8.22, dur: 0.12, preset: 'arp',   pan: 0 },
-      { note: 59, delay: 8.34, dur: 0.12, preset: 'arp',   pan: 0 },
+      // ── Sub-bass pulse (E1=28, Eb1=27, D1=26, C#1=25) – chromatic grind ──
+      { note: 28, delay: 0,    dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 0.16, dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 0.32, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 27, delay: 0.65, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 27, delay: 0.81, dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 26, delay: 0.97, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 25, delay: 1.3,  dur: 0.28, preset: 'subbass', pan: -0.5 },
+      { note: 26, delay: 1.62, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 1.95, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 2.11, dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 27, delay: 2.6,  dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 26, delay: 2.76, dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 25, delay: 2.92, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 24, delay: 3.25, dur: 0.35, preset: 'subbass', pan: -0.5 },
+      { note: 25, delay: 3.6,  dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 26, delay: 3.76, dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 3.92, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 4.25, dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 27, delay: 4.41, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 25, delay: 4.74, dur: 0.28, preset: 'subbass', pan: -0.5 },
+      { note: 24, delay: 5.07, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 23, delay: 5.4,  dur: 0.35, preset: 'subbass', pan: -0.5 },
+      { note: 24, delay: 5.75, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 26, delay: 5.91, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 6.24, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 6.4,  dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 28, delay: 6.56, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 27, delay: 6.89, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 26, delay: 7.05, dur: 0.14, preset: 'subbass', pan: -0.5 },
+      { note: 25, delay: 7.21, dur: 0.18, preset: 'subbass', pan: -0.5 },
+      { note: 24, delay: 7.54, dur: 0.35, preset: 'subbass', pan: -0.5 },
+
+      // ── Distorted bass riff (E2=40, F2=41, Bb2=46 tritone, D2=38) ──
+      { note: 40, delay: 0,    dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 40, delay: 0.32, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 41, delay: 0.49, dur: 0.16, preset: 'bass', pan: -0.35 }, // flat-2 (Phrygian)
+      { note: 40, delay: 0.65, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 46, delay: 0.97, dur: 0.22, preset: 'bass', pan: -0.35 }, // tritone Bb
+      { note: 40, delay: 1.3,  dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 38, delay: 1.62, dur: 0.16, preset: 'bass', pan: -0.35 }, // D – minor 7th
+      { note: 36, delay: 1.95, dur: 0.22, preset: 'bass', pan: -0.35 }, // C – minor 6th
+      { note: 40, delay: 2.6,  dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 40, delay: 2.76, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 41, delay: 2.92, dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 46, delay: 3.25, dur: 0.22, preset: 'bass', pan: -0.35 },
+      { note: 43, delay: 3.6,  dur: 0.16, preset: 'bass', pan: -0.35 }, // G – minor 3rd
+      { note: 41, delay: 3.76, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 40, delay: 3.92, dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 38, delay: 4.25, dur: 0.28, preset: 'bass', pan: -0.35 },
+      { note: 40, delay: 5.07, dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 41, delay: 5.23, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 46, delay: 5.4,  dur: 0.22, preset: 'bass', pan: -0.35 },
+      { note: 40, delay: 5.75, dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 38, delay: 5.91, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 36, delay: 6.07, dur: 0.16, preset: 'bass', pan: -0.35 },
+      { note: 34, delay: 6.4,  dur: 0.16, preset: 'bass', pan: -0.35 }, // Bb – tritone from E
+      { note: 33, delay: 6.56, dur: 0.28, preset: 'bass', pan: -0.35 }, // A – minor 4th
+      { note: 34, delay: 6.89, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 36, delay: 7.05, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 38, delay: 7.21, dur: 0.12, preset: 'bass', pan: -0.35 },
+      { note: 40, delay: 7.54, dur: 0.35, preset: 'bass', pan: -0.35 },
+
+      // ── Tritone stabs (E+Bb = diabolus in musica) ──
+      { note: 52, delay: 0,    dur: 0.1,  preset: 'stab', pan: 0.55 }, // E4
+      { note: 58, delay: 0,    dur: 0.1,  preset: 'stab', pan: 0.55 }, // Bb4 – tritone
+      { note: 52, delay: 0.65, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 58, delay: 0.65, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 53, delay: 1.3,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // F4 – flat-2
+      { note: 59, delay: 1.3,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // B4 – major 7th (dissonant)
+      { note: 52, delay: 1.95, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 58, delay: 1.95, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 50, delay: 2.6,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // D4 – minor 7th
+      { note: 56, delay: 2.6,  dur: 0.1,  preset: 'stab', pan: 0.55 }, // Ab4 – tritone from D
+      { note: 48, delay: 3.25, dur: 0.14, preset: 'stab', pan: 0.55 }, // C4 – minor 6th
+      { note: 54, delay: 3.25, dur: 0.14, preset: 'stab', pan: 0.55 }, // F#4 – tritone from C
+      { note: 52, delay: 3.92, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 58, delay: 3.92, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 52, delay: 4.57, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 58, delay: 4.57, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 53, delay: 5.07, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 59, delay: 5.07, dur: 0.1,  preset: 'stab', pan: 0.55 },
+      { note: 46, delay: 5.75, dur: 0.14, preset: 'stab', pan: 0.55 }, // Bb3 – tritone from E
+      { note: 52, delay: 5.75, dur: 0.14, preset: 'stab', pan: 0.55 },
+      { note: 45, delay: 6.4,  dur: 0.14, preset: 'stab', pan: 0.55 }, // A3 – minor 4th
+      { note: 51, delay: 6.4,  dur: 0.14, preset: 'stab', pan: 0.55 }, // Eb4 – tritone from A
+      { note: 52, delay: 7.05, dur: 0.18, preset: 'stab', pan: 0.55 },
+      { note: 58, delay: 7.05, dur: 0.18, preset: 'stab', pan: 0.55 },
+
+      // ── Screaming lead – E Phrygian chromatic descent, no happy notes ──
+      // Phrase 1: E5→F5→E5→D5→C5→B4→Bb4 (chromatic + tritone landing)
+      { note: 76, delay: 0,    dur: 0.16, preset: 'lead', pan: 0.15 }, // E5
+      { note: 77, delay: 0.16, dur: 0.12, preset: 'lead', pan: 0.15 }, // F5 – flat-2
+      { note: 76, delay: 0.32, dur: 0.16, preset: 'lead', pan: 0.15 }, // E5
+      { note: 74, delay: 0.49, dur: 0.12, preset: 'lead', pan: 0.15 }, // D5
+      { note: 72, delay: 0.65, dur: 0.12, preset: 'lead', pan: 0.15 }, // C5
+      { note: 71, delay: 0.81, dur: 0.12, preset: 'lead', pan: 0.15 }, // B4
+      { note: 70, delay: 0.97, dur: 0.22, preset: 'lead', pan: 0.15 }, // Bb4 – tritone from E
+      // Phrase 2: G5→F#5→F5→E5→Eb5 (chromatic descent into tritone)
+      { note: 79, delay: 1.3,  dur: 0.16, preset: 'lead', pan: 0.15 }, // G5
+      { note: 78, delay: 1.46, dur: 0.12, preset: 'lead', pan: 0.15 }, // F#5
+      { note: 77, delay: 1.62, dur: 0.12, preset: 'lead', pan: 0.15 }, // F5
+      { note: 76, delay: 1.78, dur: 0.12, preset: 'lead', pan: 0.15 }, // E5
+      { note: 75, delay: 1.95, dur: 0.28, preset: 'lead', pan: 0.15 }, // Eb5 – minor 2nd below E
+      // Phrase 3: E5→D5→C5→B4→Bb4→A4 (grinding descent)
+      { note: 76, delay: 2.6,  dur: 0.14, preset: 'lead', pan: 0.15 },
+      { note: 74, delay: 2.76, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 72, delay: 2.92, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 71, delay: 3.08, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 70, delay: 3.25, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 69, delay: 3.41, dur: 0.28, preset: 'lead', pan: 0.15 }, // A4 – minor 4th
+      // Phrase 4: Bb4→C5→Eb5→F5→Bb5 (tritone arpeggio upward – demonic)
+      { note: 70, delay: 3.92, dur: 0.12, preset: 'lead', pan: 0.15 }, // Bb4
+      { note: 72, delay: 4.08, dur: 0.12, preset: 'lead', pan: 0.15 }, // C5
+      { note: 75, delay: 4.25, dur: 0.12, preset: 'lead', pan: 0.15 }, // Eb5
+      { note: 77, delay: 4.41, dur: 0.12, preset: 'lead', pan: 0.15 }, // F5
+      { note: 82, delay: 4.57, dur: 0.35, preset: 'lead', pan: 0.15 }, // Bb5 – tritone from E
+      // Phrase 5: E5→F5→G5→Ab5→G5→F5→E5 (Phrygian run with chromatic)
+      { note: 76, delay: 5.07, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 77, delay: 5.23, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 79, delay: 5.4,  dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 80, delay: 5.56, dur: 0.12, preset: 'lead', pan: 0.15 }, // Ab5 – minor 6th
+      { note: 79, delay: 5.72, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 77, delay: 5.88, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 76, delay: 6.07, dur: 0.28, preset: 'lead', pan: 0.15 },
+      // Phrase 6: Bb4→Ab4→G4→F#4→F4→E4 (chromatic descent to root)
+      { note: 70, delay: 6.56, dur: 0.12, preset: 'lead', pan: 0.15 },
+      { note: 68, delay: 6.72, dur: 0.12, preset: 'lead', pan: 0.15 }, // Ab4
+      { note: 67, delay: 6.89, dur: 0.12, preset: 'lead', pan: 0.15 }, // G4
+      { note: 66, delay: 7.05, dur: 0.12, preset: 'lead', pan: 0.15 }, // F#4
+      { note: 65, delay: 7.21, dur: 0.12, preset: 'lead', pan: 0.15 }, // F4
+      { note: 64, delay: 7.38, dur: 0.35, preset: 'lead', pan: 0.15 }, // E4 – root, but no resolution
+
+      // ── Demonic arp – tritone patterns, relentless 16th notes ──
+      // E+Bb tritone arp pattern
+      { note: 64, delay: 8.0,  dur: 0.09, preset: 'arp', pan: -0.2 }, // E4
+      { note: 70, delay: 8.09, dur: 0.09, preset: 'arp', pan: -0.2 }, // Bb4 – tritone
+      { note: 64, delay: 8.18, dur: 0.09, preset: 'arp', pan: -0.2 },
+      { note: 70, delay: 8.27, dur: 0.09, preset: 'arp', pan: -0.2 },
+      { note: 65, delay: 8.36, dur: 0.09, preset: 'arp', pan: -0.2 }, // F4 – flat-2
+      { note: 71, delay: 8.45, dur: 0.09, preset: 'arp', pan: -0.2 }, // B4 – maj7 dissonance
+      { note: 65, delay: 8.54, dur: 0.09, preset: 'arp', pan: -0.2 },
+      { note: 71, delay: 8.63, dur: 0.09, preset: 'arp', pan: -0.2 },
+      { note: 64, delay: 8.72, dur: 0.09, preset: 'arp', pan: -0.2 },
+      { note: 70, delay: 8.81, dur: 0.09, preset: 'arp', pan: -0.2 },
+      { note: 62, delay: 8.9,  dur: 0.09, preset: 'arp', pan: -0.2 }, // D4
+      { note: 68, delay: 8.99, dur: 0.09, preset: 'arp', pan: -0.2 }, // Ab4 – tritone from D
+      { note: 60, delay: 9.08, dur: 0.09, preset: 'arp', pan: -0.2 }, // C4
+      { note: 66, delay: 9.17, dur: 0.09, preset: 'arp', pan: -0.2 }, // F#4 – tritone from C
+      { note: 59, delay: 9.26, dur: 0.09, preset: 'arp', pan: -0.2 }, // B3
+      { note: 65, delay: 9.35, dur: 0.09, preset: 'arp', pan: -0.2 }, // F4 – tritone from B
+      // Second arp phrase – faster, more chaotic
+      { note: 64, delay: 9.6,  dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 70, delay: 9.68, dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 67, delay: 9.76, dur: 0.08, preset: 'arp', pan: 0.2 }, // G4
+      { note: 73, delay: 9.84, dur: 0.08, preset: 'arp', pan: 0.2 }, // Db5 – tritone from G
+      { note: 65, delay: 9.92, dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 71, delay: 10.0, dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 64, delay: 10.08,dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 70, delay: 10.16,dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 63, delay: 10.24,dur: 0.08, preset: 'arp', pan: 0.2 }, // Eb4
+      { note: 69, delay: 10.32,dur: 0.08, preset: 'arp', pan: 0.2 }, // A4 – tritone from Eb
+      { note: 62, delay: 10.4, dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 68, delay: 10.48,dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 61, delay: 10.56,dur: 0.08, preset: 'arp', pan: 0.2 }, // Db4
+      { note: 67, delay: 10.64,dur: 0.08, preset: 'arp', pan: 0.2 }, // G4 – tritone from Db
+      { note: 60, delay: 10.72,dur: 0.08, preset: 'arp', pan: 0.2 },
+      { note: 66, delay: 10.8, dur: 0.08, preset: 'arp', pan: 0.2 },
+
+      // ── Dark pad – dissonant cluster, slow swell ──
+      { note: 40, delay: 11.0, dur: 1.8,  preset: 'pad', pan: 0 },  // E2
+      { note: 41, delay: 11.0, dur: 1.8,  preset: 'pad', pan: 0.1 }, // F2 – minor 2nd cluster
+      { note: 46, delay: 11.0, dur: 1.8,  preset: 'pad', pan: -0.1 }, // Bb2 – tritone
+      { note: 52, delay: 11.2, dur: 1.6,  preset: 'pad', pan: 0.2 }, // E3
+      { note: 58, delay: 11.2, dur: 1.6,  preset: 'pad', pan: -0.2 }, // Bb3 – tritone
+      { note: 64, delay: 11.5, dur: 1.3,  preset: 'pad', pan: 0 },  // E4
     ]
   },
 
