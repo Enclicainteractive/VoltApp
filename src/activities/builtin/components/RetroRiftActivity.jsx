@@ -651,12 +651,16 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
       }
       if (now >= countdownEndsAt && isHost && !liveSent) {
         liveSent = true
+        const liveStatus = `${mapConfigRef.current.name} is live. First to ${matchConfigRef.current.fragTarget} frags takes the rift.`
         sendEvent('retrorift:phase', {
           phase: 'live',
-          status: `${mapConfigRef.current.name} is live. First to ${matchConfigRef.current.fragTarget} frags takes the rift.`,
+          status: liveStatus,
           config: matchConfigRef.current,
           matchEndsAt: matchEndsAtRef.current
         })
+        // Apply locally immediately – solo play won't echo the event back
+        setPhase('live')
+        setStatus(liveStatus)
         window.clearInterval(interval)
       }
     }, 120)
