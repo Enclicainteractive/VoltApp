@@ -360,22 +360,81 @@ class MiniGolfSoundManager {
     }
   }
 
+  // ── Demonic-angelic black hole choir ─────────────────────────────────────────
+  // Multiple detuned sine oscillators at harmonic intervals, slowly modulated
+  // by a sub-Hz LFO to create a slowed angelic choir that warps into dread.
+  // The closer the ball, the more the choir swells and the pitch drops.
   _ensureBlackHoleHum() {
     if (!this._ensureRunning() || !this.sfxGain) return false
     if (this.blackHoleOsc && this.blackHoleGain && this.blackHoleFilter) return true
     try {
-      this.blackHoleOsc = this.context.createOscillator()
-      this.blackHoleGain = this.context.createGain()
-      this.blackHoleFilter = this.context.createBiquadFilter()
-      this.blackHoleOsc.type = 'sawtooth'
-      this.blackHoleOsc.frequency.setValueAtTime(72, this._now())
+      const ctx = this.context
+      const now = this._now()
+
+      // Master gain for the whole choir
+      this.blackHoleGain = ctx.createGain()
+      this.blackHoleGain.gain.setValueAtTime(0.0001, now)
+
+      // Lowpass filter – opens up as proximity increases
+      this.blackHoleFilter = ctx.createBiquadFilter()
       this.blackHoleFilter.type = 'lowpass'
-      this.blackHoleFilter.frequency.setValueAtTime(240, this._now())
-      this.blackHoleGain.gain.setValueAtTime(0.0001, this._now())
-      this.blackHoleOsc.connect(this.blackHoleFilter)
+      this.blackHoleFilter.frequency.setValueAtTime(180, now)
+      this.blackHoleFilter.Q.value = 2.4
+
+      // Reverb-like convolver using a short noise impulse
+      try {
+        const irLen = Math.floor(ctx.sampleRate * 1.8)
+        const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate)
+        for (let ch = 0; ch < 2; ch += 1) {
+          const d = irBuf.getChannelData(ch)
+          for (let i = 0; i < irLen; i += 1) {
+            d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 2.2)
+          }
+        }
+        this.blackHoleReverb = ctx.createConvolver()
+        this.blackHoleReverb.buffer = irBuf
+        this.blackHoleReverbGain = ctx.createGain()
+        this.blackHoleReverbGain.gain.value = 0.55
+        this.blackHoleFilter.connect(this.blackHoleReverb)
+        this.blackHoleReverb.connect(this.blackHoleReverbGain)
+        this.blackHoleReverbGain.connect(this.blackHoleGain)
+      } catch {
+        // reverb optional
+      }
+
       this.blackHoleFilter.connect(this.blackHoleGain)
       this.blackHoleGain.connect(this.sfxGain)
-      this.blackHoleOsc.start()
+
+      // Choir voices: angelic harmonic series, detuned for beating/warble
+      // Base ~55 Hz (A1) – very low, sub-bass angelic choir
+      const voiceFreqs = [55, 82.5, 110, 137.5, 165, 220]
+      const voiceDetunes = [0, +8, -12, +5, -7, +14]
+      this.blackHoleVoices = voiceFreqs.map((freq, i) => {
+        const osc = ctx.createOscillator()
+        const vGain = ctx.createGain()
+        // LFO for slow tremolo on each voice (different rates for organic feel)
+        const lfo = ctx.createOscillator()
+        const lfoGain = ctx.createGain()
+        lfo.type = 'sine'
+        lfo.frequency.value = 0.08 + i * 0.03  // 0.08–0.23 Hz – very slow
+        lfoGain.gain.value = freq * 0.012        // subtle pitch wobble
+        lfo.connect(lfoGain)
+        lfoGain.connect(osc.frequency)
+        lfo.start(now)
+
+        osc.type = i % 2 === 0 ? 'sine' : 'triangle'
+        osc.frequency.setValueAtTime(freq, now)
+        osc.detune.setValueAtTime(voiceDetunes[i], now)
+        vGain.gain.setValueAtTime(0.0001, now)
+        osc.connect(vGain)
+        vGain.connect(this.blackHoleFilter)
+        osc.start(now)
+        return { osc, vGain, lfo, lfoGain, baseFreq: freq }
+      })
+
+      // Keep a reference to the primary osc for legacy API compat
+      this.blackHoleOsc = this.blackHoleVoices[0].osc
+
       return true
     } catch {
       return false
@@ -387,12 +446,45 @@ class MiniGolfSoundManager {
     if (!this.initialized || this.muted || !this._ensureBlackHoleHum()) return
     const now = this._now()
     try {
+      // Master volume swells dramatically with proximity
       this.blackHoleGain.gain.cancelScheduledValues(now)
+      this.blackHoleGain.gain.linearRampToValueAtTime(
+        0.0001 + proximity * proximity * 0.28,
+        now + 0.12
+      )
+
+      // Filter opens up – from muffled to full choir as you approach
       this.blackHoleFilter.frequency.cancelScheduledValues(now)
-      this.blackHoleOsc.frequency.cancelScheduledValues(now)
-      this.blackHoleGain.gain.linearRampToValueAtTime(0.0001 + proximity * 0.18, now + 0.08)
-      this.blackHoleFilter.frequency.linearRampToValueAtTime(180 + proximity * 820, now + 0.08)
-      this.blackHoleOsc.frequency.linearRampToValueAtTime(58 + proximity * 34, now + 0.08)
+      this.blackHoleFilter.frequency.linearRampToValueAtTime(
+        140 + proximity * 1800,
+        now + 0.12
+      )
+
+      // Each voice pitch drops and swells – the closer, the more demonic
+      if (this.blackHoleVoices) {
+        this.blackHoleVoices.forEach(({ osc, vGain, lfo, baseFreq }, i) => {
+          try {
+            // Pitch drops by up to a tritone (×0.71) as proximity → 1
+            const pitchScale = 1 - proximity * 0.29
+            osc.frequency.cancelScheduledValues(now)
+            osc.frequency.linearRampToValueAtTime(baseFreq * pitchScale, now + 0.18)
+
+            // LFO rate increases – warble gets faster and more unstable
+            lfo.frequency.cancelScheduledValues(now)
+            lfo.frequency.linearRampToValueAtTime(
+              0.08 + i * 0.03 + proximity * 0.6,
+              now + 0.18
+            )
+
+            // Each voice volume – higher harmonics swell more for angelic quality
+            const voiceVol = (0.0001 + proximity * (0.04 + i * 0.008)) * (1 - i * 0.06)
+            vGain.gain.cancelScheduledValues(now)
+            vGain.gain.linearRampToValueAtTime(Math.max(0.0001, voiceVol), now + 0.12)
+          } catch {
+            // no-op per voice
+          }
+        })
+      }
     } catch {
       // no-op
     }

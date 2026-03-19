@@ -649,6 +649,203 @@ export function playHazardSound() {
   playTone({ freq: 150, type: 'sawtooth', duration: 0.25, gain: 0.2 })
 }
 
+// ─── Hazard transition overlay ────────────────────────────────────────────────
+// Dramatic full-screen sequence per hazard type.
+// Black hole: camera suck-in → full black → respawn flash
+// Lava/void/other: quick flash + shake
+const HAZARD_SEQUENCES = {
+  'black-hole': {
+    label: '⚫ CONSUMED',
+    sublabel: 'Ball destroyed · +20 strokes · Replacement deployed',
+    color: '#7c3aed',
+    bg: '#000000',
+    phases: [
+      { name: 'suck',    duration: 1400 }, // camera zooms in, screen warps
+      { name: 'black',   duration: 900  }, // full black
+      { name: 'respawn', duration: 1200 }, // new ball materialises
+    ]
+  },
+  'lava-reset': {
+    label: '🔥 INCINERATED',
+    sublabel: 'Ball reset to last checkpoint',
+    color: '#ef4444',
+    bg: '#1a0000',
+    phases: [{ name: 'flash', duration: 1200 }]
+  },
+  'hazard-reset': {
+    label: '⚠ HAZARD',
+    sublabel: 'Ball reset to last checkpoint',
+    color: '#f59e0b',
+    bg: '#0d0d00',
+    phases: [{ name: 'flash', duration: 900 }]
+  },
+}
+
+function HazardTransitionOverlay({ resultType, onDone, playerColor = '#ffffff' }) {
+  const [phase, setPhase] = useState(0)
+  const [progress, setProgress] = useState(0)
+  const rafRef = useRef(null)
+  const startRef = useRef(performance.now())
+  const seq = HAZARD_SEQUENCES[resultType] || HAZARD_SEQUENCES['hazard-reset']
+
+  useEffect(() => {
+    setPhase(0)
+    setProgress(0)
+    startRef.current = performance.now()
+    let currentPhase = 0
+
+    const tick = () => {
+      const elapsed = performance.now() - startRef.current
+      const phaseDur = seq.phases[currentPhase]?.duration || 800
+      const p = Math.min(1, elapsed / phaseDur)
+      setProgress(p)
+      setPhase(currentPhase)
+
+      if (p >= 1) {
+        currentPhase += 1
+        if (currentPhase >= seq.phases.length) {
+          onDone?.()
+          return
+        }
+        startRef.current = performance.now()
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
+  }, [resultType, seq, onDone])
+
+  const phaseName = seq.phases[phase]?.name || 'flash'
+  const isBlackHole = resultType === 'black-hole'
+
+  // Compute per-phase visual state
+  let overlayOpacity = 0
+  let overlayBg = seq.bg
+  let textOpacity = 0
+  let scaleDistort = 1
+  let hueShift = 0
+  let vignetteStrength = 0
+
+  if (phaseName === 'suck') {
+    // Vignette closes in, hue shifts purple, slight scale
+    vignetteStrength = progress * 0.9
+    hueShift = progress * 180
+    scaleDistort = 1 + progress * 0.04
+    overlayOpacity = progress * 0.6
+    overlayBg = `rgba(30,0,60,${progress * 0.6})`
+  } else if (phaseName === 'black') {
+    overlayOpacity = 1
+    overlayBg = '#000000'
+    textOpacity = progress > 0.3 ? (progress - 0.3) / 0.7 : 0
+  } else if (phaseName === 'respawn') {
+    overlayOpacity = 1 - progress
+    overlayBg = progress < 0.4 ? '#000000' : `rgba(${playerColor === '#ffffff' ? '255,255,255' : '100,50,200'},${(1 - progress) * 0.8})`
+    textOpacity = progress < 0.5 ? 1 - progress * 2 : 0
+    scaleDistort = 1 + (1 - progress) * 0.06
+  } else if (phaseName === 'flash') {
+    // Quick flash then fade
+    overlayOpacity = progress < 0.25 ? progress / 0.25 : 1 - (progress - 0.25) / 0.75
+    overlayBg = seq.bg
+    textOpacity = progress > 0.15 && progress < 0.85 ? 1 : 0
+    vignetteStrength = overlayOpacity * 0.7
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 40,
+      pointerEvents: 'none',
+      fontFamily: 'system-ui,-apple-system,sans-serif',
+    }}>
+      {/* Main overlay */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: overlayBg,
+        opacity: overlayOpacity,
+        transition: 'opacity 0.05s',
+      }} />
+
+      {/* Vignette */}
+      {vignetteStrength > 0 && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: `radial-gradient(ellipse at center, transparent 20%, rgba(0,0,0,${vignetteStrength}) 100%)`,
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Black hole spiral rings */}
+      {isBlackHole && phaseName === 'suck' && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: progress,
+        }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} style={{
+              position: 'absolute',
+              width: `${(4 - i) * 18 + 20}vmin`,
+              height: `${(4 - i) * 18 + 20}vmin`,
+              borderRadius: '50%',
+              border: `${2 + i}px solid rgba(124,58,237,${0.3 + i * 0.15})`,
+              transform: `rotate(${progress * 360 * (i % 2 === 0 ? 1 : -1) * (1 + i * 0.3)}deg) scale(${1 - progress * 0.4 + i * 0.05})`,
+              boxShadow: `0 0 ${8 + i * 6}px rgba(124,58,237,0.4)`,
+            }} />
+          ))}
+          <div style={{
+            width: `${8 + progress * 12}vmin`,
+            height: `${8 + progress * 12}vmin`,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, rgba(0,0,0,1) 40%, rgba(124,58,237,0.8) 100%)`,
+            boxShadow: '0 0 40px rgba(124,58,237,0.6), 0 0 80px rgba(0,0,0,0.8)',
+          }} />
+        </div>
+      )}
+
+      {/* Respawn flash burst */}
+      {isBlackHole && phaseName === 'respawn' && progress < 0.35 && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            width: `${(1 - progress / 0.35) * 60}vmin`,
+            height: `${(1 - progress / 0.35) * 60}vmin`,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(124,58,237,0.6) 50%, transparent 100%)`,
+            opacity: 1 - progress / 0.35,
+          }} />
+        </div>
+      )}
+
+      {/* Text label */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        opacity: textOpacity,
+        gap: 8,
+      }}>
+        <div style={{
+          fontSize: 'clamp(24px, 5vw, 48px)',
+          fontWeight: 900,
+          color: seq.color,
+          letterSpacing: '-0.02em',
+          textShadow: `0 0 20px ${seq.color}, 0 0 40px ${seq.color}88`,
+        }}>
+          {seq.label}
+        </div>
+        <div style={{
+          fontSize: 'clamp(11px, 1.8vw, 14px)',
+          color: 'rgba(255,255,255,0.7)',
+          textAlign: 'center',
+          maxWidth: 360,
+        }}>
+          {seq.sublabel}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Hole preview overlay (shown for ~3 s before play starts on each hole) ───
 function HolePreviewOverlay({ hole, holeIndex, course, onDone }) {
   const [progress, setProgress] = useState(0)
@@ -1716,6 +1913,14 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   const [selectedCourseId, setSelectedCourseId] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showHolePreview, setShowHolePreview] = useState(false)
+  const [hazardTransition, setHazardTransition] = useState(null) // { resultType, playerColor }
+  const [blackHoleProximity, setBlackHoleProximityState] = useState(0)
+
+  // Wrap setBlackHoleProximity so it updates both audio and CSS distortion state
+  const handleBlackHoleProximity = useCallback((value) => {
+    setBlackHoleProximity(value)       // audio
+    setBlackHoleProximityState(value)  // CSS distortion
+  }, [setBlackHoleProximity])
   const [myColor, setMyColor]           = useState(BALL_COLOR_OPTIONS[0])
   // Track game clock for physics (so moving hazards are at correct position)
   const gameClockRef = useRef(0)
@@ -1974,13 +2179,19 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
           payload: { actionId, playerId: userId, shot: aim, result },
           ts: Date.now()
         }
-        setLastShotResult(buildShotResultNotice(result))
+        const notice = buildShotResultNotice(result)
+        setLastShotResult(notice)
         setTimeout(() => setLastShotResult(null), 3000)
+        // Trigger dramatic hazard transition overlay for hazard results
+        if (['black-hole', 'hazard-reset', 'lava-reset'].includes(result.resultType)) {
+          const myPlayer = playersWithPositions.find(p => p.id === userId)
+          setHazardTransition({ resultType: result.resultType, playerColor: myPlayer?.color || '#ffffff' })
+        }
         applyLocalEvent(evt, 'minigolf_shot')
         sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.SHOT, evt.payload, { serverRelay: true })
       })
     }
-  }, [applyLocalEvent, gameState.collectedPowerups, gameState.playerStates, hole, playEvent, sdk, userId])
+  }, [applyLocalEvent, gameState.collectedPowerups, gameState.playerStates, hole, playEvent, playersWithPositions, sdk, userId])
 
   const handleAimCancel   = useCallback(() => setAimState({ active: false, angle: 0, power: 0.25 }), [])
   const handleShotPlaybackComplete = useCallback(() => {
@@ -2048,7 +2259,17 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
           gl={{ antialias: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }}
           dpr={[1, Math.min(window.devicePixelRatio, 2)]}
           frameloop="always"
-          style={{ position: 'absolute', inset: 0 }}
+          style={{
+            position: 'absolute', inset: 0,
+            // Black hole proximity distortion: blur + hue-rotate + slight scale
+            filter: blackHoleProximity > 0.05
+              ? `blur(${blackHoleProximity * blackHoleProximity * 3.5}px) hue-rotate(${blackHoleProximity * 200}deg) saturate(${1 + blackHoleProximity * 1.2})`
+              : undefined,
+            transform: blackHoleProximity > 0.05
+              ? `scale(${1 + blackHoleProximity * 0.04})`
+              : undefined,
+            transition: 'filter 0.12s, transform 0.12s',
+          }}
         >
           <Suspense fallback={null}>
             <MiniGolfWorld
@@ -2068,11 +2289,20 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
               onAimDrag={handleAimDrag}
               onAimCancel={handleAimCancel}
               onShotPlaybackComplete={handleShotPlaybackComplete}
-              onBlackHoleProximityChange={setBlackHoleProximity}
+              onBlackHoleProximityChange={handleBlackHoleProximity}
             />
           </Suspense>
         </Canvas>
       </WebGLErrorBoundary>
+
+      {/* Hazard transition overlay – dramatic per-hazard sequence */}
+      {hazardTransition && (
+        <HazardTransitionOverlay
+          resultType={hazardTransition.resultType}
+          playerColor={hazardTransition.playerColor}
+          onDone={() => setHazardTransition(null)}
+        />
+      )}
 
       {/* Hole preview overlay – shown for ~3s when a new hole starts */}
       {showHolePreview && phase === MINIGOLF_PHASES.PLAYING && hole && (
