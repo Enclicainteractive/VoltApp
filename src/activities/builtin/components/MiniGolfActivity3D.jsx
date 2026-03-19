@@ -34,11 +34,34 @@ import {
   rememberMiniGolfEvent,
   resolveMiniGolfCourseId
 } from './minigolf/state'
-import { MINIGOLF_PHASES, MINIGOLF_EVENT_TYPES, PLAYER_COLORS, BALL_COLOR_OPTIONS } from './minigolf/constants'
+import {
+  MINIGOLF_PHASES,
+  MINIGOLF_EVENT_TYPES,
+  PLAYER_COLORS,
+  BALL_COLOR_OPTIONS,
+  MINIGOLF_POWERUP_DEFS
+} from './minigolf/constants'
 import { DEFAULT_BALL_RADIUS } from './minigolf/constants'
-import { buildAimLinePoints, getSurfaceColor, getHazardColor, toVector3 } from './minigolf/scene-utils'
+import { buildAimLinePoints, getSurfaceColor, getHazardColor, getAutoLiftY, toVector3 } from './minigolf/scene-utils'
 import { sampleMovingHazardPosition, simulateShot } from './minigolf/physics'
-import { createMiniGolfPhysicsWorld } from './minigolf/cannonPhysics'
+import {
+  buildMiniGolfCameraFrame,
+  cloneMiniGolfCameraOffset,
+  getMiniGolfCameraInteractionPause,
+  getMiniGolfCameraTargetVector,
+  shouldResetMiniGolfCamera
+} from './minigolf/camera'
+import {
+  MiniGolfBallVfx,
+  MiniGolfCupCelebration,
+  MiniGolfShotImpactBursts
+} from './minigolf/MiniGolfVfx3D'
+import {
+  MiniGolfBackdrop,
+  MiniGolfSceneryObjects,
+  MiniGolfSurfaceAccent
+} from './minigolf/EnvironmentArt'
+import { useMiniGolfSound } from './MiniGolfSoundManager.jsx'
 
 // ─── WebGL Error Boundary ─────────────────────────────────────────────────────
 class WebGLErrorBoundary extends React.Component {
@@ -82,6 +105,8 @@ const SPHERE_GEO   = new THREE.SphereGeometry(1, 24, 24)
 const RING_GEO     = new THREE.RingGeometry(0.28, 0.5, 28)
 const CYLINDER_GEO = new THREE.CylinderGeometry(0.06, 0.06, 3.2, 12)
 const TORUS_GEO    = new THREE.TorusGeometry(0.74, 0.1, 12, 32)
+const CONE_GEO     = new THREE.ConeGeometry(1, 2.6, 7)
+const SMALL_SPHERE_GEO = new THREE.SphereGeometry(1, 12, 12)
 
 // Ball radius in world units (matches physics collision)
 const BALL_R = DEFAULT_BALL_RADIUS  // 0.34 – physics collision radius
@@ -93,6 +118,35 @@ const BALL_VISUAL_R = 0.22
 
 // ─── Ball texture cache ───────────────────────────────────────────────────────
 const ballTextureCache = new Map()
+const surfaceTextureCache = new Map()
+const createStripedTexture = (baseColor, accentColor, scale = 128) => {
+  const key = `${baseColor}-${accentColor}-${scale}`
+  if (surfaceTextureCache.has(key)) return surfaceTextureCache.get(key)
+  const canvas = document.createElement('canvas')
+  canvas.width = scale
+  canvas.height = scale
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = baseColor
+  ctx.fillRect(0, 0, scale, scale)
+  for (let i = 0; i < 16; i += 1) {
+    const y = (i / 16) * scale
+    ctx.fillStyle = i % 2 === 0 ? `${accentColor}88` : `${accentColor}44`
+    ctx.fillRect(0, y, scale, scale / 18)
+  }
+  for (let i = 0; i < 90; i += 1) {
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'
+    ctx.beginPath()
+    ctx.arc(Math.random() * scale, Math.random() * scale, 1 + Math.random() * 2, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(2.5, 2.5)
+  surfaceTextureCache.set(key, texture)
+  return texture
+}
+
 const getBallTexture = (accentColor = '#ffffff') => {
   if (ballTextureCache.has(accentColor)) return ballTextureCache.get(accentColor)
   const canvas = document.createElement('canvas')
@@ -109,6 +163,15 @@ const getBallTexture = (accentColor = '#ffffff') => {
   tex.generateMipmaps = true
   ballTextureCache.set(accentColor, tex)
   return tex
+}
+
+const buildSurfaceTexture = (surfaceType, palette) => {
+  if (surfaceType === 'ice') return createStripedTexture('#dff5ff', '#8fd4ff')
+  if (surfaceType === 'sand') return createStripedTexture('#ccb37b', '#edd7a2')
+  if (surfaceType === 'boost') return createStripedTexture('#2f836a', '#86f6d2')
+  if (surfaceType === 'sticky') return createStripedTexture('#4b3458', '#a855f7')
+  if (surfaceType === 'rough') return createStripedTexture(palette?.rough || '#2d6a43', '#0f3f22')
+  return createStripedTexture(palette?.fairway || '#67bb6b', '#b3ef9c')
 }
 
 // ─── Moving hazards ───────────────────────────────────────────────────────────
@@ -148,9 +211,10 @@ const ObstacleMesh = React.memo(({ obstacle, palette }) => {
   const w = Number(obstacle?.size?.x || 1)
   const d = Number(obstacle?.size?.z || 1)
   const h = Number(obstacle?.height || 1.4)
+  const wallTexture = useMemo(() => createStripedTexture(palette?.wall || '#e2edf9', palette?.accent || '#ff8b5c'), [palette?.wall, palette?.accent])
   const wallMat = useMemo(() => new THREE.MeshStandardMaterial({
-    color: palette?.wall || '#e2edf9', roughness: 0.52, metalness: 0.18
-  }), [palette?.wall])
+    color: palette?.wall || '#e2edf9', map: wallTexture, roughness: 0.52, metalness: 0.18
+  }), [palette?.wall, wallTexture])
   const accentMat = useMemo(() => new THREE.MeshStandardMaterial({
     color: palette?.accent || '#ff8b5c',
     emissive: palette?.accent || '#ff8b5c',
@@ -172,8 +236,23 @@ const ObstacleMesh = React.memo(({ obstacle, palette }) => {
     )
   }
 
+  if (obstacle?.variant === 'powerup-barricade') {
+    return (
+      <group position={[obstacle.position.x, h * 0.5 + 0.04, obstacle.position.z]}>
+        <mesh castShadow receiveShadow scale={[w, h, d]}>
+          <primitive object={BOX_GEO} attach="geometry" />
+          <meshStandardMaterial color="#f97316" emissive="#fb923c" emissiveIntensity={0.24} roughness={0.46} metalness={0.34} />
+        </mesh>
+        <mesh position={[0, h * 0.2, 0]} castShadow>
+          <cylinderGeometry args={[0.14, 0.14, h * 1.2, 10]} />
+          <meshStandardMaterial color="#fed7aa" />
+        </mesh>
+      </group>
+    )
+  }
+
   return (
-    <group position={[obstacle.position.x, h * 0.5, obstacle.position.z]}>
+    <group position={[obstacle.position.x, h * 0.5 + 0.02, obstacle.position.z]}>
       <mesh castShadow receiveShadow scale={[w, h, d]}>
         <primitive object={BOX_GEO} attach="geometry" />
         <primitive object={wallMat} attach="material" />
@@ -188,33 +267,217 @@ const ObstacleMesh = React.memo(({ obstacle, palette }) => {
 
 // ─── Hazard pads ──────────────────────────────────────────────────────────────
 const HazardPads = React.memo(({ hazards = [], palette }) => {
-  return hazards.map(h => {
+  const refs = useRef([])
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime()
+    refs.current.forEach((node, index) => {
+      const hazard = hazards[index]
+      if (!node || !hazard) return
+      if (hazard.type === 'black-hole') {
+        node.rotation.y += 0.05
+        node.position.y = getAutoLiftY(index, 0.04) + Math.sin(t * 4 + index) * 0.015
+      } else if (hazard.type === 'ghost') {
+        node.position.y = getAutoLiftY(index, 0.04) + Math.sin(t * 3 + index) * 0.05
+      }
+    })
+  })
+  return hazards.map((h, index) => {
     const color = getHazardColor(h.type, palette)
     return (
-      <group key={h.id} position={[h.position.x, 0.04, h.position.z]}>
+      <group key={h.id} ref={(node) => { refs.current[index] = node }} position={[h.position.x, getAutoLiftY(index, 0.04), h.position.z]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[h.size.x, h.size.z]} />
-          <meshBasicMaterial color={color} transparent opacity={h.type === 'void' ? 0.88 : 0.64} />
+          <meshBasicMaterial color={color} transparent opacity={h.type === 'void' ? 0.88 : 0.64} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-4} depthWrite={false} />
+        </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+          <ringGeometry args={[Math.max(h.size.x, h.size.z) * 0.28, Math.max(h.size.x, h.size.z) * 0.46, 30]} />
+          <meshBasicMaterial color={h.type === 'black-hole' ? '#d8b4fe' : palette.accent} transparent opacity={0.3} polygonOffset polygonOffsetFactor={-3} polygonOffsetUnits={-5} depthWrite={false} />
+        </mesh>
+        {h.type === 'black-hole' && (
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+            <torusGeometry args={[Math.max(h.size.x, h.size.z) * 0.22, 0.11, 16, 40]} />
+            <meshStandardMaterial color="#7c3aed" emissive="#7c3aed" emissiveIntensity={0.45} />
+          </mesh>
+        )}
+      </group>
+    )
+  })
+})
+
+const SceneryObjects = React.memo(({ scenery = [], palette = {} }) => {
+  return scenery.map((item, index) => {
+    const key = `${item.type || 'prop'}-${index}`
+    const base = [item.x || 0, 0, item.z || 0]
+
+    if (item.type === 'tower' || item.type === 'smokestack') {
+      return (
+        <group key={key} position={base}>
+          <mesh position={[0, 3, 0]} castShadow>
+            <boxGeometry args={[1.9, 6, 1.9]} />
+            <meshStandardMaterial color={palette.wall || '#cbd5e1'} metalness={0.35} roughness={0.55} />
+          </mesh>
+          <mesh position={[0, 6.4, 0]} castShadow>
+            <cylinderGeometry args={[1.05, 1.2, 0.95, 18]} />
+            <meshStandardMaterial color={palette.accent || '#ff8b5c'} emissive={palette.accent || '#ff8b5c'} emissiveIntensity={0.16} />
+          </mesh>
+        </group>
+      )
+    }
+
+    if (item.type === 'billboard' || item.type === 'aurora') {
+      return (
+        <group key={key} position={base}>
+          <mesh position={[0, 2.45, 0]} castShadow>
+            <boxGeometry args={[4.4, 2.4, 0.18]} />
+            <meshStandardMaterial color={palette.accent || '#ff8b5c'} emissive={palette.accent || '#ff8b5c'} emissiveIntensity={0.18} roughness={0.32} />
+          </mesh>
+          <mesh position={[0, 0.9, 0]}>
+            <boxGeometry args={[0.18, 1.8, 0.18]} />
+            <meshStandardMaterial color="#d8dee9" />
+          </mesh>
+        </group>
+      )
+    }
+
+    if (item.type === 'iceberg' || item.type === 'ice-spire') {
+      return (
+        <group key={key} position={base}>
+          <mesh position={[0, 1.6, 0]} castShadow scale={[1, 1 + (index % 3) * 0.16, 1]}>
+            <primitive object={CONE_GEO} attach="geometry" />
+            <meshStandardMaterial color="#e0f2fe" roughness={0.16} metalness={0.08} />
+          </mesh>
+        </group>
+      )
+    }
+
+    if (item.type === 'anvil' || item.type === 'forge') {
+      return (
+        <group key={key} position={base}>
+          <mesh position={[0, 0.9, 0]} castShadow>
+            <boxGeometry args={[2.5, 1.2, 1.7]} />
+            <meshStandardMaterial color="#52525b" roughness={0.62} metalness={0.28} />
+          </mesh>
+          <mesh position={[0, 1.52, 0]} castShadow>
+            <boxGeometry args={[1.18, 0.34, 2.2]} />
+            <meshStandardMaterial color={palette.accent || '#ff8b5c'} emissive={palette.accent || '#ff8b5c'} emissiveIntensity={0.14} />
+          </mesh>
+        </group>
+      )
+    }
+
+    return (
+      <mesh key={key} position={[base[0], 0.9, base[2]]} castShadow>
+        <primitive object={SMALL_SPHERE_GEO} attach="geometry" />
+        <meshStandardMaterial color={palette.wall || '#cbd5e1'} roughness={0.58} metalness={0.16} />
+      </mesh>
+    )
+  })
+})
+
+const AmbientBackdrop = React.memo(({ course, hole, palette = {} }) => {
+  const stars = useMemo(() => Array.from({ length: 34 }, (_, index) => ({
+    id: index,
+    x: (Math.sin(index * 2.3) * 0.5 + 0.5) * ((hole?.bounds?.maxX || 20) - (hole?.bounds?.minX || -20)) + (hole?.bounds?.minX || -20),
+    y: 6 + (index % 7) * 1.4,
+    z: (Math.cos(index * 3.1) * 0.5 + 0.5) * ((hole?.bounds?.maxZ || 12) - (hole?.bounds?.minZ || -12)) + (hole?.bounds?.minZ || -12),
+    scale: 0.12 + (index % 4) * 0.05
+  })), [hole])
+  const skyColor = palette.backgroundTop || '#1f355c'
+  const horizonColor = palette.backgroundBottom || '#091223'
+
+  return (
+    <group>
+      <mesh position={[0, 18, 0]}>
+        <sphereGeometry args={[68, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshBasicMaterial color={skyColor} side={THREE.BackSide} fog={false} />
+      </mesh>
+      <mesh position={[0, -1.8, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[26, 40, 48]} />
+        <meshBasicMaterial color={horizonColor} transparent opacity={0.18} />
+      </mesh>
+      {course?.environment === 'city' || course?.environment === 'space' || course?.environment === 'snow'
+        ? stars.map((star) => (
+          <mesh key={star.id} position={[star.x, star.y, star.z]}>
+            <primitive object={SMALL_SPHERE_GEO} attach="geometry" />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.65} />
+          </mesh>
+        ))
+        : null}
+    </group>
+  )
+})
+
+// ─── Surfaces ─────────────────────────────────────────────────────────────────
+const SurfaceLayer = React.memo(({ surfaces = [], palette }) => {
+  return surfaces.map((s, index) => {
+    const texture = buildSurfaceTexture(s.type, palette)
+    return (
+      <group key={s.id} position={toVector3(s.position, getAutoLiftY(index, 0.02))}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[s.size.x, s.size.z]} />
+          <meshStandardMaterial
+            map={texture}
+            color={getSurfaceColor(s.type, palette)}
+            roughness={s.type === 'ice' ? 0.16 : 0.82}
+            metalness={s.type === 'ice' ? 0.18 : 0.05}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-2}
+          />
         </mesh>
       </group>
     )
   })
 })
 
-// ─── Surfaces ─────────────────────────────────────────────────────────────────
-const SurfaceLayer = React.memo(({ surfaces = [], palette }) => {
-  return surfaces.map(s => (
-    <group key={s.id} position={toVector3(s.position, 0.02)}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[s.size.x, s.size.z]} />
-        <meshStandardMaterial
-          color={getSurfaceColor(s.type, palette)}
-          roughness={s.type === 'ice' ? 0.16 : 0.82}
-          metalness={s.type === 'ice' ? 0.18 : 0.05}
-        />
-      </mesh>
-    </group>
-  ))
+const PowerupPickups = React.memo(({ powerups = [] }) => {
+  const refs = useRef([])
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime()
+    refs.current.forEach((mesh, index) => {
+      if (!mesh) return
+      mesh.position.y = 0.65 + Math.sin(t * 2.2 + index) * 0.14
+      mesh.rotation.y += 0.025
+      mesh.rotation.x = Math.sin(t * 1.4 + index) * 0.18
+    })
+  })
+
+  return powerups.map((powerup, index) => {
+    const color = powerup?.color || '#ffffff'
+    return (
+      <group
+        key={powerup.id}
+        ref={(node) => { refs.current[index] = node }}
+        position={[powerup.position.x, 0.65, powerup.position.z]}
+      >
+        {powerup.type === 'barricade'
+          ? (
+            <mesh castShadow>
+              <boxGeometry args={[0.64, 0.5, 0.32]} />
+              <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.28} roughness={0.26} metalness={0.54} />
+            </mesh>
+            )
+          : powerup.type === 'ghost-ball'
+            ? (
+              <mesh castShadow>
+                <sphereGeometry args={[0.34, 18, 18]} />
+                <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.36} transparent opacity={0.82} roughness={0.2} metalness={0.4} />
+              </mesh>
+              )
+            : (
+              <mesh castShadow>
+                <octahedronGeometry args={[0.4, 0]} />
+                <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.32} roughness={0.26} metalness={0.54} />
+              </mesh>
+              )}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.57, 0]}>
+          <ringGeometry args={[0.36, 0.58, 28]} />
+          <meshBasicMaterial color={color} transparent opacity={0.65} polygonOffset polygonOffsetFactor={-4} polygonOffsetUnits={-6} depthWrite={false} />
+        </mesh>
+      </group>
+    )
+  })
 })
 
 // ─── Cup ──────────────────────────────────────────────────────────────────────
@@ -226,10 +489,10 @@ const Cup = React.memo(({ cup, palette }) => {
   }), [palette?.accent])
 
   return (
-    <group position={[cup.x, 0.05, cup.z]}>
+    <group position={[cup.x, 0.06, cup.z]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <primitive object={RING_GEO} attach="geometry" />
-        <primitive object={accentMat} attach="material" />
+        <meshStandardMaterial color={palette?.accent || '#ff8b5c'} emissive={palette?.accent || '#ff8b5c'} emissiveIntensity={0.25} polygonOffset polygonOffsetFactor={-4} polygonOffsetUnits={-6} />
       </mesh>
       {/* Flag pole */}
       <mesh position={[0, 1.65, 0]}>
@@ -247,7 +510,16 @@ const Cup = React.memo(({ cup, palette }) => {
 
 // ─── Single player ball with nametag + smooth lerp ────────────────────────────
 // smoothPosRef: { x, z } – updated each frame by PlaybackController or lerp
-const PlayerBall = React.memo(({ player, isActive, targetPosition, isPlayback, playbackRef }) => {
+const PlayerBall = React.memo(({
+  player,
+  isActive,
+  targetPosition,
+  isPlayback,
+  playbackRef,
+  trailEnabled = true,
+  particlesEnabled = true,
+  trailResetKey = 'default'
+}) => {
   const groupRef = useRef()
   const smoothPos = useRef({ x: targetPosition?.x || 0, z: targetPosition?.z || 0 })
   const tex = useMemo(() => getBallTexture(player.color || '#ffffff'), [player.color])
@@ -276,8 +548,18 @@ const PlayerBall = React.memo(({ player, isActive, targetPosition, isPlayback, p
       {/* Active ring – sits just below ball on ground */}
       <mesh position={[0, -BALL_VISUAL_R + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[BALL_VISUAL_R * 2.2, BALL_VISUAL_R * 2.2, 1]}>
         <primitive object={RING_GEO} attach="geometry" />
-        <meshBasicMaterial color={isActive ? '#ffffff' : player.color || '#888888'} transparent opacity={isActive ? 0.9 : 0.4} />
+        <meshBasicMaterial color={isActive ? '#ffffff' : player.color || '#888888'} transparent opacity={isActive ? 0.9 : 0.4} polygonOffset polygonOffsetFactor={-5} polygonOffsetUnits={-7} depthWrite={false} />
       </mesh>
+      <MiniGolfBallVfx
+        player={player}
+        position={smoothPos.current}
+        isActive={isActive}
+        isMoving={isPlayback}
+        trailEnabled={trailEnabled}
+        particlesEnabled={particlesEnabled}
+        ballVisualRadius={BALL_VISUAL_R}
+        resetKey={trailResetKey}
+      />
       {/* Nametag above ball */}
       <Suspense fallback={null}>
         <Text
@@ -299,7 +581,14 @@ const PlayerBall = React.memo(({ player, isActive, targetPosition, isPlayback, p
 })
 
 // ─── All player balls ─────────────────────────────────────────────────────────
-const PlayerBalls = React.memo(({ players, activePlayerId, playbackRef }) => {
+const PlayerBalls = React.memo(({
+  players,
+  activePlayerId,
+  playbackRef,
+  trailEnabled = true,
+  particlesEnabled = true,
+  trailResetKey = 'default'
+}) => {
   return players.map(player => {
     // During playback, the active player's ball follows the playback path
     const isPlaybackPlayer = playbackRef?.current?.playerId === player.id
@@ -311,6 +600,9 @@ const PlayerBalls = React.memo(({ players, activePlayerId, playbackRef }) => {
         targetPosition={player.position}
         isPlayback={isPlaybackPlayer}
         playbackRef={playbackRef}
+        trailEnabled={trailEnabled}
+        particlesEnabled={particlesEnabled}
+        trailResetKey={`${trailResetKey}:${player.id}`}
       />
     )
   })
@@ -357,115 +649,185 @@ export function playHazardSound() {
   playTone({ freq: 150, type: 'sawtooth', duration: 0.25, gain: 0.2 })
 }
 
-// ─── Cannon-es live physics controller ───────────────────────────────────────
-// Runs cannon-es each frame for realistic ball movement.
-// The authoritative result (from simulateShot) is used for multiplayer sync;
-// cannon-es is purely visual – when the authoritative result arrives we snap
-// the ball to the correct final position.
-function CannonPhysicsController({ hole, startPos, angle, power, playbackRef, onComplete, authoritativeFinalPos }) {
-  const physWorldRef = useRef(null)
-  const completedRef = useRef(false)
-  const lastRollSoundRef = useRef(0)
-  const authSnapRef = useRef(authoritativeFinalPos)
+const HoleTransitionCloud = React.memo(function HoleTransitionCloud({ hole, transitionKey, color = '#ffffff' }) {
+  const refs = useRef([])
+  const startedAtRef = useRef(performance.now())
+  const particles = useMemo(() => {
+    const bounds = hole?.bounds || { minX: -18, maxX: 18, minZ: -12, maxZ: 12 }
+    return Array.from({ length: 40 }, (_, index) => ({
+      id: `${transitionKey}-${index}`,
+      x: bounds.minX + ((index * 17) % 100) / 100 * (bounds.maxX - bounds.minX),
+      z: bounds.minZ + ((index * 29) % 100) / 100 * (bounds.maxZ - bounds.minZ),
+      lift: 0.8 + (index % 5) * 0.18,
+      drift: -0.7 + (index % 7) * 0.22,
+    }))
+  }, [hole?.bounds, transitionKey])
 
-  // Update snap target when authoritative result arrives
   useEffect(() => {
-    authSnapRef.current = authoritativeFinalPos
-  }, [authoritativeFinalPos])
+    startedAtRef.current = performance.now()
+  }, [transitionKey])
 
-  // Create physics world and shoot ball
+  useFrame(() => {
+    const progress = Math.min(1, (performance.now() - startedAtRef.current) / 900)
+    refs.current.forEach((node, index) => {
+      const particle = particles[index]
+      if (!node || !particle) return
+      node.position.set(particle.x + particle.drift * progress, 0.2 + particle.lift * progress, particle.z)
+      node.scale.setScalar((1 - progress) * 0.5)
+    })
+  })
+
+  return (
+    <group>
+      {particles.map((particle, index) => (
+        <mesh key={particle.id} ref={(node) => { refs.current[index] = node }} position={[particle.x, 0.2, particle.z]}>
+          <primitive object={SMALL_SPHERE_GEO} attach="geometry" />
+          <meshBasicMaterial color={color} transparent opacity={0.42} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+})
+
+const HoleAssembly = React.memo(function HoleAssembly({ holeKey, children }) {
+  const groupRef = useRef()
+  const progressRef = useRef(0)
   useEffect(() => {
-    // Guard: don't create physics world if hole or startPos is missing
-    if (!hole || !startPos || !hole.cup || !hole.bounds) return
-    completedRef.current = false
-
-    let world = null
-    try {
-      world = createMiniGolfPhysicsWorld(hole)
-    } catch (err) {
-      console.warn('[MiniGolf] Physics world creation failed:', err)
-      return
-    }
-    if (!world) return
-    physWorldRef.current = world
-
-    world.setBallPosition(startPos)
-    world.shootBall(angle, power)
-
-    return () => {
-      try { world.dispose() } catch {}
-      physWorldRef.current = null
-    }
-  }, [hole, startPos, angle, power])
-
+    progressRef.current = 0
+  }, [holeKey])
   useFrame((_, delta) => {
-    const world = physWorldRef.current
-    if (!world || completedRef.current) return
+    if (!groupRef.current) return
+    progressRef.current = Math.min(1, progressRef.current + delta * 1.9)
+    const p = progressRef.current
+    groupRef.current.position.y = (1 - p) * 2.6
+    groupRef.current.scale.setScalar(0.86 + p * 0.14)
+  })
+  return <group ref={groupRef}>{children}</group>
+})
 
-    world.step(delta)
+// ─── Path playback controller ────────────────────────────────────────────────
+function ShotPlaybackController({ playbackRef, path = [], finalPosition, onComplete }) {
+  const lastRollSoundRef = useRef(0)
+  const doneRef = useRef(false)
+  const startedAtRef = useRef(0)
 
-    const pos = world.getBallPosition()
-    if (playbackRef) {
+  useEffect(() => {
+    lastRollSoundRef.current = 0
+    doneRef.current = false
+    startedAtRef.current = performance.now()
+  }, [path, finalPosition])
+
+  useFrame(() => {
+    if (doneRef.current || !playbackRef?.current) return
+    if (!Array.isArray(path) || path.length === 0) {
       playbackRef.current = {
         ...playbackRef.current,
-        position: { x: pos.x, z: pos.z },
+        position: finalPosition || playbackRef.current.position,
       }
+      doneRef.current = true
+      queueMicrotask(() => onComplete?.())
+      return
     }
 
-    // Roll sound
-    const vel = world.getBallVelocity()
-    const speed = Math.hypot(vel.x, vel.z)
+    const elapsedSeconds = ((performance.now() - startedAtRef.current) / 1000) * 1.85
+    let currentIndex = path.findIndex((entry) => Number(entry?.t || 0) >= elapsedSeconds)
+    if (currentIndex <= 0) currentIndex = 1
+    if (currentIndex < 0) currentIndex = path.length - 1
+    const prevPoint = path[Math.max(0, currentIndex - 1)] || path[0]
+    const nextPoint = path[Math.min(currentIndex, path.length - 1)] || path[path.length - 1]
+    const prevTime = Number(prevPoint?.t || 0)
+    const nextTime = Number(nextPoint?.t || prevTime)
+    const span = Math.max(0.0001, nextTime - prevTime)
+    const mix = clamp((elapsedSeconds - prevTime) / span, 0, 1)
+    const point = {
+      x: prevPoint.x + (nextPoint.x - prevPoint.x) * mix,
+      z: prevPoint.z + (nextPoint.z - prevPoint.z) * mix,
+    }
+    playbackRef.current = {
+      ...playbackRef.current,
+      position: point,
+    }
+
+    const lookAhead = path[Math.min(currentIndex + 1, path.length - 1)] || nextPoint
+    const dx = (lookAhead?.x || point.x) - point.x
+    const dz = (lookAhead?.z || point.z) - point.z
+    const motion = Math.hypot(dx, dz)
     const now = performance.now()
-    if (speed > 0.3 && now - lastRollSoundRef.current > 100) {
+    if (motion > 0.01 && now - lastRollSoundRef.current > 110) {
       lastRollSoundRef.current = now
       playRollSound()
     }
 
-    if (world.isSettled() && !completedRef.current) {
-      completedRef.current = true
-
-      // If authoritative final position is known, snap to it
-      const snap = authSnapRef.current
-      if (snap && playbackRef) {
-        playbackRef.current = {
-          ...playbackRef.current,
-          position: { x: snap.x, z: snap.z },
-        }
+    if (elapsedSeconds >= Number(path[path.length - 1]?.t || 0)) {
+      playbackRef.current = {
+        ...playbackRef.current,
+        position: finalPosition || point,
       }
-
+      doneRef.current = true
       queueMicrotask(() => onComplete?.())
+      return
     }
   })
 
   return null
 }
 
-// ─── Camera – follows active player, right/middle click to orbit ──────────────
-const DEFAULT_CAM_OFFSET = new THREE.Vector3(0, 12, 14)
-
-function SceneCamera({ followTarget, playbackRef, orbitControlsRef }) {
+function SceneCamera({ followTarget, cup, holeBounds, playbackRef, orbitControlsRef, cameraMode = 'follow', resetKey }) {
   const camRef = useRef()
-  const offsetRef = useRef(DEFAULT_CAM_OFFSET.clone())
-  const desiredRef = useRef(new THREE.Vector3())
-  const nextPosRef = useRef(new THREE.Vector3())
-  const prevTargetRef = useRef(null)
+  const offsetRef = useRef(cloneMiniGolfCameraOffset(cameraMode))
+  const hasBootedRef = useRef(false)
+  const isInteractingRef = useRef(false)
+  const pauseFollowUntilRef = useRef(0)
+  const resetKeyRef = useRef(null)
+
+  useEffect(() => {
+    if (!camRef.current || !orbitControlsRef?.current || !followTarget) return
+    const ctrl = orbitControlsRef.current
+    const nextTarget = getMiniGolfCameraTargetVector(followTarget)
+    const baseOffset = cloneMiniGolfCameraOffset(cameraMode)
+    const shouldReset = shouldResetMiniGolfCamera({
+      hasBooted: hasBootedRef.current,
+      lastResetKey: resetKeyRef.current,
+      nextResetKey: resetKey
+    })
+
+    if (shouldReset) {
+      hasBootedRef.current = true
+      resetKeyRef.current = resetKey
+      ctrl.target.copy(nextTarget)
+      camRef.current.position.copy(nextTarget).add(baseOffset)
+      offsetRef.current.copy(baseOffset)
+      ctrl.update()
+      pauseFollowUntilRef.current = 0
+    }
+  }, [cameraMode, followTarget, orbitControlsRef, resetKey])
+
+  useEffect(() => {
+    const ctrl = orbitControlsRef?.current
+    if (!ctrl?.listenToKeyEvents) return undefined
+    ctrl.listenToKeyEvents(window)
+    return () => ctrl.stopListenToKeyEvents?.()
+  }, [orbitControlsRef])
 
   useFrame(() => {
     const liveTarget = playbackRef?.current?.position || followTarget
     if (!camRef.current || !orbitControlsRef?.current || !liveTarget) return
     const ctrl = orbitControlsRef.current
-
-    // When target changes (turn change), snap offset from current camera position
-    const targetKey = `${liveTarget.x?.toFixed(1)},${liveTarget.z?.toFixed(1)}`
-    if (prevTargetRef.current !== targetKey) {
-      prevTargetRef.current = targetKey
-      offsetRef.current.copy(camRef.current.position).sub(ctrl.target)
-    }
-
-    desiredRef.current.set(liveTarget.x, 0.1, liveTarget.z)
-    ctrl.target.lerp(desiredRef.current, 0.08)
-    nextPosRef.current.copy(ctrl.target).add(offsetRef.current)
-    camRef.current.position.lerp(nextPosRef.current, 0.08)
+    const frame = buildMiniGolfCameraFrame({
+      cameraMode,
+      liveTarget,
+      cup,
+      holeBounds,
+      controlsTarget: ctrl.target,
+      cameraPosition: camRef.current.position,
+      offset: offsetRef.current,
+      isInteracting: isInteractingRef.current,
+      pauseFollowUntil: pauseFollowUntilRef.current,
+      now: performance.now()
+    })
+    ctrl.target.copy(frame.nextTarget)
+    camRef.current.position.copy(frame.nextCameraPosition)
+    offsetRef.current.copy(frame.nextOffset)
     ctrl.update()
   })
 
@@ -474,14 +836,36 @@ function SceneCamera({ followTarget, playbackRef, orbitControlsRef }) {
       <PerspectiveCamera ref={camRef} makeDefault position={[0, 12, 14]} fov={44} near={0.1} far={200} />
       <OrbitControls
         ref={orbitControlsRef}
-        enablePan={false}
+        enablePan
+        enableDamping
+        dampingFactor={0.08}
         minDistance={6}
         maxDistance={30}
         maxPolarAngle={Math.PI / 2.1}
-        // Left button = disabled (used for aiming), right + middle = orbit
+        onChange={() => {
+          if (!camRef.current || !orbitControlsRef?.current) return
+          offsetRef.current.copy(camRef.current.position).sub(orbitControlsRef.current.target)
+        }}
+        onStart={() => {
+          isInteractingRef.current = true
+        }}
+        onEnd={() => {
+          isInteractingRef.current = false
+          pauseFollowUntilRef.current = performance.now() + getMiniGolfCameraInteractionPause(cameraMode)
+          if (!camRef.current || !orbitControlsRef?.current) return
+          offsetRef.current.copy(camRef.current.position).sub(orbitControlsRef.current.target)
+        }}
+        keys={{
+          LEFT: 'ArrowLeft',
+          UP: 'ArrowUp',
+          RIGHT: 'ArrowRight',
+          BOTTOM: 'ArrowDown',
+        }}
+        keyPanSpeed={18}
+        // Left button = disabled (used for aiming), middle = pan, right = orbit
         mouseButtons={{
           LEFT: null,
-          MIDDLE: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.PAN,
           RIGHT: THREE.MOUSE.ROTATE,
         }}
       />
@@ -496,6 +880,13 @@ function MiniGolfWorld({
   course, hole, players, activePlayerId,
   aimState, isMyTurn, shotPlayback,
   onAimDrag, onAimCancel, onShotPlaybackComplete,
+  visiblePowerups = [],
+  cameraMode = 'follow',
+  trailEnabled = true,
+  particlesEnabled = true,
+  powerSensitivity = 1,
+  lastShotResult = null,
+  onBlackHoleProximityChange,
 }) {
   const palette = course?.palette || {}
   const activePlayer = players.find(p => p.id === activePlayerId) || players[0]
@@ -505,7 +896,6 @@ function MiniGolfWorld({
   // playbackRef holds current live physics position (mutable, no re-render)
   const playbackRef = useRef(null)
   const [isPlayingBack, setIsPlayingBack] = useState(false)
-  const [physicsKey, setPhysicsKey] = useState(0)
 
   useEffect(() => {
     if (!shotPlayback) {
@@ -517,11 +907,11 @@ function MiniGolfWorld({
       actionId: shotPlayback.actionId,
       playerId: shotPlayback.playerId,
       finalPosition: shotPlayback.finalPosition,
-      position: shotPlayback.startPos || { x: 0, z: 0 },
+      path: shotPlayback.path || [],
+      position: shotPlayback.path?.[0] || shotPlayback.startPos || { x: 0, z: 0 },
     }
     setIsPlayingBack(true)
-    setPhysicsKey(k => k + 1)
-  }, [shotPlayback?.actionId])
+  }, [shotPlayback])
 
   useEffect(() => {
     const onUp = () => {
@@ -541,18 +931,42 @@ function MiniGolfWorld({
   }, [isMyTurn, aimState, activePlayer])
 
   // Camera follows active player's ball (or playback position)
+  const playbackState = playbackRef.current
   const cameraTarget = activePlayer?.position || hole?.tee || { x: 0, z: 0 }
+  const liveBallPosition = playbackState && activePlayer && playbackState.playerId === activePlayer.id
+    ? playbackState.position
+    : activePlayer?.position
+
+  useFrame(() => {
+    if (!onBlackHoleProximityChange || !hole || !liveBallPosition) return
+    const blackHoles = [...(hole.hazards || []), ...(hole.dynamicHazards || [])].filter((hazard) => hazard.type === 'black-hole')
+    if (!blackHoles.length) {
+      onBlackHoleProximityChange(0)
+      return
+    }
+    let strongest = 0
+    blackHoles.forEach((hazard) => {
+      const dx = (liveBallPosition.x || 0) - (hazard.position?.x || 0)
+      const dz = (liveBallPosition.z || 0) - (hazard.position?.z || 0)
+      const distance = Math.hypot(dx, dz)
+      const range = Math.max(hazard.size?.x || 2.6, hazard.size?.z || 2.6) * 4.5
+      strongest = Math.max(strongest, Math.max(0, 1 - distance / range))
+    })
+    onBlackHoleProximityChange(strongest)
+  })
 
   // Ground size matches course bounds
   const groundW = hole ? (hole.bounds?.maxX - hole.bounds?.minX + 8) || 50 : 50
   const groundD = hole ? (hole.bounds?.maxZ - hole.bounds?.minZ + 8) || 32 : 32
   const groundCX = hole ? ((hole.bounds?.maxX + hole.bounds?.minX) / 2) || 0 : 0
   const groundCZ = hole ? ((hole.bounds?.maxZ + hole.bounds?.minZ) / 2) || 0 : 0
+  const aimPowerScale = Math.max(0.35, Number(powerSensitivity) || 1)
 
   return (
     <>
       <color attach="background" args={[palette.backgroundBottom || '#091223']} />
       <fog attach="fog" args={[palette.backgroundBottom || '#091223', 28, 70]} />
+      <MiniGolfBackdrop course={course} hole={hole} palette={palette} />
       <ambientLight intensity={1.1} />
       <directionalLight
         position={[6, 12, 8]} intensity={2.2} castShadow
@@ -562,7 +976,15 @@ function MiniGolfWorld({
       />
       <hemisphereLight args={[palette.backgroundTop || '#1f355c', '#102514', 0.65]} />
 
-      <SceneCamera followTarget={cameraTarget} playbackRef={playbackRef} orbitControlsRef={orbitControlsRef} />
+      <SceneCamera
+        followTarget={cameraTarget}
+        cup={hole?.cup}
+        holeBounds={hole?.bounds}
+        playbackRef={playbackRef}
+        orbitControlsRef={orbitControlsRef}
+        cameraMode={cameraMode}
+        resetKey={hole?.id}
+      />
 
       {/* Ground – sized to course bounds */}
       <mesh
@@ -573,21 +995,42 @@ function MiniGolfWorld({
         <planeGeometry args={[groundW, groundD]} />
         <meshStandardMaterial color={palette.rough || '#2d6a43'} roughness={0.98} />
       </mesh>
+      <MiniGolfSurfaceAccent course={course} hole={hole} palette={palette} />
+      <HoleTransitionCloud hole={hole} transitionKey={hole?.id} color={palette.accent || '#ffffff'} />
 
       {hole && <>
-        <SurfaceLayer surfaces={hole.surfaces} palette={palette} />
-        {hole.obstacles.map(obs => (
-          <ObstacleMesh key={obs.id} obstacle={obs} palette={palette} />
-        ))}
-        <HazardPads hazards={hole.hazards} palette={palette} />
-        <MovingHazards hazards={hole.movingHazards} palette={palette} />
-        <Cup cup={hole.cup} palette={palette} />
+        <HoleAssembly holeKey={hole.id}>
+          <SurfaceLayer surfaces={hole.surfaces} palette={palette} />
+          {[...(hole.obstacles || []), ...(hole.dynamicObstacles || [])].map(obs => (
+            <ObstacleMesh key={obs.id} obstacle={obs} palette={palette} />
+          ))}
+          <HazardPads hazards={[...(hole.hazards || []), ...(hole.dynamicHazards || [])]} palette={palette} />
+          <MovingHazards hazards={[...(hole.movingHazards || []), ...((hole.dynamicHazards || []).filter((hazard) => hazard?.movement))]} palette={palette} />
+          <PowerupPickups powerups={visiblePowerups} />
+          <MiniGolfSceneryObjects scenery={hole.scenery} palette={palette} environment={course?.environment} />
+          <Cup cup={hole.cup} palette={palette} />
+          <MiniGolfCupCelebration
+            cup={hole.cup}
+            resultType={lastShotResult?.type}
+            triggerKey={shotPlayback?.actionId || lastShotResult?.label || null}
+            accentColor={palette.accent || '#38bdf8'}
+          />
+        </HoleAssembly>
       </>}
 
       <PlayerBalls
         players={players}
         activePlayerId={activePlayerId}
         playbackRef={playbackRef}
+        trailEnabled={trailEnabled}
+        particlesEnabled={particlesEnabled}
+        trailResetKey={hole?.id || 'hole'}
+      />
+
+      <MiniGolfShotImpactBursts
+        shotPlayback={shotPlayback}
+        color={activePlayer?.color || palette.accent || '#ffffff'}
+        particlesEnabled={particlesEnabled}
       />
 
       {/* Invisible aim plane – left-click drag to aim */}
@@ -601,7 +1044,7 @@ function MiniGolfWorld({
             const dx = activePlayer.position.x - e.point.x
             const dz = activePlayer.position.z - e.point.z
             const dist = Math.hypot(dx, dz)
-            const aim = { angle: Math.atan2(dz, dx), power: clamp(dist / 8.0, 0.05, 1) }
+            const aim = { angle: Math.atan2(dz, dx), power: clamp((dist / 8.0) * aimPowerScale, 0.05, 1) }
             dragRef.current = { active: true, ...aim }
             onAimDrag?.(aim)
           }}
@@ -611,7 +1054,7 @@ function MiniGolfWorld({
             const dx = activePlayer.position.x - e.point.x
             const dz = activePlayer.position.z - e.point.z
             const dist = Math.hypot(dx, dz)
-            const aim = { angle: Math.atan2(dz, dx), power: clamp(dist / 8.0, 0.05, 1) }
+            const aim = { angle: Math.atan2(dz, dx), power: clamp((dist / 8.0) * aimPowerScale, 0.05, 1) }
             dragRef.current = { ...dragRef.current, ...aim }
             onAimDrag?.(aim)
           }}
@@ -655,15 +1098,11 @@ function MiniGolfWorld({
         )
       })()}
 
-      {isPlayingBack && shotPlayback && hole && hole.cup && hole.bounds && (
-        <CannonPhysicsController
-          key={physicsKey}
-          hole={hole}
-          startPos={shotPlayback.startPos || activePlayer?.position || hole?.tee}
-          angle={shotPlayback.angle || 0}
-          power={shotPlayback.power || 0.25}
+      {isPlayingBack && shotPlayback && (
+        <ShotPlaybackController
           playbackRef={playbackRef}
-          authoritativeFinalPos={shotPlayback.finalPosition}
+          path={shotPlayback.path || []}
+          finalPosition={shotPlayback.finalPosition}
           onComplete={() => { setIsPlayingBack(false); onShotPlaybackComplete?.() }}
         />
       )}
@@ -678,6 +1117,28 @@ const runPhysicsAsync = (args) =>
     port2.onmessage = () => resolve(simulateShot(args))
     port1.postMessage(null)
   })
+
+const buildShotResultNotice = (result) => {
+  const resultType = result?.resultType || 'settled'
+  const baseLabel = resultType === 'black-hole'
+    ? 'black hole · +20 strokes · replacement ball deployed'
+    : result?.surfaceType === 'sticky' && resultType === 'settled'
+      ? 'sticky trap'
+      : resultType.replace(/-/g, ' ')
+  if (result?.awardedPowerup?.label) {
+    return { type: resultType, label: `${baseLabel} · picked up ${result.awardedPowerup.label}` }
+  }
+  if (result?.consumedPowerup?.label) {
+    return { type: resultType, label: `${baseLabel} · used ${result.consumedPowerup.label}` }
+  }
+  if (result?.spawnedObstacles?.length) {
+    return { type: resultType, label: `${baseLabel} · blockade deployed` }
+  }
+  if (result?.spawnedHazards?.length) {
+    return { type: resultType, label: `${baseLabel} · ghost loose` }
+  }
+  return { type: resultType, label: baseLabel }
+}
 
 // ─── Power bar color helper ───────────────────────────────────────────────────
 function powerColor(p) {
@@ -700,6 +1161,9 @@ function MiniGolfHUD({
   onSetPower, onShoot, onAimLeft, onAimRight,
   onOpenSettings,
   lastShotResult,
+  activePowerup,
+  powerupInventory,
+  availablePowerupCount,
   // Settings
   showSettings, settings, onChangeSetting, onCloseSettings,
   // Hole summary
@@ -716,11 +1180,25 @@ function MiniGolfHUD({
 
   const hud = (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10, overflow: 'hidden', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
+      <style>{`
+        @keyframes minigolfHudFloat {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-4px); }
+        }
+        @keyframes minigolfHudPulse {
+          0%, 100% { box-shadow: 0 0 0 rgba(56,189,248,0.0); }
+          50% { box-shadow: 0 0 28px rgba(56,189,248,0.18); }
+        }
+        @keyframes minigolfHudSlideIn {
+          from { opacity: 0; transform: translate(-50%, 12px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+      `}</style>
 
       {/* ── LOBBY ── */}
       {phase === MINIGOLF_PHASES.LOBBY && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto' }}>
-          <div style={{ width: Math.min(window.innerWidth - 40, 600), maxHeight: Math.min(window.innerHeight - 40, 560), background: 'rgba(13,17,23,0.97)', border: '1px solid #1f2937', borderRadius: 10, padding: 20, overflow: 'auto', color: '#f9fafb' }}>
+          <div style={{ width: Math.min(window.innerWidth - 40, 600), maxHeight: Math.min(window.innerHeight - 40, 560), background: 'rgba(13,17,23,0.97)', border: '1px solid #1f2937', borderRadius: 10, padding: 20, overflow: 'auto', color: '#f9fafb', animation: 'minigolfHudPulse 3.2s ease-in-out infinite' }}>
             <div style={{ fontSize: 22, color: '#38bdf8', fontWeight: 'bold', marginBottom: 4 }}>⛳ MiniGolf – Lobby</div>
             <div style={{ height: 1, background: '#1f2937', margin: '8px 0 12px' }} />
 
@@ -733,7 +1211,7 @@ function MiniGolfHUD({
               {/* Course list */}
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, color: '#d1d5db', fontWeight: 'bold', marginBottom: 8 }}>Vote for Course</div>
-                {courses.slice(0, 6).map(course => {
+                {courses.map(course => {
                   const isVoted = votes[currentUserId] === course.id
                   const isLeading = course.id === leadingCourseId
                   const isSelected = course.id === selectedCourseId
@@ -744,7 +1222,10 @@ function MiniGolfHUD({
                       color: isVoted ? '#4ade80' : isLeading ? '#fbbf24' : '#e5e7eb',
                       border: 'none', borderRadius: 4, fontSize: 13, cursor: 'pointer', textAlign: 'left',
                     }}>
-                      {course.name}{isVoted ? '  ✓' : isLeading ? '  ★' : ''}
+                      <div style={{ fontWeight: 600 }}>{course.name}{isVoted ? '  ✓' : isLeading ? '  ★' : ''}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                        {course.holeCount} holes · par {course.parTotal}
+                      </div>
                     </button>
                   )
                 })}
@@ -806,7 +1287,7 @@ function MiniGolfHUD({
                 </button>
               )}
               <div style={{ marginLeft: 'auto', fontSize: 11, color: '#6b7280' }}>
-                Right-click or middle-click to rotate camera
+                Middle-drag pans, right-drag rotates, arrow keys pan
               </div>
             </div>
           </div>
@@ -817,14 +1298,41 @@ function MiniGolfHUD({
       {phase === MINIGOLF_PHASES.PLAYING && (
         <>
           {/* Top-left: hole info */}
-          <div style={{ position: 'absolute', top: 12, left: 12, width: 200, background: 'rgba(13,17,23,0.88)', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 12px', color: '#f9fafb', pointerEvents: 'auto' }}>
+          <div style={{ position: 'absolute', top: 12, left: 12, width: 200, background: 'rgba(13,17,23,0.88)', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 12px', color: '#f9fafb', pointerEvents: 'auto', animation: 'minigolfHudFloat 3.4s ease-in-out infinite' }}>
             <div style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 4 }}>Hole {holeIndex + 1}</div>
             <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 2 }}>Par {par}</div>
             <div style={{ fontSize: 13, color: strokeCount <= par ? '#4ade80' : '#f87171' }}>Strokes: {strokeCount}</div>
+            <div style={{ marginTop: 8, fontSize: 11, color: activePowerup ? '#fbbf24' : '#9ca3af', lineHeight: 1.35 }}>
+              {activePowerup
+                ? `Loaded: ${activePowerup.label}`
+                : `${availablePowerupCount || 0} pickups remaining`}
+            </div>
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+              {Array.from({ length: 4 }, (_, index) => {
+                const entry = powerupInventory?.[index] || null
+                return (
+                  <div key={`slot-${index}`} style={{
+                    minHeight: 34,
+                    borderRadius: 6,
+                    border: `1px solid ${entry?.color || '#374151'}`,
+                    background: entry ? `${entry.color}22` : '#111827',
+                    color: entry?.color || '#6b7280',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 10,
+                    textAlign: 'center',
+                    padding: '0 4px',
+                  }}>
+                    {entry ? entry.label : 'Empty'}
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Top-right: scoreboard */}
-          <div style={{ position: 'absolute', top: 12, right: 12, width: 190, background: 'rgba(13,17,23,0.88)', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 12px', color: '#f9fafb', pointerEvents: 'auto' }}>
+          <div style={{ position: 'absolute', top: 12, right: 12, width: 190, background: 'rgba(13,17,23,0.88)', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 12px', color: '#f9fafb', pointerEvents: 'auto', animation: 'minigolfHudFloat 3.9s ease-in-out infinite' }}>
             <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 6 }}>Scores</div>
             <div style={{ height: 1, background: '#1f2937', marginBottom: 6 }} />
             {players.slice(0, 6).map(p => (
@@ -840,7 +1348,7 @@ function MiniGolfHUD({
 
           {/* Top-center: turn indicator */}
           {currentTurnPlayer && (
-            <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(13,17,23,0.88)', border: '1px solid #374151', borderRadius: 8, padding: '6px 16px', color: '#38bdf8', whiteSpace: 'nowrap', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(13,17,23,0.88)', border: '1px solid #374151', borderRadius: 8, padding: '6px 16px', color: '#38bdf8', whiteSpace: 'nowrap', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, animation: 'minigolfHudFloat 2.8s ease-in-out infinite, minigolfHudPulse 2.4s ease-in-out infinite' }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: currentTurnPlayer.color || '#888' }} />
               {currentTurnPlayer.username || 'Player'}'s turn &nbsp;·&nbsp; Hole {holeIndex + 1} &nbsp;·&nbsp; Par {par}
             </div>
@@ -849,11 +1357,11 @@ function MiniGolfHUD({
           {/* Shot result toast */}
           {lastShotResult && (() => {
             const resultStr = lastShotResult?.type || lastShotResult
-            const isGood = ['hole_in_one', 'birdie', 'eagle', 'cup', 'hole'].includes(resultStr)
-            const toastColor = isGood ? '#4ade80' : resultStr === 'out_of_bounds' ? '#f87171' : '#fbbf24'
+            const isGood = ['hole_in_one', 'birdie', 'eagle', 'cup', 'hole', 'powerup'].includes(resultStr)
+            const toastColor = resultStr === 'sticky' ? '#c084fc' : isGood ? '#4ade80' : resultStr === 'out_of_bounds' ? '#f87171' : '#fbbf24'
             const label = lastShotResult?.label || resultStr?.replace(/_/g, ' ') || ''
             return (
-              <div style={{ position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(13,17,23,0.95)', border: `1px solid ${toastColor}`, borderRadius: 8, padding: '8px 20px', color: toastColor, fontSize: 16, fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+              <div style={{ position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)', background: 'rgba(13,17,23,0.95)', border: `1px solid ${toastColor}`, borderRadius: 8, padding: '8px 20px', color: toastColor, fontSize: 16, fontWeight: 'bold', whiteSpace: 'nowrap', animation: 'minigolfHudSlideIn 180ms ease-out' }}>
                 {label}
               </div>
             )
@@ -866,7 +1374,7 @@ function MiniGolfHUD({
                 {isAiming ? '🎯 Aiming…' : '⛳ Your Turn – hold left-click to aim'}
               </div>
               <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>
-                Direction: {Math.round(((aimAngle * 180) / Math.PI + 360) % 360)}° &nbsp;·&nbsp; Right/middle-click to rotate camera
+                Direction: {Math.round(((aimAngle * 180) / Math.PI + 360) % 360)}° &nbsp;·&nbsp; Middle-drag pans, right-drag rotates
               </div>
 
               {/* Power bar */}
@@ -944,6 +1452,20 @@ function MiniGolfHUD({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, color: '#9ca3af', width: 100 }}>Particles</span>
+                  <button onClick={() => onChangeSetting('particles', !settings?.particles)} style={{ padding: '4px 14px', background: settings?.particles ? '#14532d' : '#374151', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+                    {settings?.particles ? 'On' : 'Off'}
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, color: '#9ca3af', width: 100 }}>Music</span>
+                  <button onClick={() => onChangeSetting('music', !settings?.music)} style={{ padding: '4px 14px', background: settings?.music ? '#14532d' : '#374151', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+                    {settings?.music ? 'On' : 'Off'}
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <span style={{ fontSize: 13, color: '#9ca3af', width: 100 }}>Camera</span>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {['follow', 'overhead', 'free'].map(mode => (
@@ -968,6 +1490,9 @@ function MiniGolfHUD({
                 </div>
 
                 <div style={{ height: 1, background: '#1f2937', marginBottom: 12 }} />
+                <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12, lineHeight: 1.45 }}>
+                  `follow` tracks the active ball, `overhead` keeps a tactical top-down view, and `free` stops camera recentering so you can move around without it snapping back.
+                </div>
                 <button onClick={onCloseSettings} style={{ padding: '6px 20px', background: '#374151', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✕ Close</button>
               </div>
             </div>
@@ -983,14 +1508,14 @@ function MiniGolfHUD({
             <div style={{ height: 1, background: '#1f2937', marginBottom: 12 }} />
             <div style={{ fontSize: 14, color: '#9ca3af', marginBottom: 8 }}>Leaderboard</div>
             {leaderboard.map((entry, i) => (
-              <div key={entry.playerId} style={{
+              <div key={entry.id} style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', marginBottom: 6,
                 background: i === 0 ? '#78350f' : '#1f2937', borderRadius: 4,
                 fontSize: 13, color: i === 0 ? '#fbbf24' : '#e5e7eb',
               }}>
                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: entry.color || '#888', flexShrink: 0 }} />
                 <span style={{ flex: 1 }}>{i + 1}. {entry.username || 'Player'}</span>
-                <span>{entry.strokes} stroke{entry.strokes !== 1 ? 's' : ''} (total: {entry.totalStrokes})</span>
+                <span>{entry.strokesThisHole} stroke{entry.strokesThisHole !== 1 ? 's' : ''} (total: {entry.totalStrokes})</span>
               </div>
             ))}
             <div style={{ marginTop: 16, textAlign: 'center' }}>
@@ -1016,7 +1541,7 @@ function MiniGolfHUD({
             <div style={{ height: 1, background: '#1f2937', marginBottom: 12 }} />
             <div style={{ fontSize: 14, color: '#9ca3af', marginBottom: 8 }}>Final Scores</div>
             {leaderboard.map((entry, i) => (
-              <div key={entry.playerId} style={{
+              <div key={entry.id} style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', marginBottom: 6,
                 background: i === 0 ? '#78350f' : '#1f2937', borderRadius: 4,
                 fontSize: 13, color: i === 0 ? '#fbbf24' : '#e5e7eb',
@@ -1045,6 +1570,17 @@ function MiniGolfHUD({
 const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   const userId   = currentUser?.id       || `guest-${Math.random().toString(36).slice(2)}`
   const username = currentUser?.username || 'Player'
+  const {
+    playEvent,
+    startBackgroundMusic,
+    stopBackgroundMusic,
+    setEnvironment,
+    stopEnvironment,
+    setMusicMuted,
+    setBlackHoleProximity,
+    musicMuted,
+    initialized: soundReady
+  } = useMiniGolfSound()
 
   const containerRef = useRef(null)  // DOM node for HUD portal (VoltCraft pattern)
 
@@ -1059,6 +1595,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
     ballColor: BALL_COLOR_OPTIONS[0],
     trail: true,
     particles: true,
+    music: true,
     cameraMode: 'follow',
     powerSensitivity: 1.0,
   })
@@ -1071,14 +1608,31 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   const courseId       = gameState.courseId
   const holeIndex      = gameState.holeIndex
   const course         = useMemo(() => getMiniGolfCourse(courseId), [courseId])
-  const hole           = useMemo(() => getMiniGolfHole(courseId, holeIndex), [courseId, holeIndex])
+  const hole           = useMemo(() => {
+    const baseHole = getMiniGolfHole(courseId, holeIndex)
+    return {
+      ...baseHole,
+      dynamicObstacles: gameState.dynamicObstacles || [],
+      dynamicHazards: gameState.dynamicHazards || []
+    }
+  }, [courseId, gameState.dynamicHazards, gameState.dynamicObstacles, holeIndex])
   const holeCount      = course?.holes?.length || 1
   const leaderboard    = useMemo(() => getMiniGolfLeaderboard(gameState), [gameState])
+  const myPlayerState  = gameState.playerStates?.[userId] || null
+  const myPowerupInventory = myPlayerState?.powerupInventory || []
+  const myActivePowerup = myPowerupInventory[0] || null
   const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentTurnPlayerId) || null
   const isMyTurn       = gameState.currentTurnPlayerId === userId && phase === MINIGOLF_PHASES.PLAYING
   const winner         = gameState.players.find(p => p.id === gameState.winnerId) || null
   const leadingCourseId = useMemo(() => resolveMiniGolfCourseId(gameState), [gameState])
   const canStart       = gameState.players.length >= 1 && Object.values(gameState.readyMap).some(Boolean)
+  const visiblePowerups = useMemo(
+    () => (hole?.powerups || []).filter((powerup) => !gameState.collectedPowerups?.[powerup.id]).map((powerup) => ({
+      ...powerup,
+      ...(MINIGOLF_POWERUP_DEFS[powerup.type] || null)
+    })),
+    [hole, gameState.collectedPowerups]
+  )
 
   const courseSummaries = useMemo(() => listMiniGolfCourseSummaries().map(c => ({
     ...c, unlocked: true
@@ -1093,6 +1647,38 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
     })),
     [gameState.players, gameState.playerStates, gameState.scorecards, hole]
   )
+
+  useEffect(() => {
+    setMusicMuted(!settings.music)
+  }, [setMusicMuted, settings.music])
+
+  useEffect(() => {
+    if (!soundReady || !settings.music) return undefined
+    const trackName = phase === MINIGOLF_PHASES.LOBBY
+      ? 'lobby'
+      : phase === MINIGOLF_PHASES.PLAYING
+        ? 'playing'
+        : phase === MINIGOLF_PHASES.HOLE_SUMMARY
+          ? 'summary'
+          : 'finished'
+    startBackgroundMusic(trackName)
+    return () => stopBackgroundMusic()
+  }, [phase, settings.music, soundReady, startBackgroundMusic, stopBackgroundMusic])
+
+  useEffect(() => {
+    if (!soundReady || !settings.music) return undefined
+    const environmentKey = course?.environment === 'industrial'
+      ? 'industrial'
+      : course?.environment === 'city'
+        ? 'city'
+        : course?.environment === 'snow'
+          ? 'snow'
+          : course?.environment === 'goo'
+            ? 'water'
+            : 'default'
+    setEnvironment(environmentKey)
+    return () => stopEnvironment()
+  }, [course?.environment, settings.music, setEnvironment, soundReady, stopEnvironment])
 
   // ── SDK event handling ───────────────────────────────────────────────────────
   const dispatchEvent = useCallback((evt) => {
@@ -1109,7 +1695,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
       if (evt.eventType === MINIGOLF_EVENT_TYPES.SHOT) {
         const { playerId, shot, result } = evt.payload || {}
         if (!result || playerId === userId) return  // own shots handled in handleAimDrag
-        // For other players' shots, start cannon-es simulation from their position
+        // For other players' shots, use the authoritative playback path
         const playerState = gameState.playerStates[playerId]
         const startPos = playerState?.position || hole?.tee || { x: 0, z: 0 }
         setShotPlayback({
@@ -1118,16 +1704,21 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
           startPos,
           angle: shot?.angle || 0,
           power: shot?.power || 0.5,
+          path: result.path || [],
           finalPosition: result.finalPosition,
         })
         if (result.resultType) {
-          setLastShotResult(result.resultType)
+          if (result.resultType === 'cup') playEvent('holeComplete')
+          else if (['hazard-reset', 'lava-reset', 'black-hole'].includes(result.resultType)) playEvent('hazardReset')
+          else if (result.collisionCount > 0) playEvent('wallHit')
+          else if (result.surfaceType === 'sticky') playEvent('sticky')
+          setLastShotResult(buildShotResultNotice(result))
           setTimeout(() => setLastShotResult(null), 3000)
         }
       }
     })
     return () => off?.()
-  }, [sdk, dispatchEvent, userId, gameState.playerStates, hole])
+  }, [sdk, dispatchEvent, userId, gameState.playerStates, hole, playEvent])
 
   // ── Join on mount ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1143,88 +1734,122 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
     return () => {
       sdk.emitEvent?.(MINIGOLF_EVENT_TYPES.LEAVE, { actionId: `leave-${userId}-${Date.now()}`, playerId: userId }, { serverRelay: true })
     }
-  }, [sdk, userId, username])
+  }, [dispatchEvent, myColor, sdk, userId, username])
 
   // ── Actions ──────────────────────────────────────────────────────────────────
   const handleVoteCourse = useCallback((cId) => {
+    playEvent('vote')
     setSelectedCourseId(cId)
     const evt = { eventType: MINIGOLF_EVENT_TYPES.VOTE, payload: { actionId: `vote-${userId}-${Date.now()}`, playerId: userId, courseId: cId }, ts: Date.now() }
     dispatchEvent(evt)
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.VOTE, evt.payload, { serverRelay: true })
-  }, [sdk, userId, dispatchEvent])
+  }, [dispatchEvent, playEvent, sdk, userId])
 
   const handleToggleReady = useCallback(() => {
+    playEvent('ready')
     const ready = !gameState.readyMap[userId]
     const evt = { eventType: MINIGOLF_EVENT_TYPES.READY, payload: { actionId: `ready-${userId}-${Date.now()}`, playerId: userId, ready }, ts: Date.now() }
     dispatchEvent(evt)
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.READY, evt.payload, { serverRelay: true })
-  }, [sdk, userId, gameState.readyMap, dispatchEvent])
+  }, [dispatchEvent, gameState.readyMap, playEvent, sdk, userId])
 
   const handleStartGame = useCallback(() => {
+    playEvent('start')
     const evt = { eventType: MINIGOLF_EVENT_TYPES.START, payload: { actionId: `start-${Date.now()}`, courseId: leadingCourseId }, ts: Date.now() }
     dispatchEvent(evt)
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.START, evt.payload, { serverRelay: true })
-  }, [sdk, leadingCourseId, dispatchEvent])
+  }, [dispatchEvent, leadingCourseId, playEvent, sdk])
 
   const handleChangeColor = useCallback((color) => {
+    playEvent('click')
     setMyColor(color)
     setSettings(prev => ({ ...prev, ballColor: color }))
     const evt = { eventType: MINIGOLF_EVENT_TYPES.COLOR_CHANGE, payload: { actionId: `color-${userId}-${Date.now()}`, playerId: userId, color }, ts: Date.now() }
     dispatchEvent(evt)
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.COLOR_CHANGE, evt.payload, { serverRelay: true })
-  }, [sdk, userId, dispatchEvent])
+  }, [dispatchEvent, playEvent, sdk, userId])
 
   const handleAimDrag = useCallback((aim, opts) => {
     setAimState({ active: !opts?.commit, ...aim })
     if (opts?.commit && aim.power >= 0.08) {
-      playHitSound(aim.power)
+      playEvent('putt', { intensity: 0.8 + aim.power })
       pendingShotRef.current = aim
       const myState = gameState.playerStates[userId]
       const start = myState?.position || hole?.tee || { x: 0, z: 0 }
       const lastCheckpoint = myState?.lastCheckpoint || hole?.tee
+      const activePowerup = myState?.powerupInventory?.[0] || null
+      const collectedPowerupIds = Object.entries(gameState.collectedPowerups || {})
+        .filter(([, collected]) => !!collected)
+        .map(([powerupId]) => powerupId)
 
-      // Start cannon-es visual simulation immediately (before authoritative result)
-      setShotPlayback({
-        actionId: `shot-${userId}-${Date.now()}-pending`,
-        playerId: userId,
-        startPos: { ...start },
-        angle: aim.angle,
-        power: aim.power,
-        finalPosition: null,  // will be filled in when authoritative result arrives
-      })
-
-      runPhysicsAsync({ hole, start, shot: aim, lastCheckpoint }).then(result => {
-        if (result.resultType === 'cup') playHoleSound()
-        else if (result.resultType === 'hazard-reset' || result.resultType === 'lava-reset') playHazardSound()
-        else if (result.collisionCount > 0) playWallSound()
+      runPhysicsAsync({ hole, start, shot: aim, lastCheckpoint, activePowerup, collectedPowerupIds }).then(result => {
+        if (result.resultType === 'cup') playEvent('holeComplete')
+        else if (['hazard-reset', 'lava-reset', 'black-hole'].includes(result.resultType)) playEvent('hazardReset')
+        else if (result.collisionCount > 0) playEvent('wallHit')
+        else if (result.surfaceType === 'sticky') playEvent('sticky')
+        else if (result.surfaceType === 'ice') playEvent('ice')
+        else if (result.surfaceType === 'sand') playEvent('sand')
+        else if (result.surfaceType === 'boost') playEvent('boost')
+        if (result.awardedPowerup) playEvent('powerup')
         const actionId = `shot-${userId}-${Date.now()}`
-        // Update shotPlayback with authoritative final position
-        setShotPlayback(prev => prev ? { ...prev, actionId, finalPosition: result.finalPosition } : null)
+        setShotPlayback({
+          actionId,
+          playerId: userId,
+          startPos: { ...start },
+          angle: aim.angle,
+          power: aim.power,
+          path: result.path || [],
+          finalPosition: result.finalPosition,
+        })
         const evt = {
           eventType: MINIGOLF_EVENT_TYPES.SHOT,
           payload: { actionId, playerId: userId, shot: aim, result },
           ts: Date.now()
         }
+        setLastShotResult(buildShotResultNotice(result))
+        setTimeout(() => setLastShotResult(null), 3000)
         dispatchEvent(evt)
         sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.SHOT, evt.payload, { serverRelay: true })
       })
     }
-  }, [sdk, userId, gameState.playerStates, hole, dispatchEvent])
+  }, [dispatchEvent, gameState.collectedPowerups, gameState.playerStates, hole, playEvent, sdk, userId])
 
   const handleAimCancel   = useCallback(() => setAimState({ active: false, angle: 0, power: 0.25 }), [])
-  const handleShotPlaybackComplete = useCallback(() => setShotPlayback(null), [])
+  const handleShotPlaybackComplete = useCallback(() => {
+    setShotPlayback((current) => {
+      if (current?.playerId && current?.finalPosition) {
+        setGameState((prev) => {
+          const existing = prev.playerStates?.[current.playerId]
+          if (!existing) return prev
+          return {
+            ...prev,
+            playerStates: {
+              ...prev.playerStates,
+              [current.playerId]: {
+                ...existing,
+                position: { ...current.finalPosition },
+              },
+            },
+          }
+        })
+      }
+      return null
+    })
+  }, [])
 
   const handleAdvanceHole = useCallback(() => {
+    playEvent('transition')
     const evt = { eventType: MINIGOLF_EVENT_TYPES.ADVANCE_HOLE, payload: { actionId: `advance-${Date.now()}` }, ts: Date.now() }
     dispatchEvent(evt)
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.ADVANCE_HOLE, evt.payload, { serverRelay: true })
-  }, [sdk, dispatchEvent])
+  }, [dispatchEvent, playEvent, sdk])
 
   const handleRematch = useCallback(() => {
+    playEvent('win')
     const evt = { eventType: MINIGOLF_EVENT_TYPES.REMATCH, payload: { actionId: `rematch-${Date.now()}` }, ts: Date.now() }
     dispatchEvent(evt)
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.REMATCH, evt.payload, { serverRelay: true })
-  }, [sdk, dispatchEvent])
+  }, [dispatchEvent, playEvent, sdk])
 
   const handleAimLeft  = useCallback(() => setAimState(prev => ({ ...prev, active: true, angle: (prev.angle || 0) - 0.1 })), [])
   const handleAimRight = useCallback(() => setAimState(prev => ({ ...prev, active: true, angle: (prev.angle || 0) + 0.1 })), [])
@@ -1266,9 +1891,16 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
               aimState={aimState}
               isMyTurn={isMyTurn}
               shotPlayback={shotPlayback}
+              visiblePowerups={visiblePowerups}
+              cameraMode={settings.cameraMode}
+              trailEnabled={settings.trail}
+              particlesEnabled={settings.particles}
+              powerSensitivity={settings.powerSensitivity}
+              lastShotResult={lastShotResult}
               onAimDrag={handleAimDrag}
               onAimCancel={handleAimCancel}
               onShotPlaybackComplete={handleShotPlaybackComplete}
+              onBlackHoleProximityChange={setBlackHoleProximity}
             />
           </Suspense>
         </Canvas>
@@ -1311,6 +1943,9 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
         onChangeSetting={handleChangeSetting}
         onCloseSettings={() => setShowSettings(false)}
         leaderboard={leaderboard}
+        activePowerup={myActivePowerup}
+        powerupInventory={myPowerupInventory}
+        availablePowerupCount={visiblePowerups.length}
         onAdvanceHole={handleAdvanceHole}
         isLastHole={holeIndex >= holeCount - 1}
         winner={winner}
