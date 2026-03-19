@@ -1,4 +1,10 @@
-import { DEFAULT_BALL_RADIUS, DEFAULT_CUP_RADIUS, SURFACE_PRESETS } from './constants'
+import {
+  DEFAULT_BALL_RADIUS,
+  DEFAULT_CUP_RADIUS,
+  MINIGOLF_POWERUP_DEFS,
+  MINIGOLF_POWERUP_TYPES,
+  SURFACE_PRESETS
+} from './constants'
 
 const DEFAULT_DT = 1 / 90
 const MAX_SIMULATION_STEPS = 900
@@ -24,6 +30,61 @@ const pointInBox = (point, box) => {
     point.z >= box.position.z - halfZ &&
     point.z <= box.position.z + halfZ
   )
+}
+
+const clonePowerup = (powerup) => {
+  if (!powerup?.type) return null
+  const def = MINIGOLF_POWERUP_DEFS[powerup.type]
+  return {
+    ...(def || { id: powerup.type, label: powerup.type, description: '' }),
+    ...powerup
+  }
+}
+
+const getSpawnPointAlongPath = (path, ratio = 0.55) => {
+  if (!Array.isArray(path) || !path.length) return { x: 0, z: 0 }
+  return path[Math.max(0, Math.min(path.length - 1, Math.floor(path.length * ratio)))] || path[path.length - 1]
+}
+
+const buildSpawnedObstacle = (effect, point) => {
+  if (!effect?.spawnObstacleType) return null
+  if (effect.spawnObstacleType === 'bumper-post') {
+    return {
+      id: `bumper-${Date.now().toString(36)}-${Math.round(point.x * 10)}-${Math.round(point.z * 10)}`,
+      type: 'wall',
+      shape: 'box',
+      variant: 'bumper-post',
+      position: { x: point.x, z: point.z },
+      size: { x: 1.15, z: 1.15 },
+      height: 1.45
+    }
+  }
+  return {
+    id: `${effect.spawnObstacleType}-${Date.now().toString(36)}-${Math.round(point.x * 10)}-${Math.round(point.z * 10)}`,
+    type: 'wall',
+    shape: 'box',
+    variant: effect.spawnObstacleType,
+    position: { x: point.x, z: point.z },
+    size: effect.spawnObstacleType === 'spike-strip' ? { x: 2.2, z: 0.65 } : effect.spawnObstacleType === 'pulse-wall' ? { x: 1.2, z: 4.6 } : { x: 1.8, z: 0.9 },
+    height: effect.spawnObstacleType === 'pulse-wall' ? 1.7 : 1.1
+  }
+}
+
+const buildSpawnedHazard = (effect, point) => {
+  if (!effect?.spawnHazardType) return null
+  const movement = effect.spawnHazardMovement === 'orbit'
+    ? { axis: 'x', amplitude: 2.8, speed: 1.7, phase: (point.x + point.z) * 0.2 }
+    : effect.spawnHazardMovement
+      ? { axis: 'z', amplitude: effect.spawnHazardMovement === 'afterimage' ? 2.2 : 3.6, speed: effect.spawnHazardMovement === 'echo' ? 1.55 : 1.25, phase: (point.x - point.z) * 0.15 }
+      : null
+  return {
+    id: `${effect.spawnHazardType}-${Date.now().toString(36)}-${Math.round(point.x * 10)}-${Math.round(point.z * 10)}`,
+    type: effect.spawnHazardType,
+    shape: 'box',
+    position: { x: point.x, z: point.z },
+    size: effect.spawnHazardType === 'black-hole' ? { x: 2.6, z: 2.6 } : effect.spawnHazardType === 'mine' ? { x: 1.2, z: 1.2 } : { x: 1.8, z: 1.8 },
+    movement
+  }
 }
 
 const findCheckpoint = (point, checkpoints = []) => {
@@ -59,7 +120,9 @@ export const sampleSurface = (hole, point) => {
           ...(SURFACE_PRESETS[surface.type] || null),
           friction: Number(surface.friction || SURFACE_PRESETS[surface.type]?.friction || SURFACE_PRESETS.fairway.friction),
           bounce: Number(surface.bounce || SURFACE_PRESETS[surface.type]?.bounce || SURFACE_PRESETS.fairway.bounce),
-          boost: Number(surface.boost || 1)
+          boost: Number(surface.boost || 1),
+          drag: Number(surface.drag || SURFACE_PRESETS[surface.type]?.drag || 1),
+          trapThreshold: Number(surface.trapThreshold || SURFACE_PRESETS[surface.type]?.trapThreshold || 0)
         }
       }
     }
@@ -70,8 +133,20 @@ export const sampleSurface = (hole, point) => {
   }
 }
 
+export const samplePowerup = (hole, point, collectedIds = []) => {
+  const collected = new Set(collectedIds || [])
+  for (const powerup of hole?.powerups || []) {
+    if (collected.has(powerup.id)) continue
+    if (distance2d(point, powerup.position || powerup) <= (powerup.radius || 0.9)) {
+      return clonePowerup(powerup)
+    }
+  }
+  return null
+}
+
 export const sampleHazard = (hole, point) => {
-  for (const hazard of hole?.hazards || []) {
+  for (const hazard of [...(hole?.hazards || []), ...(hole?.dynamicHazards || [])]) {
+    if (hazard?.movement) continue
     if (hazard.shape === 'box' && pointInBox(point, hazard)) {
       return hazard
     }
@@ -150,8 +225,11 @@ export const simulateShot = ({
   start,
   shot,
   lastCheckpoint = null,
+  activePowerup = null,
+  collectedPowerupIds = [],
   ballRadius = DEFAULT_BALL_RADIUS,
-  maxSteps = MAX_SIMULATION_STEPS
+  maxSteps = MAX_SIMULATION_STEPS,
+  gameClockSeconds = 0
 }) => {
   const startPosition = { x: Number(start?.x || 0), z: Number(start?.z || 0) }
   const checkpoint = lastCheckpoint || hole?.tee || startPosition
@@ -160,20 +238,38 @@ export const simulateShot = ({
     : buildShotVector(shot || {})
 
   let position = { ...startPosition }
+  const equippedPowerup = clonePowerup(activePowerup)
   let velocity = { ...initialVelocity }
+  const speedMultiplier = Number(equippedPowerup?.speedMultiplier || (equippedPowerup?.type === MINIGOLF_POWERUP_TYPES.OVERDRIVE ? 1.24 : 1))
+  if (speedMultiplier !== 1) {
+    velocity.x *= speedMultiplier
+    velocity.z *= speedMultiplier
+  }
   let activeCheckpoint = checkpoint
   let time = 0
   let totalDistance = 0
   let lastSurfaceType = 'fairway'
   let collisionCount = 0
+  let awardedPowerup = null
+  const collectedIds = new Set(collectedPowerupIds || [])
+  const newlyCollectedPowerupIds = []
+  const spawnedObstacles = []
+  const spawnedHazards = []
   const path = [{ x: position.x, z: position.z, t: 0 }]
 
   for (let step = 0; step < maxSteps; step += 1) {
-    const surface = sampleSurface(hole, position)
+    const sampledSurface = sampleSurface(hole, position)
+    const surface = sampledSurface.type === 'sticky' && (equippedPowerup?.type === MINIGOLF_POWERUP_TYPES.GRIT || equippedPowerup?.ignoreSticky)
+      ? {
+          ...sampledSurface,
+          type: 'fairway',
+          physics: { ...SURFACE_PRESETS.fairway, boost: sampledSurface.physics?.boost || 1, drag: 1, trapThreshold: 0 }
+        }
+      : sampledSurface
     const slope = surface?.slope || surface?.physics?.slope || hole?.defaultSlope || { x: 0, z: 0 }
     lastSurfaceType = surface.type || 'fairway'
 
-    velocity.x += Number(slope?.x || 0) * DEFAULT_DT
+    velocity.x += (Number(slope?.x || 0) + Number(equippedPowerup?.curveForce || 0) * 0.08) * DEFAULT_DT
     velocity.z += Number(slope?.z || 0) * DEFAULT_DT
 
     const nextPosition = {
@@ -187,13 +283,15 @@ export const simulateShot = ({
     let candidatePosition = boundsCollision.position
     nextVelocity = boundsCollision.velocity
 
-    const obstacleCollision = collideWithBoxes(candidatePosition, nextVelocity, hole?.obstacles || [], ballRadius, surface.physics.bounce)
+    const obstacleCollision = collideWithBoxes(candidatePosition, nextVelocity, [...(hole?.obstacles || []), ...(hole?.dynamicObstacles || [])], ballRadius, surface.physics.bounce * Number(equippedPowerup?.wallRestitutionScale || 1))
     candidatePosition = obstacleCollision.position
     nextVelocity = obstacleCollision.velocity
 
-    const movingColliders = (hole?.movingHazards || []).map((hazard) => ({
+    // Use gameClockSeconds as the base so moving hazards are at their real
+    // world position when the shot is fired, not always starting from t=0.
+    const movingColliders = [...(hole?.movingHazards || []), ...((hole?.dynamicHazards || []).filter((hazard) => hazard?.movement))].map((hazard) => ({
       ...hazard,
-      position: sampleMovingHazardPosition(hazard, time)
+      position: sampleMovingHazardPosition(hazard, gameClockSeconds + time)
     }))
     const movingCollision = collideWithBoxes(candidatePosition, nextVelocity, movingColliders, ballRadius, 0.96)
     candidatePosition = movingCollision.position
@@ -205,6 +303,7 @@ export const simulateShot = ({
 
     const hazard = sampleHazard(hole, candidatePosition)
     if (hazard) {
+      const isBlackHole = hazard.type === 'black-hole'
       return {
         path: [...path, { x: candidatePosition.x, z: candidatePosition.z, t: time + DEFAULT_DT }],
         finalPosition: { ...activeCheckpoint },
@@ -212,11 +311,25 @@ export const simulateShot = ({
         settled: true,
         inHole: false,
         totalDistance,
-        resultType: hazard.type === 'lava' ? 'lava-reset' : 'hazard-reset',
+        resultType: isBlackHole ? 'black-hole' : hazard.type === 'lava' ? 'lava-reset' : 'hazard-reset',
         surfaceType: lastSurfaceType,
         collisionCount,
-        checkpoint: { ...activeCheckpoint }
+        checkpoint: isBlackHole ? { ...(hole?.tee || activeCheckpoint) } : { ...activeCheckpoint },
+        extraStrokes: isBlackHole ? 20 : 0,
+        ballDestroyed: isBlackHole,
+        awardedPowerup,
+        collectedPowerupIds: newlyCollectedPowerupIds,
+        spawnedObstacles,
+        spawnedHazards,
+        consumedPowerup: equippedPowerup
       }
+    }
+
+    const touchedPowerup = samplePowerup(hole, candidatePosition, [...collectedIds])
+    if (touchedPowerup && !collectedIds.has(touchedPowerup.id)) {
+      collectedIds.add(touchedPowerup.id)
+      newlyCollectedPowerupIds.push(touchedPowerup.id)
+      if (!awardedPowerup) awardedPowerup = touchedPowerup
     }
 
     const newCheckpoint = findCheckpoint(candidatePosition, hole?.checkpoints || [])
@@ -225,7 +338,9 @@ export const simulateShot = ({
     }
 
     const cup = hole?.cup || { x: 0, z: 0, radius: DEFAULT_CUP_RADIUS }
-    if (distance2d(candidatePosition, cup) <= (cup.radius || DEFAULT_CUP_RADIUS) && Math.hypot(nextVelocity.x, nextVelocity.z) <= CUP_CAPTURE_SPEED) {
+    const cupRadiusBoost = Number(equippedPowerup?.cupRadiusBonus || (equippedPowerup?.type === MINIGOLF_POWERUP_TYPES.MAGNET ? 0.22 : 0))
+    const cupCaptureSpeed = CUP_CAPTURE_SPEED * Number(equippedPowerup?.cupCaptureSpeedMultiplier || (equippedPowerup?.type === MINIGOLF_POWERUP_TYPES.MAGNET ? 1.25 : 1))
+    if (distance2d(candidatePosition, cup) <= ((cup.radius || DEFAULT_CUP_RADIUS) + cupRadiusBoost) && Math.hypot(nextVelocity.x, nextVelocity.z) <= cupCaptureSpeed) {
       path.push({ x: cup.x, z: cup.z, t: time + DEFAULT_DT })
       return {
         path,
@@ -237,16 +352,28 @@ export const simulateShot = ({
         resultType: 'cup',
         surfaceType: lastSurfaceType,
         collisionCount,
-        checkpoint: { ...activeCheckpoint }
+        checkpoint: { ...activeCheckpoint },
+        awardedPowerup,
+        collectedPowerupIds: newlyCollectedPowerupIds,
+        spawnedObstacles,
+        spawnedHazards,
+        consumedPowerup: equippedPowerup
       }
     }
 
     const distanceStep = Math.hypot(candidatePosition.x - position.x, candidatePosition.z - position.z)
     totalDistance += distanceStep
 
-    const friction = clamp(surface.physics.friction * surface.physics.boost, 0.72, 0.9995)
+    const friction = clamp(surface.physics.friction * surface.physics.boost * (surface.physics.drag || 1) * Number(equippedPowerup?.frictionScale || 1), 0.58, 0.9995)
     nextVelocity.x *= friction
     nextVelocity.z *= friction
+    if (surface.type === 'sticky') {
+      const stickySpeed = Math.hypot(nextVelocity.x, nextVelocity.z)
+      if (stickySpeed <= (surface.physics.trapThreshold || 0)) {
+        nextVelocity.x *= 0.32
+        nextVelocity.z *= 0.32
+      }
+    }
     position = candidatePosition
     velocity = nextVelocity
     time += DEFAULT_DT
@@ -260,6 +387,12 @@ export const simulateShot = ({
     }
   }
 
+  const spawnPoint = getSpawnPointAlongPath(path, 0.55)
+  const spawnedObstacle = buildSpawnedObstacle(equippedPowerup, spawnPoint)
+  if (spawnedObstacle) spawnedObstacles.push(spawnedObstacle)
+  const spawnedHazard = buildSpawnedHazard(equippedPowerup, spawnPoint)
+  if (spawnedHazard) spawnedHazards.push(spawnedHazard)
+
   return {
     path,
     finalPosition: { ...position },
@@ -270,6 +403,11 @@ export const simulateShot = ({
     resultType: 'settled',
     surfaceType: lastSurfaceType,
     collisionCount,
-    checkpoint: { ...activeCheckpoint }
+    checkpoint: { ...activeCheckpoint },
+    awardedPowerup,
+    collectedPowerupIds: newlyCollectedPowerupIds,
+    spawnedObstacles,
+    spawnedHazards,
+    consumedPowerup: equippedPowerup
   }
 }

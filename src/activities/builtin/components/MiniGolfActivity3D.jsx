@@ -649,6 +649,124 @@ export function playHazardSound() {
   playTone({ freq: 150, type: 'sawtooth', duration: 0.25, gain: 0.2 })
 }
 
+// ─── Hole preview overlay (shown for ~3 s before play starts on each hole) ───
+function HolePreviewOverlay({ hole, holeIndex, course, onDone }) {
+  const [progress, setProgress] = useState(0)
+  const DURATION = 3200 // ms
+
+  useEffect(() => {
+    setProgress(0)
+    const start = performance.now()
+    let raf
+    const tick = () => {
+      const p = Math.min(1, (performance.now() - start) / DURATION)
+      setProgress(p)
+      if (p < 1) { raf = requestAnimationFrame(tick) } else { onDone?.() }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [hole?.id, onDone])
+
+  if (!hole) return null
+  const palette = course?.palette || {}
+  const accent = palette.accent || '#38bdf8'
+  const bg = palette.backgroundBottom || '#091223'
+
+  // Fade in then fade out
+  const opacity = progress < 0.15
+    ? progress / 0.15
+    : progress > 0.78
+      ? 1 - (progress - 0.78) / 0.22
+      : 1
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 30,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      background: `${bg}ee`,
+      opacity,
+      pointerEvents: 'none',
+      fontFamily: 'system-ui,-apple-system,sans-serif',
+      transition: 'opacity 0.1s',
+    }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', color: accent, marginBottom: 10 }}>
+        {course?.name || 'Course'}
+      </div>
+      <div style={{ fontSize: 52, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.04em', lineHeight: 1 }}>
+        Hole {holeIndex + 1}
+      </div>
+      <div style={{ fontSize: 16, color: accent, marginTop: 8, fontWeight: 600 }}>
+        Par {hole.par || 3}
+      </div>
+      {hole.name && (
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 6 }}>
+          {hole.name}
+        </div>
+      )}
+
+      {/* Mini top-down layout sketch */}
+      <div style={{ marginTop: 24, position: 'relative', width: 220, height: 120 }}>
+        <svg width="220" height="120" style={{ position: 'absolute', inset: 0 }}>
+          {/* Bounds outline */}
+          {(() => {
+            const b = hole.bounds || { minX: -18, maxX: 18, minZ: -12, maxZ: 12 }
+            const scaleX = 200 / Math.max(1, b.maxX - b.minX)
+            const scaleZ = 100 / Math.max(1, b.maxZ - b.minZ)
+            const toSvg = (x, z) => ({
+              sx: 10 + (x - b.minX) * scaleX,
+              sy: 10 + (z - b.minZ) * scaleZ,
+            })
+            const tee = toSvg(hole.tee?.x || 0, hole.tee?.z || 0)
+            const cup = toSvg(hole.cup?.x || 0, hole.cup?.z || 0)
+            return (
+              <>
+                <rect x="10" y="10" width="200" height="100" rx="4"
+                  fill={`${palette.rough || '#2d6a43'}44`}
+                  stroke={`${accent}66`} strokeWidth="1.5" />
+                {/* Surfaces */}
+                {(hole.surfaces || []).map((s, i) => {
+                  const p = toSvg(s.position?.x || 0, s.position?.z || 0)
+                  const w = (s.size?.x || 2) * scaleX
+                  const h = (s.size?.z || 2) * scaleZ
+                  const surfColor = s.type === 'ice' ? '#a8dcff' : s.type === 'sand' ? '#c8ad6f' : s.type === 'boost' ? '#78f4d7' : s.type === 'sticky' ? '#6b5a7b' : `${palette.fairway || '#5cae63'}88`
+                  return <rect key={i} x={p.sx - w / 2} y={p.sy - h / 2} width={w} height={h} fill={surfColor} opacity="0.7" rx="2" />
+                })}
+                {/* Obstacles */}
+                {(hole.obstacles || []).map((o, i) => {
+                  const p = toSvg(o.position?.x || 0, o.position?.z || 0)
+                  const w = Math.max(3, (o.size?.x || 1) * scaleX)
+                  const h = Math.max(3, (o.size?.z || 1) * scaleZ)
+                  return <rect key={i} x={p.sx - w / 2} y={p.sy - h / 2} width={w} height={h} fill={palette.wall || '#e2edf9'} opacity="0.8" rx="1" />
+                })}
+                {/* Moving hazards */}
+                {(hole.movingHazards || []).map((h2, i) => {
+                  const p = toSvg(h2.position?.x || 0, h2.position?.z || 0)
+                  return <circle key={i} cx={p.sx} cy={p.sy} r="5" fill={palette.accent || '#ff8b5c'} opacity="0.7" />
+                })}
+                {/* Tee */}
+                <circle cx={tee.sx} cy={tee.sy} r="5" fill="#4ade80" stroke="#fff" strokeWidth="1.5" />
+                {/* Cup */}
+                <circle cx={cup.sx} cy={cup.sy} r="5" fill={accent} stroke="#fff" strokeWidth="1.5" />
+                {/* Line tee→cup */}
+                <line x1={tee.sx} y1={tee.sy} x2={cup.sx} y2={cup.sy}
+                  stroke={`${accent}55`} strokeWidth="1" strokeDasharray="4 3" />
+              </>
+            )
+          })()}
+        </svg>
+        <div style={{ position: 'absolute', bottom: -18, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+          <span>● Tee</span><span>● Cup</span>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginTop: 36, width: 180, height: 3, background: 'rgba(255,255,255,0.12)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${progress * 100}%`, height: '100%', background: accent, transition: 'width 0.05s linear' }} />
+      </div>
+    </div>
+  )
+}
+
 const HoleTransitionCloud = React.memo(function HoleTransitionCloud({ hole, transitionKey, color = '#ffffff' }) {
   const refs = useRef([])
   const startedAtRef = useRef(performance.now())
@@ -772,7 +890,7 @@ function ShotPlaybackController({ playbackRef, path = [], finalPosition, onCompl
   return null
 }
 
-function SceneCamera({ followTarget, cup, holeBounds, playbackRef, orbitControlsRef, cameraMode = 'follow', resetKey }) {
+function SceneCamera({ followTarget, teePosition, cup, holeBounds, playbackRef, orbitControlsRef, cameraMode = 'follow', resetKey }) {
   const camRef = useRef()
   const offsetRef = useRef(cloneMiniGolfCameraOffset(cameraMode))
   const hasBootedRef = useRef(false)
@@ -781,9 +899,13 @@ function SceneCamera({ followTarget, cup, holeBounds, playbackRef, orbitControls
   const resetKeyRef = useRef(null)
 
   useEffect(() => {
-    if (!camRef.current || !orbitControlsRef?.current || !followTarget) return
+    if (!camRef.current || !orbitControlsRef?.current) return
     const ctrl = orbitControlsRef.current
-    const nextTarget = getMiniGolfCameraTargetVector(followTarget)
+    // On hole change, snap to the tee position so the camera starts at the
+    // beginning of the new hole rather than drifting from the old cup.
+    const snapTarget = teePosition || followTarget
+    if (!snapTarget) return
+    const nextTarget = getMiniGolfCameraTargetVector(snapTarget)
     const baseOffset = cloneMiniGolfCameraOffset(cameraMode)
     const shouldReset = shouldResetMiniGolfCamera({
       hasBooted: hasBootedRef.current,
@@ -800,7 +922,7 @@ function SceneCamera({ followTarget, cup, holeBounds, playbackRef, orbitControls
       ctrl.update()
       pauseFollowUntilRef.current = 0
     }
-  }, [cameraMode, followTarget, orbitControlsRef, resetKey])
+  }, [cameraMode, followTarget, teePosition, orbitControlsRef, resetKey])
 
   useEffect(() => {
     const ctrl = orbitControlsRef?.current
@@ -978,6 +1100,7 @@ function MiniGolfWorld({
 
       <SceneCamera
         followTarget={cameraTarget}
+        teePosition={hole?.tee}
         cup={hole?.cup}
         holeBounds={hole?.bounds}
         playbackRef={playbackRef}
@@ -1592,7 +1715,14 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   const [lastShotResult, setLastShotResult] = useState(null)
   const [selectedCourseId, setSelectedCourseId] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showHolePreview, setShowHolePreview] = useState(false)
   const [myColor, setMyColor]           = useState(BALL_COLOR_OPTIONS[0])
+  // Track game clock for physics (so moving hazards are at correct position)
+  const gameClockRef = useRef(0)
+  useEffect(() => {
+    const id = setInterval(() => { gameClockRef.current += 0.1 }, 100)
+    return () => clearInterval(id)
+  }, [])
   const [settings, setSettings]         = useState({
     ballColor: BALL_COLOR_OPTIONS[0],
     trail: true,
@@ -1748,6 +1878,16 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
     return () => off?.()
   }, [sdk, dispatchEvent, userId, gameState.playerStates, hole, playEvent])
 
+  // ── Show hole preview when hole changes during PLAYING phase ─────────────────
+  const prevHoleIndexRef = useRef(-1)
+  useEffect(() => {
+    if (phase !== MINIGOLF_PHASES.PLAYING) return
+    if (holeIndex !== prevHoleIndexRef.current) {
+      prevHoleIndexRef.current = holeIndex
+      setShowHolePreview(true)
+    }
+  }, [phase, holeIndex])
+
   // ── Join on mount ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!sdk) return
@@ -1810,7 +1950,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
         .filter(([, collected]) => !!collected)
         .map(([powerupId]) => powerupId)
 
-      runPhysicsAsync({ hole, start, shot: aim, lastCheckpoint, activePowerup, collectedPowerupIds }).then(result => {
+      runPhysicsAsync({ hole, start, shot: aim, lastCheckpoint, activePowerup, collectedPowerupIds, gameClockSeconds: gameClockRef.current }).then(result => {
         if (result.resultType === 'cup') playEvent('holeComplete')
         else if (['hazard-reset', 'lava-reset', 'black-hole'].includes(result.resultType)) playEvent('hazardReset')
         else if (result.collisionCount > 0) playEvent('wallHit')
@@ -1933,6 +2073,16 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
           </Suspense>
         </Canvas>
       </WebGLErrorBoundary>
+
+      {/* Hole preview overlay – shown for ~3s when a new hole starts */}
+      {showHolePreview && phase === MINIGOLF_PHASES.PLAYING && hole && (
+        <HolePreviewOverlay
+          hole={hole}
+          holeIndex={holeIndex}
+          course={course}
+          onDone={() => setShowHolePreview(false)}
+        />
+      )}
 
       {/* HUD is a regular React portal OUTSIDE the Canvas – mirrors VoltCraft exactly */}
       <MiniGolfHUD
