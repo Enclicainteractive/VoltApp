@@ -637,6 +637,7 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
   useEffect(() => {
     if (phase !== 'countdown') return undefined
     let lastSecond = null
+    let liveSent = false
     setCountdownNow(Date.now())
     const interval = window.setInterval(() => {
       const now = Date.now()
@@ -646,8 +647,8 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
         lastSecond = remaining
         audioRef.current.countdown(remaining)
       }
-      if (now >= countdownEndsAt && isHost && !countdownStartedRef.current) {
-        countdownStartedRef.current = true
+      if (now >= countdownEndsAt && isHost && !liveSent) {
+        liveSent = true
         sendEvent('retrorift:phase', {
           phase: 'live',
           status: `${mapConfigRef.current.name} is live. First to ${matchConfigRef.current.fragTarget} frags takes the rift.`,
@@ -934,7 +935,8 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
       pickups: freshPickups,
       winnerId: null
     })
-    // Apply locally without resetting ready state – the event echo will do that
+    // Apply locally – keep ready:true so allReady stays true until phase changes
+    setPlayers(playersForStart)
     setPickups(freshPickups)
     setWinnerId(null)
     setCountdownEndsAt(countdownEndsAt)
