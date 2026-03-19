@@ -1568,8 +1568,10 @@ function MiniGolfHUD({
 
 // ─── Main activity component ──────────────────────────────────────────────────
 const MiniGolfActivity3D = ({ sdk, currentUser }) => {
-  const userId   = currentUser?.id       || `guest-${Math.random().toString(36).slice(2)}`
+  const guestIdRef = useRef(`guest-${Math.random().toString(36).slice(2)}`)
+  const userId   = currentUser?.id || guestIdRef.current
   const username = currentUser?.username || 'Player'
+  const initialJoinColorRef = useRef(BALL_COLOR_OPTIONS[0])
   const {
     playEvent,
     startBackgroundMusic,
@@ -1602,6 +1604,10 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
 
   const seenEventsRef  = useRef(new Set())
   const pendingShotRef = useRef(null)
+  const persistState = useCallback((nextState, cue = 'minigolf_state') => {
+    if (!sdk) return
+    sdk.updateState?.({ miniGolf: nextState }, { serverRelay: true, cue })
+  }, [sdk])
 
   // ── Derived state ────────────────────────────────────────────────────────────
   const phase          = gameState.phase
@@ -1687,6 +1693,28 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
     setGameState(prev => applyMiniGolfEvent(prev, evt))
   }, [])
 
+  const applyLocalEvent = useCallback((evt, cue = 'minigolf_event') => {
+    const id = buildMiniGolfEventId(evt)
+    if (!rememberMiniGolfEvent(seenEventsRef, id)) return
+    setGameState((prev) => {
+      const next = applyMiniGolfEvent(prev, evt)
+      if (next !== prev) persistState(next, cue)
+      return next
+    })
+  }, [persistState])
+
+  useEffect(() => {
+    if (!sdk?.subscribeServerState) return undefined
+    const off = sdk.subscribeServerState((serverState) => {
+      const nextState = serverState?.miniGolf
+      if (!nextState || typeof nextState !== 'object' || !Array.isArray(nextState.players) || !nextState.phase) return
+      setGameState(nextState)
+    })
+    return () => {
+      try { off?.() } catch {}
+    }
+  }, [sdk])
+
   useEffect(() => {
     if (!sdk) return
     const off = sdk.on?.('event', (evt) => {
@@ -1726,48 +1754,48 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
     const actionId = `join-${userId}-${Date.now()}`
     const evt = {
       eventType: MINIGOLF_EVENT_TYPES.JOIN,
-      payload: { actionId, playerId: userId, username, color: myColor },
+      payload: { actionId, playerId: userId, username, color: initialJoinColorRef.current },
       ts: Date.now()
     }
-    dispatchEvent(evt)
+    applyLocalEvent(evt, 'minigolf_join')
     sdk.emitEvent?.(MINIGOLF_EVENT_TYPES.JOIN, evt.payload, { serverRelay: true })
     return () => {
       sdk.emitEvent?.(MINIGOLF_EVENT_TYPES.LEAVE, { actionId: `leave-${userId}-${Date.now()}`, playerId: userId }, { serverRelay: true })
     }
-  }, [dispatchEvent, myColor, sdk, userId, username])
+  }, [applyLocalEvent, sdk, userId, username])
 
   // ── Actions ──────────────────────────────────────────────────────────────────
   const handleVoteCourse = useCallback((cId) => {
     playEvent('vote')
     setSelectedCourseId(cId)
     const evt = { eventType: MINIGOLF_EVENT_TYPES.VOTE, payload: { actionId: `vote-${userId}-${Date.now()}`, playerId: userId, courseId: cId }, ts: Date.now() }
-    dispatchEvent(evt)
+    applyLocalEvent(evt, 'minigolf_vote')
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.VOTE, evt.payload, { serverRelay: true })
-  }, [dispatchEvent, playEvent, sdk, userId])
+  }, [applyLocalEvent, playEvent, sdk, userId])
 
   const handleToggleReady = useCallback(() => {
     playEvent('ready')
     const ready = !gameState.readyMap[userId]
     const evt = { eventType: MINIGOLF_EVENT_TYPES.READY, payload: { actionId: `ready-${userId}-${Date.now()}`, playerId: userId, ready }, ts: Date.now() }
-    dispatchEvent(evt)
+    applyLocalEvent(evt, 'minigolf_ready')
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.READY, evt.payload, { serverRelay: true })
-  }, [dispatchEvent, gameState.readyMap, playEvent, sdk, userId])
+  }, [applyLocalEvent, gameState.readyMap, playEvent, sdk, userId])
 
   const handleStartGame = useCallback(() => {
     playEvent('start')
     const evt = { eventType: MINIGOLF_EVENT_TYPES.START, payload: { actionId: `start-${Date.now()}`, courseId: leadingCourseId }, ts: Date.now() }
-    dispatchEvent(evt)
+    applyLocalEvent(evt, 'minigolf_start')
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.START, evt.payload, { serverRelay: true })
-  }, [dispatchEvent, leadingCourseId, playEvent, sdk])
+  }, [applyLocalEvent, leadingCourseId, playEvent, sdk])
 
   const handleChangeColor = useCallback((color) => {
     playEvent('click')
     setMyColor(color)
     setSettings(prev => ({ ...prev, ballColor: color }))
     const evt = { eventType: MINIGOLF_EVENT_TYPES.COLOR_CHANGE, payload: { actionId: `color-${userId}-${Date.now()}`, playerId: userId, color }, ts: Date.now() }
-    dispatchEvent(evt)
+    applyLocalEvent(evt, 'minigolf_color')
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.COLOR_CHANGE, evt.payload, { serverRelay: true })
-  }, [dispatchEvent, playEvent, sdk, userId])
+  }, [applyLocalEvent, playEvent, sdk, userId])
 
   const handleAimDrag = useCallback((aim, opts) => {
     setAimState({ active: !opts?.commit, ...aim })
@@ -1808,11 +1836,11 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
         }
         setLastShotResult(buildShotResultNotice(result))
         setTimeout(() => setLastShotResult(null), 3000)
-        dispatchEvent(evt)
+        applyLocalEvent(evt, 'minigolf_shot')
         sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.SHOT, evt.payload, { serverRelay: true })
       })
     }
-  }, [dispatchEvent, gameState.collectedPowerups, gameState.playerStates, hole, playEvent, sdk, userId])
+  }, [applyLocalEvent, gameState.collectedPowerups, gameState.playerStates, hole, playEvent, sdk, userId])
 
   const handleAimCancel   = useCallback(() => setAimState({ active: false, angle: 0, power: 0.25 }), [])
   const handleShotPlaybackComplete = useCallback(() => {
@@ -1840,16 +1868,16 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   const handleAdvanceHole = useCallback(() => {
     playEvent('transition')
     const evt = { eventType: MINIGOLF_EVENT_TYPES.ADVANCE_HOLE, payload: { actionId: `advance-${Date.now()}` }, ts: Date.now() }
-    dispatchEvent(evt)
+    applyLocalEvent(evt, 'minigolf_advance_hole')
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.ADVANCE_HOLE, evt.payload, { serverRelay: true })
-  }, [dispatchEvent, playEvent, sdk])
+  }, [applyLocalEvent, playEvent, sdk])
 
   const handleRematch = useCallback(() => {
     playEvent('win')
     const evt = { eventType: MINIGOLF_EVENT_TYPES.REMATCH, payload: { actionId: `rematch-${Date.now()}` }, ts: Date.now() }
-    dispatchEvent(evt)
+    applyLocalEvent(evt, 'minigolf_rematch')
     sdk?.emitEvent?.(MINIGOLF_EVENT_TYPES.REMATCH, evt.payload, { serverRelay: true })
-  }, [dispatchEvent, playEvent, sdk])
+  }, [applyLocalEvent, playEvent, sdk])
 
   const handleAimLeft  = useCallback(() => setAimState(prev => ({ ...prev, active: true, angle: (prev.angle || 0) - 0.1 })), [])
   const handleAimRight = useCallback(() => setAimState(prev => ({ ...prev, active: true, angle: (prev.angle || 0) + 0.1 })), [])
