@@ -24,12 +24,29 @@
  * 20. Proper pointer lock handling throughout
  */
 import React, {
-  useCallback, useEffect, useRef, useState, Suspense
+  useCallback, useEffect, useRef, useState, Suspense, useMemo
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { initCollision, setCollisionChanges, resolveAABB, isWaterBlock, raycastVoxel } from './voltcraft/collision'
+import { createVoltCraftAudio } from './voltcraft/audio'
+import GameCanvasShell from './shared/GameCanvasShell'
+import {
+  SURVIVAL_RECIPES,
+  QUESTS,
+  WORLD_HINTS,
+  addResources,
+  canCraftRecipe,
+  createStarterResources,
+  formatItemLabel,
+  getDropRewards,
+  getMissingIngredients,
+  getQuestCompletion,
+  getTopResources,
+  removeResources,
+} from './voltcraft/gameplay'
+import { shouldIgnoreActivityHotkey } from './shared/hotkeys'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CHUNK_SIZE      = 16
@@ -357,10 +374,118 @@ const INVENTORY_CATEGORIES = {
 }
 
 // ─── Shared chunk material (vertex colors) ────────────────────────────────────
-const CHUNK_MAT = new THREE.MeshLambertMaterial({
+const CHUNK_MAT = new THREE.MeshStandardMaterial({
   vertexColors: true,
   side: THREE.FrontSide,
+  roughness: 0.96,
+  metalness: 0.02,
 })
+
+const SKY_TIMELINE = [
+  { minute: 0, skyTop: '#07111f', skyBottom: '#16243d', fog: '#29415b', horizon: '#ffe3b3', sun: '#f3f4f6' },
+  { minute: 360, skyTop: '#f59e0b', skyBottom: '#fed7aa', fog: '#fdba74', horizon: '#fff1c7', sun: '#ffd27a' },
+  { minute: 480, skyTop: '#7dd3fc', skyBottom: '#cfeeff', fog: '#a7d8ff', horizon: '#f8fafc', sun: '#fff3c4' },
+  { minute: 720, skyTop: '#60a5fa', skyBottom: '#d7f0ff', fog: '#9fd2ff', horizon: '#eef8ff', sun: '#fff0ae' },
+  { minute: 1080, skyTop: '#fb7185', skyBottom: '#fda4af', fog: '#f59e9e', horizon: '#ffe7c2', sun: '#ffd1a1' },
+  { minute: 1200, skyTop: '#091223', skyBottom: '#1f355c', fog: '#304663', horizon: '#b8d9ff', sun: '#dbeafe' },
+  { minute: 1440, skyTop: '#07111f', skyBottom: '#16243d', fog: '#29415b', horizon: '#ffe3b3', sun: '#f3f4f6' },
+]
+
+function hexToRgb(hex) {
+  const normalized = hex.replace('#', '')
+  const value = normalized.length === 3
+    ? normalized.split('').map((char) => char + char).join('')
+    : normalized
+  const int = parseInt(value, 16)
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255,
+  }
+}
+
+function mixHex(a, b, t) {
+  const from = hexToRgb(a)
+  const to = hexToRgb(b)
+  const blend = (x, y) => Math.round(x + (y - x) * t)
+  return `#${[blend(from.r, to.r), blend(from.g, to.g), blend(from.b, to.b)].map((v) => v.toString(16).padStart(2, '0')).join('')}`
+}
+
+function getSkyPalette(time = 720) {
+  const minute = ((Number(time) || 0) % 1440 + 1440) % 1440
+  let nextIndex = SKY_TIMELINE.findIndex((entry) => minute < entry.minute)
+  if (nextIndex <= 0) nextIndex = 1
+  const prev = SKY_TIMELINE[nextIndex - 1]
+  const next = SKY_TIMELINE[nextIndex]
+  const range = Math.max(next.minute - prev.minute, 1)
+  const t = (minute - prev.minute) / range
+  return {
+    skyTop: mixHex(prev.skyTop, next.skyTop, t),
+    skyBottom: mixHex(prev.skyBottom, next.skyBottom, t),
+    fog: mixHex(prev.fog, next.fog, t),
+    horizon: mixHex(prev.horizon, next.horizon, t),
+    sun: mixHex(prev.sun, next.sun, t),
+  }
+}
+
+function getThreatLevel(time, weather) {
+  if (weather === '🌧️' && (time >= 1080 || time < 420)) return 'High'
+  if (time >= 1200 || time < 360) return 'Elevated'
+  if (weather === '🌧️') return 'Medium'
+  return 'Low'
+}
+
+function EnvironmentShell({ time, weather }) {
+  const palette = useMemo(() => getSkyPalette(time), [time])
+  const cloudData = useMemo(() => ([
+    { x: -64, y: 54, z: -40, s: [18, 5, 8] },
+    { x: -18, y: 60, z: 26, s: [15, 4, 7] },
+    { x: 34, y: 58, z: -18, s: [16, 5, 7] },
+    { x: 70, y: 62, z: 34, s: [22, 6, 9] },
+  ]), [])
+  const cloudGroupRef = useRef(null)
+  const weatherBoost = weather === '🌧️' ? 0.18 : 0
+
+  useFrame((state) => {
+    if (!cloudGroupRef.current) return
+    cloudGroupRef.current.position.x = Math.sin(state.clock.elapsedTime * 0.02) * 10
+  })
+
+  return (
+    <>
+      <fog attach="fog" args={[palette.fog, FOG_NEAR * 0.72, FOG_FAR * 1.08]} />
+      <ambientLight intensity={0.48 + weatherBoost * 0.3} color={palette.horizon} />
+      <hemisphereLight args={[palette.skyTop, '#355e3b', 0.7]} />
+      <directionalLight position={[24, 34, 10]} intensity={1.15 - weatherBoost * 0.18} color={palette.sun} castShadow={false} />
+      <directionalLight position={[-16, 12, -20]} intensity={0.28} color={palette.horizon} castShadow={false} />
+
+      <mesh position={[0, 0, 0]} scale={1}>
+        <sphereGeometry args={[FOG_FAR * 0.72, 32, 32]} />
+        <meshBasicMaterial color={palette.skyBottom} side={THREE.BackSide} fog={false} />
+      </mesh>
+
+      <mesh position={[0, 22, -FOG_FAR * 0.15]} rotation={[-Math.PI / 2.12, 0, 0]}>
+        <planeGeometry args={[FOG_FAR * 1.25, FOG_FAR * 0.7]} />
+        <meshBasicMaterial color={palette.horizon} transparent opacity={0.18} fog={false} depthWrite={false} />
+      </mesh>
+
+      <group ref={cloudGroupRef}>
+        {cloudData.map((cloud, index) => (
+          <mesh key={`${cloud.x}-${cloud.z}`} position={[cloud.x, cloud.y + index * 0.6, cloud.z]}>
+            <sphereGeometry args={[4.6, 12, 12]} />
+            <meshStandardMaterial color="#f8fbff" transparent opacity={0.16 + weatherBoost * 0.08} emissive="#ffffff" emissiveIntensity={0.05} />
+          </mesh>
+        ))}
+        {cloudData.map((cloud, index) => (
+          <mesh key={`trail-${cloud.x}-${cloud.z}`} position={[cloud.x + 5, cloud.y - 0.8, cloud.z + 2]}>
+            <boxGeometry args={cloud.s} />
+            <meshStandardMaterial color="#ffffff" transparent opacity={0.11 + weatherBoost * 0.06} />
+          </mesh>
+        ))}
+      </group>
+    </>
+  )
+}
 
 // ─── Worker bridge ────────────────────────────────────────────────────────────
 class VCWorker {
@@ -390,6 +515,7 @@ class VCWorker {
   placeBlock(x, y, z, blockName) { return this._send('placeBlock', { x, y, z, blockName }) }
   explodeTNT(x, y, z, radius) { return this._send('explodeTNT', { x, y, z, radius }) }
   getTerrainHeight(x, z)   { return this._send('getTerrainHeight', { x, z }) }
+  getSurfaceAnchor(x, z)   { return this._send('getSurfaceAnchor', { x, z }) }
   setWorldChanges(changes)  { return this._send('setWorldChanges', { changes }) }
   terminate() { this._w?.terminate(); this._w = null; this._p.clear() }
 }
@@ -408,8 +534,11 @@ function listSavedWorlds() {
   }
   return worlds.sort((a, b) => b.savedAt - a.savedAt)
 }
-function saveWorld(worldId, name, seed, changes) {
-  localStorage.setItem(SAVE_KEY_PREFIX + worldId, JSON.stringify({ name, seed, changes, savedAt: Date.now() }))
+function saveWorld(worldId, payload) {
+  localStorage.setItem(SAVE_KEY_PREFIX + worldId, JSON.stringify({
+    ...payload,
+    savedAt: Date.now(),
+  }))
 }
 function loadWorld(worldId) {
   try { return JSON.parse(localStorage.getItem(SAVE_KEY_PREFIX + worldId)) } catch { return null }
@@ -525,9 +654,11 @@ function WorldScene({
   chunks, players, localId, armedTnt,
   localPosRef, chunkRef, setChunkState, setPosSample,
   selectedSlot,
+  time, weather,
   mode, paused, setPaused, setPointerLocked,
   onInteract, onSelectSlot, onToggleInventory, onToggleWorldMenu,
   showInventory, showWorldMenu, hoveredRef, isOp, setBreakProgress,
+  onJump,
 }) {
   const keys      = useRef({})
   const selectedSlotRef = useRef(0)
@@ -605,7 +736,7 @@ function WorldScene({
     }
 
     const kd = e => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (shouldIgnoreActivityHotkey(e)) return
       if (e.repeat && ['KeyP', 'KeyE', 'KeyM'].includes(e.code)) return
       switch (e.code) {
         case 'KeyW': case 'ArrowUp':    keys.current.fwd = true; break
@@ -622,6 +753,7 @@ function WorldScene({
             lastJumpTapAt.current = now
             jumpHeld.current = true
           }
+          if (document.pointerLockElement === gl.domElement) onJump?.()
           keys.current.jmp = true
           e.preventDefault()
           break
@@ -728,7 +860,7 @@ function WorldScene({
       gl.domElement.removeEventListener('contextmenu', preventContextMenu)
       document.removeEventListener('pointerlockchange', lc)
     }
-  }, [gl.domElement, mode, paused, showInventory, showWorldMenu, onInteract, setBreakProgress, setPaused, setPointerLocked, onSelectSlot, onToggleInventory, onToggleWorldMenu, hoveredRef])
+  }, [gl.domElement, mode, paused, showInventory, showWorldMenu, onInteract, setBreakProgress, setPaused, setPointerLocked, onSelectSlot, onToggleInventory, onToggleWorldMenu, hoveredRef, onJump])
 
   // ── Game loop ───────────────────────────────────────────────────────────────
   useFrame((state, delta) => {
@@ -935,10 +1067,7 @@ function WorldScene({
 
   return (
     <>
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[10, 20, 8]} intensity={1.2} castShadow={false} />
-      <hemisphereLight args={['#87ceeb', '#2d6a43', 0.5]} />
-      <fog attach="fog" args={['#9fd2ff', FOG_NEAR, FOG_FAR]} />
+      <EnvironmentShell time={time} weather={weather} />
 
       {visibleChunkKeys.map((key, index) => {
         const chunk = chunks[key]
@@ -969,6 +1098,10 @@ function VoltCraftHUD({
   savedWorlds, onLoadWorld, onNewWorld, onDeleteWorld,
   containerRef, isOp, onToggleOp, onSetMode,
   pointerLocked,
+  resources, biomeInfo, discoveredBiomes,
+  activeQuest, questCompletion,
+  audioEnabled, onToggleAudio,
+  questBanner,
 }) {
   const [hotbarHover, setHotbarHover] = useState(-1)
   const hpPct = health / maxHealth
@@ -984,9 +1117,10 @@ function VoltCraftHUD({
     'torch', 'oak_planks', 'cobblestone', 'crafting_table', 'furnace',
     'glass', 'tnt', 'copper_wire', 'power_source',
   ])].slice(0, 14)
-  const survivalCrafts = CRAFTING_RECIPES.filter((recipe) => (
-    ['flint_and_steel', 'tnt', 'copper_wire', 'power_source'].includes(recipe.key)
-  ))
+  const survivalCrafts = SURVIVAL_RECIPES
+  const trackedResources = getTopResources(resources, 12)
+  const activeQuestObjectives = questCompletion?.objectives || []
+  const threatLevel = getThreatLevel(time, weather)
 
   if (!containerRef.current) return null
 
@@ -1045,6 +1179,8 @@ function VoltCraftHUD({
             <div>Pos: {pos.map(v=>Math.round(v)).join(', ')}</div>
             <div>Chunk: {currentChunk.x},{currentChunk.z}</div>
             <div style={{ color: isDay ? '#fbbf24' : '#818cf8' }}>{timeStr} {weather}</div>
+            {biomeInfo?.biome && <div>Biome: <span style={{ color:'#86efac' }}>{formatItemLabel(biomeInfo.biome)}</span></div>}
+            <div>Threat: <span style={{ color: threatLevel === 'High' ? '#f87171' : threatLevel === 'Elevated' ? '#fbbf24' : '#93c5fd' }}>{threatLevel}</span></div>
           </div>
           <div style={{ height:1, background:'#1f2937', margin:'4px 0 4px' }} />
           <div style={{ fontSize:10, color:'#6b7280', minHeight:14 }}>{statusMsg}</div>
@@ -1056,6 +1192,11 @@ function VoltCraftHUD({
         <div style={{ position:'absolute', top:12, right:12, width:170, background:'rgba(13,17,23,0.88)', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', color:'#f9fafb', pointerEvents:'auto' }}>
           <div style={{ fontSize:12, fontWeight:'bold', marginBottom:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{worldName}</div>
           <div style={{ fontSize:10, color:'#6b7280', marginBottom:8 }}>{savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString()}` : 'Unsaved'}</div>
+          {biomeInfo?.biome && (
+            <div style={{ fontSize:10, color:'#93c5fd', marginBottom:6 }}>
+              {formatItemLabel(biomeInfo.biome)} · {WORLD_HINTS[biomeInfo.biome] || 'Chart the area and keep moving.'}
+            </div>
+          )}
           <button onClick={onSave} style={{ width:'100%', padding:'5px 0', background:'#14532d', color:'#fff', border:'none', borderRadius:4, fontSize:11, cursor:'pointer', marginBottom:4 }}>💾 Save</button>
           <button onClick={onToggleWorldMenu} style={{ width:'100%', padding:'5px 0', background:'#1f2937', color:'#9ca3af', border:'none', borderRadius:4, fontSize:11, cursor:'pointer' }}>🌍 Worlds (M)</button>
         </div>
@@ -1071,6 +1212,47 @@ function VoltCraftHUD({
               <div style={{ width:`${Math.round(breakProgress.progress * 100)}%`, height:'100%', background:'linear-gradient(90deg,#f59e0b,#ef4444)', transition:'width 0.05s linear' }} />
             </div>
           )}
+        </div>
+      )}
+
+      {!paused && !showInventory && !showWorldMenu && questBanner && (
+        <div style={{ position:'absolute', top:72, left:'50%', transform:'translateX(-50%)', background:'linear-gradient(90deg, rgba(30,41,59,0.92), rgba(22,101,52,0.92))', border:'1px solid rgba(134,239,172,0.35)', borderRadius:999, padding:'8px 16px', color:'#f8fafc', fontSize:12, pointerEvents:'none', boxShadow:'0 10px 28px rgba(0,0,0,0.25)' }}>
+          {questBanner}
+        </div>
+      )}
+
+      {!paused && !showInventory && !showWorldMenu && activeQuest && (
+        <div style={{ position:'absolute', right:12, bottom:92, width:260, background:'rgba(13,17,23,0.9)', border:'1px solid #263244', borderRadius:10, padding:'10px 12px', color:'#f9fafb', pointerEvents:'auto' }}>
+          <div style={{ fontSize:11, color:'#93c5fd', letterSpacing:0.4, textTransform:'uppercase' }}>Expedition Journal</div>
+          <div style={{ fontSize:15, fontWeight:'bold', margin:'3px 0 4px' }}>{activeQuest.title}</div>
+          <div style={{ fontSize:10, color:'#94a3b8', lineHeight:1.5, marginBottom:8 }}>{activeQuest.description}</div>
+          <div style={{ display:'grid', gap:6 }}>
+            {activeQuestObjectives.map((objective) => (
+              <div key={`${activeQuest.id}-${objective.label}`} style={{ padding:'6px 8px', borderRadius:8, background:'rgba(15,23,42,0.7)', border:'1px solid rgba(148,163,184,0.12)' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', gap:8, fontSize:11 }}>
+                  <span style={{ color: objective.done ? '#86efac' : '#e5e7eb' }}>{objective.label}</span>
+                  <strong style={{ color: objective.done ? '#86efac' : '#fbbf24' }}>{Math.min(objective.value, objective.target)}/{objective.target}</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!paused && !showInventory && !showWorldMenu && isSurvivalMode && trackedResources.length > 0 && (
+        <div style={{ position:'absolute', left:12, bottom:110, width:220, background:'rgba(13,17,23,0.9)', border:'1px solid #263244', borderRadius:10, padding:'10px 12px', color:'#f9fafb', pointerEvents:'auto' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+            <div style={{ fontSize:11, color:'#fbbf24', letterSpacing:0.4, textTransform:'uppercase' }}>Satchel</div>
+            <div style={{ fontSize:10, color:'#6b7280' }}>{discoveredBiomes.length} biomes</div>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:6 }}>
+            {trackedResources.map(([item, count]) => (
+              <div key={item} style={{ display:'flex', justifyContent:'space-between', gap:8, fontSize:10, padding:'5px 6px', borderRadius:6, background:'rgba(15,23,42,0.65)' }}>
+                <span style={{ color:'#cbd5e1' }}>{formatItemLabel(item)}</span>
+                <strong style={{ color:'#f8fafc' }}>{count}</strong>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1176,18 +1358,22 @@ function VoltCraftHUD({
                   <div style={{ padding:14, borderRadius:14, background:'rgba(17,24,39,0.35)', border:'1px solid rgba(255,255,255,0.08)' }}>
                     <div style={{ fontSize:13, fontWeight:'bold', color:'#fde7c3', marginBottom:10 }}>Field Kit</div>
                     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(88px,1fr))', gap:8 }}>
-                      {survivalFieldKit.map(block => (
+                      {survivalFieldKit.map(block => {
+                        const count = resources?.[block] || 0
+                        const unavailable = count <= 0
+                        return (
                         <button
                           key={block}
                           onClick={() => onPickBlock(block)}
+                          disabled={unavailable}
                           style={{
                             padding:'9px 6px',
-                            background:'rgba(12,18,28,0.54)',
+                            background: unavailable ? 'rgba(12,18,28,0.28)' : 'rgba(12,18,28,0.54)',
                             border:'1px solid rgba(255,255,255,0.08)',
                             borderRadius:10,
-                            color:'#f6ead9',
+                            color: unavailable ? 'rgba(246,234,217,0.42)' : '#f6ead9',
                             fontSize:10,
-                            cursor:'pointer',
+                            cursor: unavailable ? 'not-allowed' : 'pointer',
                             textAlign:'center',
                             display:'flex',
                             flexDirection:'column',
@@ -1197,8 +1383,10 @@ function VoltCraftHUD({
                         >
                           <div style={{ width:28, height:28, background: BLOCK_COLORS[block] || '#555', borderRadius:6, border:'1px solid rgba(255,255,255,0.12)' }} />
                           <span>{block.replace(/_/g,' ')}</span>
+                          <strong style={{ fontSize:9, color: unavailable ? 'rgba(246,234,217,0.35)' : '#fbbf24' }}>x{count}</strong>
                         </button>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1207,18 +1395,22 @@ function VoltCraftHUD({
                   <div style={{ padding:14, borderRadius:14, background:'rgba(17,24,39,0.36)', border:'1px solid rgba(255,255,255,0.08)' }}>
                     <div style={{ fontSize:13, fontWeight:'bold', color:'#fde7c3', marginBottom:10 }}>Camp Crafting</div>
                     <div style={{ display:'grid', gap:8 }}>
-                      {survivalCrafts.map(recipe => (
+                      {survivalCrafts.map(recipe => {
+                        const craftable = canCraftRecipe(recipe, resources)
+                        const missing = getMissingIngredients(recipe, resources)
+                        return (
                         <button
                           key={recipe.key}
                           onClick={() => onCraftRecipe(recipe)}
+                          disabled={!craftable}
                           style={{
                             padding:'10px 11px',
-                            background:'rgba(12,18,28,0.58)',
+                            background: craftable ? 'rgba(12,18,28,0.58)' : 'rgba(12,18,28,0.34)',
                             border:'1px solid rgba(255,255,255,0.08)',
                             borderRadius:10,
                             color:'#f8fafc',
                             textAlign:'left',
-                            cursor:'pointer',
+                            cursor: craftable ? 'pointer' : 'not-allowed',
                           }}
                         >
                           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
@@ -1226,9 +1418,15 @@ function VoltCraftHUD({
                             <span style={{ fontSize:11, fontWeight:'bold' }}>{recipe.label}</span>
                           </div>
                           <div style={{ fontSize:9, color:'rgba(246,234,217,0.64)', lineHeight:1.45 }}>{recipe.description}</div>
-                          <div style={{ fontSize:9, color:'#fbbf24', marginTop:6 }}>{recipe.ingredients.join(' + ').replaceAll('_', ' ')}</div>
+                          <div style={{ fontSize:9, color:'#fbbf24', marginTop:6 }}>
+                            {recipe.ingredients.map(({ item, count }) => `${count} ${formatItemLabel(item)}`).join(' + ')}
+                          </div>
+                          <div style={{ fontSize:9, color: craftable ? '#86efac' : '#fca5a5', marginTop:6 }}>
+                            {craftable ? `Ready · yields ${recipe.outputCount || 1}` : `Missing ${missing.join(', ')}`}
+                          </div>
                         </button>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
 
@@ -1254,7 +1452,7 @@ function VoltCraftHUD({
                     </div>
                     <div style={{ height:1, background:'rgba(255,255,255,0.08)', margin:'12px 0' }} />
                     <div style={{ fontSize:10, color:'rgba(246,234,217,0.68)', lineHeight:1.6 }}>
-                      Survival keeps the kit focused: manage your hotbar, grab essentials, and craft utility blocks quickly.
+                      Survival is now supply-driven: salvage blocks, keep your satchel stocked, and only slot what you actually carry.
                     </div>
                   </div>
                 </div>
@@ -1328,6 +1526,18 @@ function VoltCraftHUD({
               <button onClick={onToggleWorldMenu} style={{ padding:'4px 12px', background:'#374151', color:'#fff', border:'none', borderRadius:4, cursor:'pointer', fontSize:12 }}>✕ Close (M)</button>
             </div>
             <button onClick={onNewWorld} style={{ padding:'8px 20px', background:'#14532d', color:'#fff', border:'none', borderRadius:6, cursor:'pointer', marginBottom:12, fontSize:13 }}>+ New World</button>
+            {discoveredBiomes.length > 0 && (
+              <div style={{ marginBottom:12, padding:'10px 12px', background:'rgba(15,23,42,0.72)', border:'1px solid #243244', borderRadius:8 }}>
+                <div style={{ fontSize:12, fontWeight:'bold', color:'#f8fafc', marginBottom:6 }}>Surveyed Biomes</div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                  {discoveredBiomes.map((biome) => (
+                    <span key={biome} style={{ fontSize:10, color:'#86efac', padding:'4px 8px', borderRadius:999, background:'rgba(20,83,45,0.32)' }}>
+                      {formatItemLabel(biome)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {savedWorlds.length === 0 && <div style={{ color:'#6b7280', fontSize:13, marginBottom:12 }}>No saved worlds yet. Start playing and save!</div>}
             {savedWorlds.map(w => (
               <div key={w.id} style={{ display:'flex', alignItems:'center', background:'#1f2937', borderRadius:6, padding:'10px 12px', marginBottom:6, gap:8 }}>
@@ -1402,6 +1612,17 @@ function VoltCraftHUD({
               </button>
             </div>
 
+            <div style={{ marginBottom:14 }}>
+              <button onClick={onToggleAudio} style={{
+                width:'100%', padding:'7px 0',
+                background: audioEnabled ? '#14532d' : '#1f2937',
+                color: audioEnabled ? '#86efac' : '#9ca3af',
+                border:'none', borderRadius:4, fontSize:12, cursor:'pointer',
+              }}>
+                {audioEnabled ? '🔊 Synth Audio: ON' : '🔈 Synth Audio: OFF'}
+              </button>
+            </div>
+
             <div style={{ height:1, background:'#1f2937', marginBottom:14 }} />
             <button onClick={onResume} style={{ width:'100%', padding:'12px 0', background:'#1d4ed8', color:'#fff', border:'none', borderRadius:6, fontSize:15, fontWeight:'bold', cursor:'pointer' }}>
               ▶  Resume (P)
@@ -1436,6 +1657,10 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
   const queuedKeysRef = useRef(new Set())
   const inflightKeysRef = useRef(new Set())
   const dirtyChunkKeysRef = useRef(new Set())
+  const audioRef      = useRef(null)
+  const lastTravelSampleRef = useRef([0, 16, 0])
+  const deathLockRef = useRef(false)
+  const playersRef = useRef({})
 
   const [chunks,        setChunks]        = useState({})
   const [players,       setPlayers]       = useState({})
@@ -1467,13 +1692,41 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
   const [hoveredBlock,  setHoveredBlock]  = useState(null)
   const [breakProgress, setBreakProgress] = useState(null)
   const [armedTnt,      setArmedTnt]      = useState({})
+  const [resources,     setResources]     = useState(() => createStarterResources())
+  const [careerStats,   setCareerStats]   = useState(() => ({
+    collected: {},
+    crafted: {},
+    placed: {},
+    maxHeight: 16,
+    travelDistance: 0,
+  }))
+  const [biomeInfo,     setBiomeInfo]     = useState(null)
+  const [discoveredBiomes, setDiscoveredBiomes] = useState([])
+  const [questIndex,    setQuestIndex]    = useState(0)
+  const [questBanner,   setQuestBanner]   = useState('')
+
+  useEffect(() => {
+    playersRef.current = players
+  }, [players])
+  const [audioEnabled,  setAudioEnabled]  = useState(true)
   const armedTntTimersRef = useRef(new Map())
+
+  const discoveredBiomeSet = useMemo(() => new Set(discoveredBiomes), [discoveredBiomes])
+  const questStats = useMemo(() => ({
+    ...careerStats,
+    discoveredBiomes: discoveredBiomeSet,
+  }), [careerStats, discoveredBiomeSet])
+  const activeQuest = QUESTS[questIndex] || null
+  const questCompletion = useMemo(() => (
+    activeQuest ? getQuestCompletion(activeQuest, questStats) : null
+  ), [activeQuest, questStats])
+  const activeQuestDone = !!questCompletion?.done
 
   const findSafeSpawn = useCallback(async (worker) => {
     const tryCandidate = async (x, z) => {
-      const res = await worker.getTerrainHeight(x, z)
-      const height = res.height ?? 14
-      return { x, z, height }
+      const res = await worker.getSurfaceAnchor(x, z)
+      const height = res.groundY ?? res.terrainHeight ?? 14
+      return { x, z, height, submerged: !!res.submerged }
     }
 
     for (let radius = 0; radius <= 12; radius += 1) {
@@ -1481,7 +1734,7 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
         for (let dz = -radius; dz <= radius; dz += 1) {
           if (Math.abs(dx) !== radius && Math.abs(dz) !== radius) continue
           const candidate = await tryCandidate(dx * 16, dz * 16)
-          if (candidate.height > 12) return candidate
+          if (!candidate.submerged && candidate.height > 12) return candidate
         }
       }
     }
@@ -1490,17 +1743,52 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
   }, [])
 
   const applySpawn = useCallback((x, z, groundY) => {
-    const safeY = groundY + PLAYER_HEIGHT + 5
+    const safeY = groundY + PLAYER_HEIGHT + 1.75
     const chunkX = Math.floor(x / CHUNK_SIZE)
     const chunkZ = Math.floor(z / CHUNK_SIZE)
     localPosRef.current = [x + 0.5, safeY, z + 0.5]
+    lastTravelSampleRef.current = [x + 0.5, safeY, z + 0.5]
     chunkRef.current = { x: chunkX, z: chunkZ, groundY, isWater: false }
     setCurrentChunk({ x: chunkX, z: chunkZ })
     setPosSample([x + 0.5, safeY, z + 0.5])
   }, [])
 
+  const bumpCareerCounter = useCallback((bucket, item, amount = 1) => {
+    if (!item || amount <= 0) return
+    setCareerStats(prev => ({
+      ...prev,
+      [bucket]: {
+        ...(prev[bucket] || {}),
+        [item]: (prev[bucket]?.[item] || 0) + amount,
+      },
+    }))
+  }, [])
+
+  const awardResources = useCallback((rewardMap, sourceLabel = '') => {
+    if (!rewardMap || Object.keys(rewardMap).length === 0) return
+    setResources(prev => addResources(prev, rewardMap))
+    Object.entries(rewardMap).forEach(([item, amount]) => {
+      bumpCareerCounter('collected', item, amount)
+    })
+    if (sourceLabel) {
+      setStatusMsg(`${sourceLabel}: ${Object.entries(rewardMap).map(([item, amount]) => `${amount} ${formatItemLabel(item)}`).join(', ')}`)
+    }
+  }, [bumpCareerCounter])
+
   // Keep chunksRef in sync
   useEffect(() => { chunksRef.current = chunks }, [chunks])
+
+  useEffect(() => {
+    audioRef.current = createVoltCraftAudio()
+    audioRef.current.setEnabled(audioEnabled)
+    return () => {
+      audioRef.current = null
+    }
+  }, [audioEnabled])
+
+  useEffect(() => {
+    audioRef.current?.setEnabled(audioEnabled)
+  }, [audioEnabled])
 
   // ── Time cycle ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1524,6 +1812,47 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
     const iv = setInterval(() => setHunger(h => Math.max(0, h - 0.25)), 4000)
     return () => clearInterval(iv)
   }, [mode])
+
+  useEffect(() => {
+    if (!activeQuest || !activeQuestDone) return
+    const rewardMap = activeQuest.rewards || {}
+    setQuestBanner(`Quest complete: ${activeQuest.title}`)
+    setTimeout(() => setQuestBanner(''), 3200)
+    awardResources(rewardMap)
+    setXp(prev => {
+      const next = prev + (activeQuest.xpReward || 0)
+      if (next >= 100) {
+        setLevel(levelPrev => levelPrev + Math.floor(next / 100))
+      }
+      return next % 100
+    })
+    audioRef.current?.resume()
+    audioRef.current?.playQuest()
+    setStatusMsg(`Completed ${activeQuest.title}`)
+    setQuestIndex(index => Math.min(index + 1, QUESTS.length))
+  }, [activeQuest, activeQuestDone, awardResources])
+
+  useEffect(() => {
+    if (mode !== 'survival') return
+    const iv = setInterval(() => {
+      if (paused || showInventory || showWorldMenu) return
+      const healthRatio = health / 20
+      audioRef.current?.playAmbient(time, weather, healthRatio)
+
+      const starving = hunger <= 0
+      const roughNight = (time >= 1200 || time < 360) && weather === '🌧️'
+      if (starving || roughNight) {
+        setHealth(prev => Math.max(0, prev - (starving ? 1 : 0.5)))
+        if (starving) setStatusMsg('Starving. Eat or get back to camp supplies.')
+        if (roughNight && !starving) setStatusMsg('Cold rain and darkness are wearing you down.')
+        audioRef.current?.resume()
+        audioRef.current?.playDamage()
+      } else if (hunger > 14) {
+        setHealth(prev => Math.min(20, prev + 0.5))
+      }
+    }, 6000)
+    return () => clearInterval(iv)
+  }, [health, hunger, mode, paused, showInventory, showWorldMenu, time, weather])
 
   // ── Init worker ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1782,12 +2111,30 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
       if (!w) return
       const pos = localPosRef.current
       try {
-        const res = await w.getTerrainHeight(Math.floor(pos[0]), Math.floor(pos[2]))
-        const gy = res.height ?? chunkRef.current.groundY ?? 14
-        // Detect water: player is in water if their feet are at or below water level (12)
-        // and terrain height is below water level
-        const isWater = gy <= 12 && pos[1] - PLAYER_HEIGHT <= 12
+        const res = await w.getSurfaceAnchor(Math.floor(pos[0]), Math.floor(pos[2]))
+        const gy = res.groundY ?? res.terrainHeight ?? chunkRef.current.groundY ?? 14
+        const isWater = !!res.submerged
         chunkRef.current = { ...chunkRef.current, groundY: gy, isWater }
+        setBiomeInfo({
+          biome: res.biome || null,
+          terrainHeight: res.terrainHeight ?? gy,
+          blockName: res.blockName || null,
+          submerged: !!res.submerged,
+        })
+        if (res.biome) {
+          setDiscoveredBiomes(prev => {
+            if (prev.includes(res.biome)) return prev
+            audioRef.current?.resume()
+            audioRef.current?.playBiome()
+            setQuestBanner(`Discovered ${formatItemLabel(res.biome)}`)
+            setTimeout(() => setQuestBanner(''), 2600)
+            return [...prev, res.biome]
+          })
+        }
+        setCareerStats(prev => ({
+          ...prev,
+          maxHeight: Math.max(prev.maxHeight || 0, Math.floor(pos[1])),
+        }))
       } catch {}
     }, 250)
     return () => clearInterval(iv)
@@ -1807,12 +2154,49 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
   }, [])
 
   useEffect(() => {
+    const prev = lastTravelSampleRef.current
+    const dx = posSample[0] - prev[0]
+    const dy = posSample[1] - prev[1]
+    const dz = posSample[2] - prev[2]
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    if (Number.isFinite(dist) && dist > 0.25) {
+      setCareerStats(prevStats => ({
+        ...prevStats,
+        travelDistance: (prevStats.travelDistance || 0) + dist,
+        maxHeight: Math.max(prevStats.maxHeight || 0, Math.floor(posSample[1])),
+      }))
+      lastTravelSampleRef.current = [...posSample]
+    }
+  }, [posSample])
+
+  useEffect(() => {
     const timers = armedTntTimersRef.current
     return () => {
       timers.forEach(timeoutId => clearTimeout(timeoutId))
       timers.clear()
     }
   }, [])
+
+  useEffect(() => {
+    if (health > 0 || deathLockRef.current) return
+    deathLockRef.current = true
+    setStatusMsg('You were downed. Respawning at a safe anchor...')
+    setPaused(true)
+    setShowInventory(false)
+    setShowWorldMenu(false)
+    ;(async () => {
+      const worker = workerRef.current
+      if (!worker) return
+      const spawn = await findSafeSpawn(worker)
+      applySpawn(spawn.x, spawn.z, spawn.height ?? 14)
+      setHealth(20)
+      setHunger(16)
+      setPaused(false)
+      setTimeout(() => {
+        deathLockRef.current = false
+      }, 300)
+    })()
+  }, [applySpawn, findSafeSpawn, health])
 
   // ── Block interaction ────────────────────────────────────────────────────────
   const handleInteract = useCallback(async ({ block, button }) => {
@@ -1826,6 +2210,8 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
 
     if (button === 2 && selectedItem === 'flint_and_steel') {
       if (block.name === 'tnt') {
+        audioRef.current?.resume()
+        audioRef.current?.playIgnite()
         igniteTnt(block.x, block.y, block.z)
       } else {
         setStatusMsg('Flint & steel only ignites TNT right now.')
@@ -1840,8 +2226,18 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
         changesRef.current = res.changes
         lastServerChangesRef.current = res.changes
         setCollisionChanges(res.changes)  // keep collision in sync
+        persistVoltCraftState()
         setStatusMsg(`Broke block at ${block.x},${block.y},${block.z}`)
         setXp(x => { const nx = x + 2; if (nx >= 100) { setLevel(l => l+1); return 0 } return nx })
+        if (mode === 'survival') {
+          const drops = getDropRewards(toUiBlockName(block.name))
+          if (Object.keys(drops).length > 0) {
+            awardResources(drops, 'Salvaged')
+          }
+          setHunger(prev => Math.max(0, prev - 0.08))
+        }
+        audioRef.current?.resume()
+        audioRef.current?.playBreak(block.name)
         sdk?.emitEvent?.('voltcraft:block', { userId, action:'break', x:block.x, y:block.y, z:block.z }, { serverRelay:true })
         invalidateChunkKeys(getAffectedChunkKeys(block.x, block.z))
       }
@@ -1850,6 +2246,12 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
       const blockName = selectedItem
       const worldBlockName = toWorldBlockName(selectedItem)
       if (!worldBlockName) return
+      if (mode === 'survival' && selectedItem !== 'flint_and_steel') {
+        if ((resources[selectedItem] || 0) <= 0) {
+          setStatusMsg(`Out of ${formatItemLabel(selectedItem)}.`)
+          return
+        }
+      }
       const fx = block.faceX ?? block.x
       const fy = block.faceY ?? block.y
       const fz = block.faceZ ?? block.z
@@ -1858,18 +2260,34 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
         changesRef.current = res.changes
         lastServerChangesRef.current = res.changes
         setCollisionChanges(res.changes)  // keep collision in sync
+        persistVoltCraftState()
         setStatusMsg(`Placed ${blockName.replace(/_/g,' ')}`)
+        if (mode === 'survival' && selectedItem !== 'flint_and_steel') {
+          setResources(prev => removeResources(prev, { [selectedItem]: 1 }))
+          bumpCareerCounter('placed', selectedItem, 1)
+        }
+        audioRef.current?.resume()
+        audioRef.current?.playPlace(blockName)
         sdk?.emitEvent?.('voltcraft:block', { userId, action:'place', x:fx, y:fy, z:fz, blockName: worldBlockName }, { serverRelay:true })
         invalidateChunkKeys(getAffectedChunkKeys(fx, fz))
       }
     }
-  }, [sdk, userId, hotbar, selectedSlot, isOp, igniteTnt, invalidateChunkKeys])
+  }, [sdk, userId, hotbar, selectedSlot, isOp, igniteTnt, invalidateChunkKeys, mode, resources, awardResources, bumpCareerCounter, persistVoltCraftState])
 
   // ── Save / Load / New / Delete world ─────────────────────────────────────────
   const handleSave = useCallback(() => {
-    saveWorld(worldIdRef.current, worldName, worldSeedRef.current, changesRef.current)
+    saveWorld(worldIdRef.current, {
+      name: worldName,
+      seed: worldSeedRef.current,
+      changes: changesRef.current,
+      resources,
+      careerStats,
+      discoveredBiomes,
+      questIndex,
+      mode,
+    })
     setSavedAt(Date.now()); setSavedWorlds(listSavedWorlds()); setStatusMsg('World saved!')
-  }, [worldName])
+  }, [careerStats, discoveredBiomes, mode, questIndex, resources, worldName])
 
   const handleLoadWorld = useCallback(async (wid) => {
     const data = loadWorld(wid)
@@ -1882,6 +2300,21 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
     setArmedTnt({})
     setBreakProgress(null)
     setWorldName(data.name); setSavedAt(data.savedAt)
+    setResources(data.resources || createStarterResources())
+    setCareerStats(data.careerStats || {
+      collected: {},
+      crafted: {},
+      placed: {},
+      maxHeight: 16,
+      travelDistance: 0,
+    })
+    setDiscoveredBiomes(data.discoveredBiomes || [])
+    setQuestIndex(data.questIndex || 0)
+    setMode(data.mode || 'creative')
+    setHealth(20)
+    setHunger(20)
+    setBiomeInfo(null)
+    setQuestBanner('')
     setShowWorldMenu(false); setIsLoading(true); setLoadingPct(0); setLoadingMsg('Loading world...')
     const w = workerRef.current; if (!w) return
     let pct = 0
@@ -1908,6 +2341,20 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
     setArmedTnt({})
     setBreakProgress(null)
     setWorldName(`World ${new Date().toLocaleDateString()}`); setSavedAt(null)
+    setResources(createStarterResources())
+    setCareerStats({
+      collected: {},
+      crafted: {},
+      placed: {},
+      maxHeight: 16,
+      travelDistance: 0,
+    })
+    setDiscoveredBiomes([])
+    setQuestIndex(0)
+    setHealth(20)
+    setHunger(20)
+    setBiomeInfo(null)
+    setQuestBanner('')
     setShowWorldMenu(false); setIsLoading(true); setLoadingPct(0); setLoadingMsg('Generating new world...')
     const w = workerRef.current; if (!w) return
     let pct = 0
@@ -1930,20 +2377,38 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
 
   const handlePickBlock = useCallback((block) => {
     const uiBlock = toUiBlockName(block)
+    if (mode === 'survival' && (resources[uiBlock] || 0) <= 0) {
+      setStatusMsg(`No ${formatItemLabel(uiBlock)} in your satchel.`)
+      return
+    }
     setHotbar(prev => { const n=[...prev]; n[selectedSlot]=uiBlock; return n })
     setStatusMsg(`Selected: ${uiBlock.replace(/_/g,' ')}`)
     setShowInventory(false)
-  }, [selectedSlot])
+  }, [mode, resources, selectedSlot])
 
   const handleCraftRecipe = useCallback((recipe) => {
     if (!recipe?.output) return
+    if (mode === 'survival') {
+      if (!canCraftRecipe(recipe, resources)) {
+        setStatusMsg(`Missing ${getMissingIngredients(recipe, resources).join(', ')}`)
+        return
+      }
+      const costs = {}
+      recipe.ingredients.forEach(({ item, count }) => {
+        costs[item] = (costs[item] || 0) + count
+      })
+      setResources(prev => addResources(removeResources(prev, costs), { [recipe.output]: recipe.outputCount || 1 }))
+      bumpCareerCounter('crafted', recipe.output, 1)
+      audioRef.current?.resume()
+      audioRef.current?.playCraft()
+    }
     setHotbar(prev => {
       const next = [...prev]
       next[selectedSlot] = recipe.output
       return next
     })
     setStatusMsg(`Crafted ${recipe.label} into slot ${selectedSlot + 1}`)
-  }, [selectedSlot])
+  }, [bumpCareerCounter, mode, resources, selectedSlot])
 
   // ── Pointer lock management for menus ────────────────────────────────────────
   const toggleInventory = useCallback(() => {
@@ -1982,26 +2447,44 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
     setTimeout(() => document.querySelector('canvas')?.requestPointerLock(), 50)
   }, [])
 
+  const persistVoltCraftState = useCallback((next = {}) => {
+    if (!sdk?.updateState) return
+    sdk.updateState({
+      voltCraft: {
+        changes: changesRef.current,
+        players: playersRef.current,
+        ...next
+      }
+    }, { serverRelay: true })
+  }, [sdk])
+
   // ── SDK ──────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!sdk) return
     const offState = sdk.subscribeServerState?.((state) => {
       const changes = state?.voltCraft?.changes
+      const remotePlayers = state?.voltCraft?.players
       if (changes && workerRef.current) {
         const changedBlocks = getChangedBlockKeys(lastServerChangesRef.current, changes)
-        if (changedBlocks.size === 0) return
-
-        changesRef.current = changes
-        lastServerChangesRef.current = changes
-        setCollisionChanges(changes)  // keep collision in sync with server state
-        workerRef.current.setWorldChanges(changes).then(() => {
-          const dirtyChunks = new Set()
-          changedBlocks.forEach((key) => {
-            const [x, , z] = key.split(',').map(Number)
-            getAffectedChunkKeys(x, z).forEach(chunkKey => dirtyChunks.add(chunkKey))
+        if (changedBlocks.size > 0) {
+          changesRef.current = changes
+          lastServerChangesRef.current = changes
+          setCollisionChanges(changes)  // keep collision in sync with server state
+          workerRef.current.setWorldChanges(changes).then(() => {
+            const dirtyChunks = new Set()
+            changedBlocks.forEach((key) => {
+              const [x, , z] = key.split(',').map(Number)
+              getAffectedChunkKeys(x, z).forEach(chunkKey => dirtyChunks.add(chunkKey))
+            })
+            invalidateChunkKeys(dirtyChunks)
           })
-          invalidateChunkKeys(dirtyChunks)
-        })
+        }
+      }
+      if (remotePlayers && typeof remotePlayers === 'object') {
+        setPlayers((prev) => ({
+          ...prev,
+          ...remotePlayers
+        }))
       }
     })
     const offEvent = sdk.on?.('event', (evt) => {
@@ -2015,98 +2498,153 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
         igniteTnt(p.x, p.y, p.z, false)
       }
     })
+    setPlayers((prev) => {
+      const next = { ...prev, [userId]: { userId, username, position:localPosRef.current, color:userColor, mode } }
+      playersRef.current = next
+      return next
+    })
+    persistVoltCraftState()
     sdk.emitEvent?.('voltcraft:player', { userId, username, position:localPosRef.current, color:userColor }, { serverRelay:true })
-    return () => { sdk.emitEvent?.('voltcraft:leave', { userId }, { serverRelay:true }); offState?.(); offEvent?.() }
-  }, [sdk, userId, username, userColor, igniteTnt, invalidateChunkKeys])
+    return () => {
+      setPlayers((prev) => {
+        const next = { ...prev }
+        delete next[userId]
+        playersRef.current = next
+        return next
+      })
+      persistVoltCraftState()
+      sdk.emitEvent?.('voltcraft:leave', { userId }, { serverRelay:true })
+      offState?.()
+      offEvent?.()
+    }
+  }, [sdk, userId, username, userColor, igniteTnt, invalidateChunkKeys, mode, persistVoltCraftState])
 
   useEffect(() => {
     if (!sdk) return
     const iv = setInterval(() => {
+      setPlayers((prev) => {
+        const next = { ...prev, [userId]: { userId, username, position:localPosRef.current, color:userColor, mode } }
+        playersRef.current = next
+        return next
+      })
+      persistVoltCraftState()
       sdk.emitEvent?.('voltcraft:player', { userId, username, position:localPosRef.current, color:userColor, mode }, { serverRelay:true })
     }, PLAYER_SYNC_MS)
     return () => clearInterval(iv)
-  }, [sdk, userId, username, userColor, mode])
+  }, [sdk, userId, username, userColor, mode, persistVoltCraftState])
 
   useEffect(() => {
-    setPlayers(prev => ({ ...prev, [userId]: { userId, username, position:posSample, color:userColor } }))
-  }, [userId, username, posSample, userColor])
+    setPlayers(prev => {
+      const next = { ...prev, [userId]: { userId, username, position:posSample, color:userColor, mode } }
+      playersRef.current = next
+      return next
+    })
+  }, [userId, username, posSample, userColor, mode])
 
   // ── Loading screen ───────────────────────────────────────────────────────────
   if (isLoading) return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', background:'#1a1a2e', color:'#fff', gap:20, fontFamily:'monospace' }}>
-      <div style={{ fontSize:36, fontWeight:'bold', letterSpacing:2 }}>⚡ VoltCraft</div>
-      <div style={{ fontSize:14, opacity:0.7 }}>{loadingMsg}</div>
-      <div style={{ width:280, height:12, background:'#333', borderRadius:6, overflow:'hidden' }}>
-        <div style={{ width:`${loadingPct}%`, height:'100%', background:'linear-gradient(90deg,#3b82f6,#38bdf8)', transition:'width 0.15s ease', borderRadius:6 }} />
+    <GameCanvasShell
+      title="VoltCraft"
+      subtitle="Loading World"
+      status={loadingMsg}
+      skin="sport"
+      musicEnabled={false}
+    >
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', width:'100%', maxWidth:360, color:'#fff', gap:20, fontFamily:'monospace' }}>
+        <div style={{ fontSize:36, fontWeight:'bold', letterSpacing:2 }}>⚡ VoltCraft</div>
+        <div style={{ fontSize:14, opacity:0.7 }}>{loadingMsg}</div>
+        <div style={{ width:280, height:12, background:'#333', borderRadius:6, overflow:'hidden' }}>
+          <div style={{ width:`${loadingPct}%`, height:'100%', background:'linear-gradient(90deg,#3b82f6,#38bdf8)', transition:'width 0.15s ease', borderRadius:6 }} />
+        </div>
+        <div style={{ fontSize:12, opacity:0.5 }}>{loadingPct}%</div>
       </div>
-      <div style={{ fontSize:12, opacity:0.5 }}>{loadingPct}%</div>
-    </div>
+    </GameCanvasShell>
   )
 
   return (
-    <div
-      ref={containerRef}
-      style={{ width:'100%', height:'100%', background:'#87ceeb', position:'relative' }}
-      onContextMenu={e => e.preventDefault()}
+    <GameCanvasShell
+      title="VoltCraft"
+      subtitle="Voxel Sandbox"
+      status="Pointer-lock world canvas preserved; shared shell only standardizes the outer stage."
+      skin="sport"
+      musicEnabled={false}
+      header={false}
+      layout="stretch"
     >
-      <WebGLErrorBoundary>
-        <Canvas
-          shadows={false}
-          gl={{ antialias: false, powerPreference:'high-performance', failIfMajorPerformanceCaveat:false }}
-          camera={{ fov:75, near:0.08, far: FOG_FAR + 16 }}
-          dpr={[1, 1.5]}
-          frameloop="always"
-          style={{ position:'absolute', inset:0 }}
-        >
-          <color attach="background" args={['#87ceeb']} />
-          <Suspense fallback={null}>
-            <WorldScene
-              chunks={chunks}
-              players={players}
-              localId={userId}
-              armedTnt={armedTnt}
-              localPosRef={localPosRef}
-              chunkRef={chunkRef}
-              setChunkState={setCurrentChunk}
-              setPosSample={setPosSample}
-              selectedSlot={selectedSlot}
-              mode={mode}
-              paused={paused}
-              setPaused={setPaused}
-              setPointerLocked={setPointerLocked}
-              onInteract={handleInteract}
-              onSelectSlot={setSelectedSlot}
-              onToggleInventory={toggleInventory}
-              onToggleWorldMenu={toggleWorldMenu}
-              showInventory={showInventory}
-              showWorldMenu={showWorldMenu}
-              hoveredRef={hoveredRef}
-              isOp={isOp}
-              setBreakProgress={setBreakProgress}
-            />
-          </Suspense>
-        </Canvas>
-      </WebGLErrorBoundary>
+      <div
+        ref={containerRef}
+        style={{ width:'100%', height:'100%', background:'linear-gradient(180deg, #8bd7ff 0%, #cfeeff 45%, #eff9ff 100%)', position:'relative' }}
+        onContextMenu={e => e.preventDefault()}
+      >
+        <WebGLErrorBoundary>
+          <Canvas
+            shadows={false}
+            gl={{ antialias: true, powerPreference:'high-performance', failIfMajorPerformanceCaveat:false }}
+            camera={{ fov:75, near:0.08, far: FOG_FAR + 28 }}
+            dpr={[1, 2]}
+            frameloop="always"
+            style={{ position:'absolute', inset:0 }}
+          >
+            <color attach="background" args={[getSkyPalette(time).skyTop]} />
+            <Suspense fallback={null}>
+              <WorldScene
+                chunks={chunks}
+                players={players}
+                localId={userId}
+                armedTnt={armedTnt}
+                localPosRef={localPosRef}
+                chunkRef={chunkRef}
+                setChunkState={setCurrentChunk}
+                setPosSample={setPosSample}
+                selectedSlot={selectedSlot}
+                time={time}
+                weather={weather}
+                mode={mode}
+                paused={paused}
+                setPaused={setPaused}
+                setPointerLocked={setPointerLocked}
+                onInteract={handleInteract}
+                onSelectSlot={setSelectedSlot}
+                onToggleInventory={toggleInventory}
+                onToggleWorldMenu={toggleWorldMenu}
+                showInventory={showInventory}
+                showWorldMenu={showWorldMenu}
+                hoveredRef={hoveredRef}
+                isOp={isOp}
+                setBreakProgress={setBreakProgress}
+                onJump={() => {
+                  audioRef.current?.resume()
+                  audioRef.current?.playJump()
+                }}
+              />
+            </Suspense>
+          </Canvas>
+        </WebGLErrorBoundary>
 
-      <VoltCraftHUD
-        mode={mode} health={health} maxHealth={20} hunger={hunger}
-        xp={xp} level={level} currentChunk={currentChunk} pos={posSample}
-        statusMsg={statusMsg} selectedSlot={selectedSlot} hotbar={hotbar}
-        onSelectSlot={setSelectedSlot} paused={paused} onResume={resumeGame}
-        onTogglePause={() => { setPaused(p => !p); if (!paused) document.exitPointerLock?.() }}
-        showInventory={showInventory} onToggleInventory={toggleInventory}
-        inventoryCategory={invCategory} onSetCategory={setInvCategory}
-        onPickBlock={handlePickBlock} onCraftRecipe={handleCraftRecipe}
-        hoveredBlock={hoveredBlock} breakProgress={breakProgress}
-        time={time} weather={weather} worldName={worldName} savedAt={savedAt}
-        onSave={handleSave} showWorldMenu={showWorldMenu}
-        onToggleWorldMenu={toggleWorldMenu} savedWorlds={savedWorlds}
-        onLoadWorld={handleLoadWorld} onNewWorld={handleNewWorld}
-        onDeleteWorld={handleDeleteWorld} containerRef={containerRef}
-        isOp={isOp} onToggleOp={() => setIsOp(v => !v)}
-        onSetMode={setMode} pointerLocked={pointerLocked}
-      />
-    </div>
+        <VoltCraftHUD
+          mode={mode} health={health} maxHealth={20} hunger={hunger}
+          xp={xp} level={level} currentChunk={currentChunk} pos={posSample}
+          statusMsg={statusMsg} selectedSlot={selectedSlot} hotbar={hotbar}
+          onSelectSlot={setSelectedSlot} paused={paused} onResume={resumeGame}
+          onTogglePause={() => { setPaused(p => !p); if (!paused) document.exitPointerLock?.() }}
+          showInventory={showInventory} onToggleInventory={toggleInventory}
+          inventoryCategory={invCategory} onSetCategory={setInvCategory}
+          onPickBlock={handlePickBlock} onCraftRecipe={handleCraftRecipe}
+          hoveredBlock={hoveredBlock} breakProgress={breakProgress}
+          time={time} weather={weather} worldName={worldName} savedAt={savedAt}
+          onSave={handleSave} showWorldMenu={showWorldMenu}
+          onToggleWorldMenu={toggleWorldMenu} savedWorlds={savedWorlds}
+          onLoadWorld={handleLoadWorld} onNewWorld={handleNewWorld}
+          onDeleteWorld={handleDeleteWorld} containerRef={containerRef}
+          isOp={isOp} onToggleOp={() => setIsOp(v => !v)}
+          onSetMode={setMode} pointerLocked={pointerLocked}
+          resources={resources} biomeInfo={biomeInfo} discoveredBiomes={discoveredBiomes}
+          activeQuest={activeQuest} questCompletion={questCompletion}
+          audioEnabled={audioEnabled} onToggleAudio={() => setAudioEnabled(v => !v)}
+          questBanner={questBanner}
+        />
+      </div>
+    </GameCanvasShell>
   )
 }
 

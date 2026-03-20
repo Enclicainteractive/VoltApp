@@ -1934,6 +1934,8 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
 
   const seenEventsRef  = useRef(new Set())
   const pendingShotRef = useRef(null)
+  const hasHydratedRef = useRef(false)
+  const hasJoinedSessionRef = useRef(false)
   const persistState = useCallback((nextState, cue = 'minigolf_state') => {
     if (!sdk) return
     sdk.updateState?.({ miniGolf: nextState }, { serverRelay: true, cue })
@@ -2036,6 +2038,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   useEffect(() => {
     if (!sdk?.subscribeServerState) return undefined
     const off = sdk.subscribeServerState((serverState) => {
+      hasHydratedRef.current = true
       const nextState = serverState?.miniGolf
       if (!nextState || typeof nextState !== 'object' || !Array.isArray(nextState.players) || !nextState.phase) return
       setGameState(nextState)
@@ -2091,18 +2094,36 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   // ── Join on mount ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!sdk) return
-    const actionId = `join-${userId}-${Date.now()}`
-    const evt = {
-      eventType: MINIGOLF_EVENT_TYPES.JOIN,
-      payload: { actionId, playerId: userId, username, color: initialJoinColorRef.current },
-      ts: Date.now()
+    const emitJoin = () => {
+      if (hasJoinedSessionRef.current || !hasHydratedRef.current) return
+      hasJoinedSessionRef.current = true
+      const actionId = `join-${userId}-${Date.now()}`
+      const evt = {
+        eventType: MINIGOLF_EVENT_TYPES.JOIN,
+        payload: { actionId, playerId: userId, username, color: initialJoinColorRef.current },
+        ts: Date.now()
+      }
+      setGameState((prev) => applyMiniGolfEvent(prev, evt))
+      sdk.emitEvent?.(MINIGOLF_EVENT_TYPES.JOIN, evt.payload, { serverRelay: true })
     }
-    applyLocalEvent(evt, 'minigolf_join')
-    sdk.emitEvent?.(MINIGOLF_EVENT_TYPES.JOIN, evt.payload, { serverRelay: true })
+
+    if (hasHydratedRef.current) {
+      emitJoin()
+      return () => {
+        sdk.emitEvent?.(MINIGOLF_EVENT_TYPES.LEAVE, { actionId: `leave-${userId}-${Date.now()}`, playerId: userId }, { serverRelay: true })
+      }
+    }
+
+    const timer = window.setTimeout(() => {
+      hasHydratedRef.current = true
+      emitJoin()
+    }, 150)
+
     return () => {
+      window.clearTimeout(timer)
       sdk.emitEvent?.(MINIGOLF_EVENT_TYPES.LEAVE, { actionId: `leave-${userId}-${Date.now()}`, playerId: userId }, { serverRelay: true })
     }
-  }, [applyLocalEvent, sdk, userId, username])
+  }, [sdk, userId, username])
 
   // ── Actions ──────────────────────────────────────────────────────────────────
   const handleVoteCourse = useCallback((cId) => {

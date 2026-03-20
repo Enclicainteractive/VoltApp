@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
+import GameCanvasShell from './shared/GameCanvasShell'
 
 const EMPTY = null
 const WHITE = 'w'
@@ -535,7 +536,18 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] })
 
   const seenEventsRef = useRef(new Set())
+  const stateRef = useRef(baseState)
   const moveFxTimeoutRef = useRef(null)
+
+  useEffect(() => {
+    stateRef.current = gameState
+  }, [gameState])
+
+  const pushState = useCallback((nextState, cue = 'game_update') => {
+    stateRef.current = nextState
+    setGameState(nextState)
+    sdk?.updateState?.({ chess: nextState }, { serverRelay: true, cue })
+  }, [sdk])
 
   const triggerMoveFx = useCallback((fx) => {
     if (!fx?.from || !fx?.to || !fx?.piece) return
@@ -571,7 +583,7 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
         const blackPlayer = sanitizePlayer(chess.blackPlayer) || prev.blackPlayer
         const winner = chess.winner === WHITE || chess.winner === BLACK ? chess.winner : prev.winner
 
-        return {
+        const next = {
           ...prev,
           ...chess,
           board,
@@ -583,6 +595,8 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
           moveLog: Array.isArray(chess.moveLog) ? chess.moveLog.slice(0, 20).map((m) => String(m)) : prev.moveLog,
           moveCount: Number.isInteger(chess.moveCount) && chess.moveCount >= 0 ? chess.moveCount : prev.moveCount
         }
+        stateRef.current = next
+        return next
       })
 
       if (chess.whitePlayer?.id === currentUser?.id) setMyColor(WHITE)
@@ -877,19 +891,19 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
       rememberEvent(seenEventsRef, actionId)
       triggerMoveFx(buildMoveFx(gameState.board, movingPiece, from, { x, y }, null, status, winner))
 
-      setGameState((prev) => ({
-        ...prev,
+      pushState({
+        ...stateRef.current,
         board: nextBoard,
         turn: nextTurn,
         selected: null,
-        moveLog: [moveNotation, ...prev.moveLog].slice(0, 20),
+        moveLog: [moveNotation, ...stateRef.current.moveLog].slice(0, 20),
         status,
         winner,
         inCheck: inCheckPos,
         castling: newCastling,
         enPassant: newEnPassant,
-        moveCount: prev.moveCount + 1
-      }))
+        moveCount: stateRef.current.moveCount + 1
+      }, 'move_valid')
       setLegalMoves([])
 
       sdk.emitEvent('chess:move', {
@@ -919,7 +933,7 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
 
     setGameState((prev) => ({ ...prev, selected: null }))
     setLegalMoves([])
-  }, [gameState, legalMoves, myColor, sdk, currentUser?.id, triggerMoveFx])
+  }, [gameState, legalMoves, myColor, sdk, currentUser?.id, triggerMoveFx, pushState])
 
   const handlePromotion = useCallback((promotion) => {
     if (!pendingPromotion || !promotion) return
@@ -987,20 +1001,20 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
     rememberEvent(seenEventsRef, actionId)
     triggerMoveFx(buildMoveFx(gameState.board, piece, from, to, promotion, status, winner))
     
-    setGameState((prev) => ({
-      ...prev,
+    pushState({
+      ...stateRef.current,
       board: newBoard,
       turn: nextTurn,
       selected: null,
-      moveLog: [moveNotation, ...prev.moveLog].slice(0, 20),
+      moveLog: [moveNotation, ...stateRef.current.moveLog].slice(0, 20),
       status,
       winner,
       inCheck: inCheckPos,
       castling: newCastling,
       enPassant: newEnPassant,
       promotion: null,
-      moveCount: prev.moveCount + 1
-    }))
+      moveCount: stateRef.current.moveCount + 1
+    }, 'move_valid')
     setLegalMoves([])
     setPendingPromotion(null)
     
@@ -1020,7 +1034,7 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
         actionId: `${actionId}:gameover`
       }, { serverRelay: true, cue: 'round_end' })
     }
-  }, [pendingPromotion, gameState, sdk, currentUser?.id, triggerMoveFx])
+  }, [pendingPromotion, gameState, sdk, currentUser?.id, triggerMoveFx, pushState])
 
   if (!sdk) {
     return <div className="builtin-activity-loading"><div className="loading-spinner" /><p>Loading chess...</p></div>
@@ -1039,17 +1053,16 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
       username: String(currentUser.username || 'Player')
     }
 
-    setGameState((prev) => {
-      const nextWhite = color === WHITE ? player : prev.whitePlayer
-      const nextBlack = color === BLACK ? player : prev.blackPlayer
-      return {
-        ...prev,
-        whitePlayer: nextWhite,
-        blackPlayer: nextBlack,
-        status: deriveStatus(prev.status, nextWhite, nextBlack, prev.winner),
-        selected: null
-      }
-    })
+    const current = stateRef.current
+    const nextWhite = color === WHITE ? player : current.whitePlayer
+    const nextBlack = color === BLACK ? player : current.blackPlayer
+    pushState({
+      ...current,
+      whitePlayer: nextWhite,
+      blackPlayer: nextBlack,
+      status: deriveStatus(current.status, nextWhite, nextBlack, current.winner),
+      selected: null
+    }, 'player_join')
 
     sdk.emitEvent('chess:join', {
       playerId: currentUser.id,
@@ -1067,19 +1080,18 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
     const actionId = `chess_leave_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     rememberEvent(seenEventsRef, actionId)
 
-    setGameState((prev) => {
-      const nextWhite = myColor === WHITE ? null : prev.whitePlayer
-      const nextBlack = myColor === BLACK ? null : prev.blackPlayer
-      return {
-        ...prev,
-        whitePlayer: nextWhite,
-        blackPlayer: nextBlack,
-        status: deriveStatus('waiting', nextWhite, nextBlack, null),
-        selected: null,
-        winner: null,
-        inCheck: null
-      }
-    })
+    const current = stateRef.current
+    const nextWhite = myColor === WHITE ? null : current.whitePlayer
+    const nextBlack = myColor === BLACK ? null : current.blackPlayer
+    pushState({
+      ...current,
+      whitePlayer: nextWhite,
+      blackPlayer: nextBlack,
+      status: deriveStatus('waiting', nextWhite, nextBlack, null),
+      selected: null,
+      winner: null,
+      inCheck: null
+    }, 'player_leave')
 
     sdk.emitEvent('chess:leave', {
       playerId: currentUser.id,
@@ -1096,12 +1108,12 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
 
     sdk.emitEvent('chess:reset', { actionId }, { serverRelay: true, cue: 'round_start' })
 
-    setGameState((prev) => ({
+    pushState({
       ...baseState,
-      whitePlayer: prev.whitePlayer,
-      blackPlayer: prev.blackPlayer,
-      status: prev.whitePlayer && prev.blackPlayer ? 'playing' : 'waiting'
-    }))
+      whitePlayer: stateRef.current.whitePlayer,
+      blackPlayer: stateRef.current.blackPlayer,
+      status: stateRef.current.whitePlayer && stateRef.current.blackPlayer ? 'playing' : 'waiting'
+    }, 'round_start')
     setLastMove(null)
     setMoveFx(null)
     setLegalMoves([])
@@ -1113,10 +1125,27 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
   const canJoinWhite = (!gameState.whitePlayer || gameState.whitePlayer.id === currentUser?.id) && myColor !== BLACK
   const canJoinBlack = (!gameState.blackPlayer || gameState.blackPlayer.id === currentUser?.id) && myColor !== WHITE
   const isPlaying = myColor === WHITE || myColor === BLACK
+  const shellStatus = gameState.status === 'waiting'
+    ? 'Claim white or black and start the match.'
+    : gameState.status === 'checkmate'
+      ? `${gameState.winner === WHITE ? 'White' : 'Black'} won by checkmate.`
+      : gameState.status === 'stalemate'
+        ? 'The board is locked in stalemate.'
+        : gameState.status === 'check'
+          ? `${gameState.turn === WHITE ? 'White' : 'Black'} is in check.`
+          : `${gameState.turn === WHITE ? 'White' : 'Black'} to move.`
 
   return (
-    <div className="builtin-activity-body chess-arena">
-      <div className="chess-players-bar">
+    <GameCanvasShell
+      title="Chess Arena"
+      subtitle="Tactical Board"
+      status={shellStatus}
+      skin="strategy"
+      musicProfile="strategy"
+      contentStyle={{ padding: 24, overflow: 'auto' }}
+    >
+      <div className="builtin-activity-body chess-arena">
+        <div className="chess-players-bar">
         <div className={`player-slot ${gameState.turn === WHITE ? 'active-turn' : ''} ${myColor === WHITE ? 'is-me' : ''}`}>
           <div className="player-color white"><PieceSVG type="k" color="w" size={28} /></div>
           <div className="player-info">
@@ -1332,8 +1361,9 @@ const ChessArenaActivity = ({ sdk, currentUser }) => {
             <div className="legend-item"><span className="legend-dot capture" /> Capture available</div>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </GameCanvasShell>
   )
 }
 

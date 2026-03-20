@@ -47,12 +47,13 @@ class ActivityErrorBoundary extends React.Component {
 const MAX_ERRORS = 10
 const WARN_COOLDOWN_MS = 2000
 
-const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose, embedded = false }) => {
+const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose, embedded = false, inputSuspended = false }) => {
   const { user } = useAuth()
   const [securityWarning, setSecurityWarning] = useState('')
   const [componentError, setComponentError] = useState(null)
   const [isReconnecting, setIsReconnecting] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isSessionReady, setIsSessionReady] = useState(false)
   const errorCountRef = useRef(0)
   const warningHistoryRef = useRef(new Map())
   const modalRef = useRef(null)
@@ -119,6 +120,7 @@ const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose,
     setSecurityWarning('')
     setComponentError(null)
     setIsReconnecting(false)
+    setIsSessionReady(false)
     errorCountRef.current = 0
     warningHistoryRef.current.clear()
   }, [safeSessionId, rawActivityId])
@@ -209,6 +211,7 @@ const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose,
 
     try {
       sdk.connectSession()
+      setIsSessionReady(true)
     } catch (err) {
       console.error('[BuiltinActivityHost] connectSession failed:', err)
       setComponentError('Failed to connect to activity session')
@@ -286,11 +289,11 @@ const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose,
 
   const renderBody = () => {
     if (invalidSessionNode) return invalidSessionNode
-    if (!sdk) {
+    if (!sdk || !isSessionReady) {
       return (
         <div className="builtin-activity-loading">
           <div className="loading-spinner" />
-          <p>Initializing activity...</p>
+          <p>{sdk ? 'Joining activity session...' : 'Initializing activity...'}</p>
         </div>
       )
     }
@@ -302,9 +305,23 @@ const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose,
     }
 
     return (
-      <ActivityErrorBoundary onError={handleComponentError} resetKey={`${safeSessionId}:${normalizedActivityId}:${componentError || ''}`}>
-        <Component sdk={sdk} session={session} currentUser={user} activityDefinition={activityDefinition} />
-      </ActivityErrorBoundary>
+      <div className={`builtin-activity-runtime ${inputSuspended ? 'is-input-suspended' : ''}`}>
+        <ActivityErrorBoundary onError={handleComponentError} resetKey={`${safeSessionId}:${normalizedActivityId}:${componentError || ''}`}>
+          <Component
+            sdk={sdk}
+            vas={sdk}
+            session={session}
+            currentUser={user}
+            participants={session?.participants || []}
+            activityDefinition={activityDefinition}
+          />
+        </ActivityErrorBoundary>
+        {inputSuspended && (
+          <div className="builtin-activity-empty builtin-activity-suspend-overlay">
+            Activity input is paused while voice is minimized.
+          </div>
+        )}
+      </div>
     )
   }
 

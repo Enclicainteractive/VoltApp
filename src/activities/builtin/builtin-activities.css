@@ -332,6 +332,25 @@
   overflow: hidden;
 }
 
+.builtin-activity-runtime {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.builtin-activity-runtime.is-input-suspended {
+  overflow: hidden;
+}
+
+.builtin-activity-suspend-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(10, 14, 24, 0.78);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
 /* ============================================================
    COLLABORATIVE DRAWING ACTIVITY
    ============================================================ */

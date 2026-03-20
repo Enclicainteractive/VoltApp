@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ArcadeParty3DScene from './arcade/ArcadeParty3DScene'
+import GameCanvasShell from './shared/GameCanvasShell'
 
 const createModeMeta = (name, subtitle, seats, engine, theme = {}, kind = '3d') => ({ name, subtitle, seats, engine, theme, kind })
 
@@ -2009,18 +2010,18 @@ const ArcadePartyActivity = ({ sdk, currentUser, activityDefinition }) => {
 
   const handleJoin = useCallback(() => {
     if (!me) return
-    pushState(joinState(gameState, me, key), 'player_join')
-  }, [gameState, key, me, pushState])
+    pushState(joinState(pendingStateRef.current, me, key), 'player_join')
+  }, [key, me, pushState])
 
   const handleLeave = useCallback(() => {
     if (!me) return
-    pushState(leaveState(gameState, me.id, key), 'player_leave')
-  }, [gameState, key, me, pushState])
+    pushState(leaveState(pendingStateRef.current, me.id, key), 'player_leave')
+  }, [key, me, pushState])
 
   const handleReset = useCallback(() => {
     const next = createBaseState(key)
-    next.players = gameState.players
-    next.spectators = gameState.spectators
+    next.players = pendingStateRef.current.players
+    next.spectators = pendingStateRef.current.spectators
     if ((meta.seats === 0 && next.players.length) || (meta.seats > 0 && next.players.length >= meta.seats)) {
       const nextMeta = resolveModeMeta(key)
       next.phase = 'live'
@@ -2028,13 +2029,16 @@ const ArcadePartyActivity = ({ sdk, currentUser, activityDefinition }) => {
       next.message = `${next.players[0]?.username || 'Player'} starts ${nextMeta.name}.`
     }
     pushState(next, 'round_start')
-  }, [gameState.players, gameState.spectators, key, meta.seats, pushState])
+  }, [key, meta.seats, pushState])
 
   const performAction = useCallback((action) => {
-    if (!me || (meta.seats && !isMyTurn) || (!meta.seats && !mySeat && !gameState.players.some((entry) => entry.id === me.id))) return
-    const next = applyAction(gameState, engine, me, action)
-    if (next !== gameState) pushState(next, 'move_valid')
-  }, [engine, gameState, isMyTurn, me, meta.seats, mySeat, pushState])
+    const current = pendingStateRef.current
+    const seatedPlayer = current.players.find((entry) => entry.id === me?.id) || null
+    const canAct = !!me && (!(meta.seats && current.phase !== 'finished') || current.turnPlayerId === seatedPlayer?.id || !meta.seats)
+    if (!canAct || (!meta.seats && !seatedPlayer && !current.players.some((entry) => entry.id === me.id))) return
+    const next = applyAction(current, engine, me, action)
+    if (next !== current) pushState(next, 'move_valid')
+  }, [engine, me, meta.seats, pushState])
 
   const board = useMemo(() => {
     const isDisabled = !!meta.seats && (!mySeat || !isMyTurn)
@@ -2071,22 +2075,32 @@ const ArcadePartyActivity = ({ sdk, currentUser, activityDefinition }) => {
       : { value: 'Shared Room', label: 'Interaction Model' }
 
   return (
-    <div
-      className={`arcade-party arcade-skin-${ui.skin}`}
-      style={{
-        '--bg0': ui.bg0,
-        '--bg1': ui.bg1,
-        '--panel': ui.panel,
-        '--text': ui.text,
-        '--muted': ui.muted,
-        '--line': ui.line,
-        '--line-strong': ui.lineStrong,
-        '--cyan': ui.glow,
-        '--pink': ui.accent2,
-        '--gold': ui.accent,
-      }}
+    <GameCanvasShell
+      title="Arcade Party"
+      subtitle={meta.name}
+      status={meta.subtitle}
+      skin={meta.kind === '3d' ? 'arcade' : 'sport'}
+      musicProfile={['checkers', 'reversi', 'gomoku', 'mancala'].includes(engine) ? 'strategy' : 'arcade'}
+      musicEnabled
+      layout="stretch"
+      contentStyle={{ padding: 18 }}
     >
-      <style>{CSS}</style>
+      <div
+        className={`arcade-party arcade-skin-${ui.skin}`}
+        style={{
+          '--bg0': ui.bg0,
+          '--bg1': ui.bg1,
+          '--panel': ui.panel,
+          '--text': ui.text,
+          '--muted': ui.muted,
+          '--line': ui.line,
+          '--line-strong': ui.lineStrong,
+          '--cyan': ui.glow,
+          '--pink': ui.accent2,
+          '--gold': ui.accent,
+        }}
+      >
+        <style>{CSS}</style>
 
       <aside className="arcade-side">
         <div className="arcade-side-header">
@@ -2220,7 +2234,8 @@ const ArcadePartyActivity = ({ sdk, currentUser, activityDefinition }) => {
           {engine === 'mancala' ? <div className="arcade-pill">Stores: {gameState.payload.pits?.[6] || 0} / {gameState.payload.pits?.[13] || 0}</div> : null}
         </div>
       </section>
-    </div>
+      </div>
+    </GameCanvasShell>
   )
 }
 

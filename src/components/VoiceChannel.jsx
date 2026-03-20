@@ -392,7 +392,7 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
   const { user } = useAuth()
   const { t } = useTranslation()
   const { isEncryptionEnabled, getServerEncryptionStatus } = useE2e()
-  const { focusedActivityId, activeActivities, setFocusedActivity, clearFocusedActivity, addActivity, removeActivity } = useAppStore()
+  const { focusedActivityId, activeActivities, setFocusedActivity, clearFocusedActivity, upsertActivity, removeActivity } = useAppStore()
   
   const currentServer = getStoredServer()
   const apiUrl = currentServer?.apiUrl || ''
@@ -474,6 +474,8 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
   const [localIsMuted, setLocalIsMuted] = useState(initialVoiceState.muted)
   const [localIsDeafened, setLocalIsDeafened] = useState(initialVoiceState.deafened)
   const pendingLaunchedActivityIdRef = useRef(null)
+  const activeActivitiesRef = useRef(activeActivities)
+  const focusedActivityIdRef = useRef(focusedActivityId)
   // Effective local state (can be externally controlled by parent)
   const currentMuted = externalMuted !== undefined ? externalMuted : localIsMuted
   const currentDeafened = externalDeafened !== undefined ? externalDeafened : localIsDeafened
@@ -484,6 +486,14 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
   const [focusedBuiltinSession, setFocusedBuiltinSession] = useState(null)
   // Local state for focused external activity session
   const [focusedExternalSession, setFocusedExternalSession] = useState(null)
+
+  useEffect(() => {
+    activeActivitiesRef.current = activeActivities
+  }, [activeActivities])
+
+  useEffect(() => {
+    focusedActivityIdRef.current = focusedActivityId
+  }, [focusedActivityId])
   
   // Update focusedBuiltinSession when focusedActivityId changes
   useEffect(() => {
@@ -492,24 +502,17 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
       // Only focus if activity is valid
       if (activity && activity.activityId && activity.activityId.startsWith('builtin:')) {
         setFocusedBuiltinSession({
+          ...activity,
           id: activity.sessionId,
           sessionId: activity.sessionId,
-          activityId: activity.activityId,
-          activityName: activity.activityName || 'Activity',
-          contextType: activity.contextType,
-          contextId: activity.contextId
         })
         setFocusedExternalSession(null)
       } else if (activity && activity.activityId && !activity.activityId.startsWith('builtin:')) {
         setFocusedBuiltinSession(null)
         setFocusedExternalSession({
+          ...activity,
           id: activity.sessionId,
           sessionId: activity.sessionId,
-          activityId: activity.activityId,
-          activityName: activity.activityName || 'Activity',
-          launchUrl: activity.launchUrl || null,
-          contextType: activity.contextType,
-          contextId: activity.contextId
         })
       } else {
         setFocusedBuiltinSession(null)
@@ -632,6 +635,24 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
   useEffect(() => {
     if (!socket || !channel?.id) return
 
+    const toStoreActivity = (session = {}) => ({
+      id: session.id,
+      sessionId: session.id,
+      activityId: session.activityId,
+      activityName: session.activityName || 'Activity',
+      launchUrl: session.launchUrl || null,
+      ownerId: session.ownerId || session.hostId || null,
+      hostId: session.hostId || session.ownerId || null,
+      contextType: session.contextType,
+      contextId: session.contextId,
+      participantCount: Math.max(Number(session.participantCount || session.participants?.length || 0), 1),
+      participants: Array.isArray(session.participants) ? session.participants : [],
+      state: session.state && typeof session.state === 'object' ? session.state : {},
+      p2p: session.p2p || { enabled: true, preferred: true },
+      sound: session.sound || { enabled: true, volume: 0.8 },
+      isBuiltin: String(session.activityId || '').startsWith('builtin:')
+    })
+
     const onSessions = (data = {}) => {
       if (!data.sessions || !Array.isArray(data.sessions)) return
       // Filter sessions for this channel - ONLY valid sessions
@@ -645,10 +666,12 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
       
       // Cleanup sessions that no longer exist in this context.
       const validSessionIds = new Set(channelSessions.map(s => s.id))
-      activeActivities.forEach(activity => {
+      activeActivitiesRef.current
+        .filter((activity) => activity?.contextType === 'voice' && activity?.contextId === channel.id)
+        .forEach((activity) => {
         if (!validSessionIds.has(activity.sessionId)) {
           removeActivity(activity.sessionId)
-          if (focusedActivityId === activity.sessionId) {
+          if (focusedActivityIdRef.current === activity.sessionId) {
             clearFocusedActivity()
             // Exit fullscreen if active
             if (document.fullscreenElement) {
@@ -661,51 +684,18 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
       // Add all valid sessions to store
       channelSessions.forEach(session => {
         if (!session.id || !session.activityId) return
-        const participantCount = Math.max(Number(session.participantCount || 0), 1)
+        const storeActivity = toStoreActivity(session)
         const isPendingLaunch = pendingLaunchedActivityIdRef.current && pendingLaunchedActivityIdRef.current === session.activityId
-        const isBuiltin = String(session.activityId || '').startsWith('builtin:')
-        if (!activeActivities.find(a => a.sessionId === session.id)) {
-          addActivity({
-            sessionId: session.id,
-            activityId: session.activityId,
-            activityName: session.activityName || 'Activity',
-            launchUrl: session.launchUrl || null,
-            ownerId: session.ownerId || session.hostId || null,
-            hostId: session.hostId || session.ownerId || null,
-            contextType: session.contextType,
-            contextId: session.contextId,
-            participantCount,
-            isBuiltin
-          })
-        }
+        upsertActivity(storeActivity)
         if (isPendingLaunch) {
           pendingLaunchedActivityIdRef.current = null
           setFocusedActivity(session.id)
-          if (isBuiltin) {
-            setFocusedBuiltinSession({
-              id: session.id,
-              sessionId: session.id,
-              activityId: session.activityId,
-              activityName: session.activityName || 'Activity',
-              ownerId: session.ownerId || session.hostId || null,
-              hostId: session.hostId || session.ownerId || null,
-              contextType: session.contextType,
-              contextId: session.contextId,
-              participantCount
-            })
+          if (storeActivity.isBuiltin) {
+            setFocusedBuiltinSession(storeActivity)
             setFocusedExternalSession(null)
           } else {
             setFocusedBuiltinSession(null)
-            setFocusedExternalSession({
-              id: session.id,
-              sessionId: session.id,
-              activityId: session.activityId,
-              activityName: session.activityName || 'Activity',
-              launchUrl: session.launchUrl || null,
-              contextType: session.contextType,
-              contextId: session.contextId,
-              participantCount
-            })
+            setFocusedExternalSession(storeActivity)
           }
         }
       })
@@ -718,52 +708,22 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
         console.warn('[VoiceChannel] Ignoring invalid session:', session)
         return
       }
-      const participantCount = Math.max(Number(session.participantCount || 0), 1)
+      const storeActivity = toStoreActivity(session)
       const isPendingLaunch = pendingLaunchedActivityIdRef.current && pendingLaunchedActivityIdRef.current === session.activityId
-      const isBuiltin = String(session.activityId || '').startsWith('builtin:')
-      if (!activeActivities.find(a => a.sessionId === session.id)) {
-        addActivity({
-          sessionId: session.id,
-          activityId: session.activityId,
-          activityName: session.activityName || 'Activity',
-          launchUrl: session.launchUrl || null,
-          ownerId: session.ownerId || session.hostId || null,
-          hostId: session.hostId || session.ownerId || null,
-          contextType: session.contextType,
-          contextId: session.contextId,
-          participantCount,
-          isBuiltin
-        })
+      const wasKnown = activeActivitiesRef.current.some((activity) => activity?.sessionId === session.id)
+      upsertActivity(storeActivity)
+      if (!wasKnown) {
         soundService?.activityStart?.() || soundService?.success?.()
       }
       if (isPendingLaunch) {
         pendingLaunchedActivityIdRef.current = null
         setFocusedActivity(session.id)
-        if (isBuiltin) {
-          setFocusedBuiltinSession({
-            id: session.id,
-            sessionId: session.id,
-            activityId: session.activityId,
-            activityName: session.activityName || 'Activity',
-            ownerId: session.ownerId || session.hostId || null,
-            hostId: session.hostId || session.ownerId || null,
-            contextType: session.contextType,
-            contextId: session.contextId,
-            participantCount
-          })
+        if (storeActivity.isBuiltin) {
+          setFocusedBuiltinSession(storeActivity)
           setFocusedExternalSession(null)
         } else {
           setFocusedBuiltinSession(null)
-          setFocusedExternalSession({
-            id: session.id,
-            sessionId: session.id,
-            activityId: session.activityId,
-            activityName: session.activityName || 'Activity',
-            launchUrl: session.launchUrl || null,
-            contextType: session.contextType,
-            contextId: session.contextId,
-            participantCount
-          })
+          setFocusedExternalSession(storeActivity)
         }
       }
     }
@@ -790,7 +750,7 @@ const VoiceChannel = ({ channel, joinKey, viewMode = 'full', onLeave, isMuted: e
       socket.off('activity:session-created', onSessionCreated)
       socket.off('activity:session-ended', onSessionEnded)
     }
-  }, [socket, channel?.id])
+  }, [socket, channel?.id, clearFocusedActivity, removeActivity, setFocusedActivity, upsertActivity])
 
   // VoiceFX state
   const [showVoiceFX, setShowVoiceFX] = useState(false)
@@ -4376,14 +4336,23 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
         applyLowDelayModeToAllPeers()
         cancelPendingPeerRemoval(normalizedUser.id)
         
-        // Update participants list (user was already there, just updating)
+        // Clear stale peer state so no error badge shows while the new WebRTC
+        // connection is being established after reconnection.
+        setPeerStates(prev => {
+          if (!(normalizedUser.id in prev)) return prev
+          const next = { ...prev }
+          delete next[normalizedUser.id]
+          return next
+        })
+
+        // Update participants list — clear isReconnecting flag
         setParticipants(prev => {
           const existingIndex = prev.findIndex(p => p?.id === normalizedUser.id)
           if (existingIndex === -1) {
             return [...prev, normalizedUser]
           }
           const next = [...prev]
-          next[existingIndex] = { ...prev[existingIndex], ...normalizedUser }
+          next[existingIndex] = { ...prev[existingIndex], ...normalizedUser, isReconnecting: false }
           return next
         })
         
@@ -4562,6 +4531,14 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
     socket.on('voice:user-left', (data) => {
       const userId = data?.userId || data?.id
       if (!userId) return
+      // Clear stale peer connection state immediately so no error badge shows
+      // during the grace window — the user is simply leaving/reconnecting.
+      setPeerStates(prev => {
+        if (!(userId in prev)) return prev
+        const next = { ...prev }
+        delete next[userId]
+        return next
+      })
       // Mark participant as reconnecting in UI instead of removing immediately,
       // giving them time to rejoin (e.g. during socket reconnect).
       setParticipants(prev => prev.map(p =>
@@ -5385,15 +5362,6 @@ socket.on('voice:force-reconnect', (data) => {
       setIsMiniDragging(false)
     }
   }, [viewMode])
-
-  // Clear focused activity when switching to mini mode to prevent keyboard capture
-  useEffect(() => {
-    if (viewMode === 'mini' && focusedBuiltinSession) {
-      console.log('[VoiceChannel] Clearing focused activity in mini mode to prevent keyboard capture')
-      setFocusedBuiltinSession(null)
-      clearFocusedActivity()
-    }
-  }, [viewMode, focusedBuiltinSession, clearFocusedActivity])
 
   const toggleMute = () => {
     // Can't unmute while deafened
@@ -6619,6 +6587,7 @@ socket.on('voice:force-reconnect', (data) => {
               contextType="voice"
               contextId={channel?.id}
               embedded
+              inputSuspended={viewMode === 'mini'}
               onClose={() => {
                 clearFocusedActivity()
                 setFocusedBuiltinSession(null)
@@ -6629,6 +6598,7 @@ socket.on('voice:force-reconnect', (data) => {
           <ActivityIframe
             session={focusedExternalSession}
             activity={focusedExternalSession}
+            inputSuspended={viewMode === 'mini'}
             onClose={() => {
               clearFocusedActivity()
               setFocusedExternalSession(null)
@@ -6714,7 +6684,13 @@ socket.on('voice:force-reconnect', (data) => {
                     return (
                 <div
                   key={participant.id}
-                  className={`participant-grid-tile ${isSpeaking ? 'speaking' : ''} ${isMuted ? 'muted' : ''} ${participantHasVideo ? 'has-video' : ''}`}
+                  className={[
+                    'participant-grid-tile',
+                    isSpeaking ? 'speaking' : '',
+                    isMuted ? 'muted' : '',
+                    participantHasVideo ? 'has-video' : '',
+                    participant.isReconnecting ? 'reconnecting' : '',
+                  ].filter(Boolean).join(' ')}
                   onContextMenu={(e) => openParticipantMenu(participant, e)}
                 >
                   {participantHasVideo ? (
@@ -6827,6 +6803,8 @@ socket.on('voice:force-reconnect', (data) => {
                   participantHasVideo ? 'has-video' : '',
                   isPinned ? 'pinned' : '',
                   isMain ? 'main' : '',
+                  participant.isReconnecting ? 'reconnecting' : '',
+                  (!isSelf && !participant.isReconnecting && peerState === 'connecting') ? 'connecting' : '',
                 ].filter(Boolean).join(' ')}
                 onClick={() => setPinnedParticipant(isPinned ? null : participant)}
                 title={`${participant.username}${isSpeaking ? ` • ${t('chat.speaking', 'Speaking')}` : ''}${isMuted ? ` • ${t('chat.muted', 'Muted')}` : ''}`}
@@ -6856,9 +6834,14 @@ socket.on('voice:force-reconnect', (data) => {
                       className="tile-avatar"
                       userId={participant.id}
                     />
-                    {isMuted && <div className="tile-mute-icon"><MicrophoneIcon size={14} /></div>}
-                    {isDeafened && <div className="tile-deafen-icon"><SpeakerXMarkIcon size={14} /></div>}
-                    {!isSelf && peerState !== 'connected' && (
+                    {isMuted && !participant.isReconnecting && <div className="tile-mute-icon"><MicrophoneIcon size={14} /></div>}
+                    {isDeafened && !participant.isReconnecting && <div className="tile-deafen-icon"><SpeakerXMarkIcon size={14} /></div>}
+                    {/* Reconnecting badge — user left but is in the grace window */}
+                    {!isSelf && participant.isReconnecting && (
+                      <div className="tile-reconnecting-badge" title={t('voice.reconnecting', 'Reconnecting…')}>⟳</div>
+                    )}
+                    {/* Peer connection state badge — only when not reconnecting */}
+                    {!isSelf && peerState !== 'connected' && !participant.isReconnecting && (
                       <div className={`tile-peer-badge peer-state-${peerState}`} title={t(`voice.peerState.${peerState}`, peerState)}>
                         {peerState === 'connecting' ? '⟳' : peerState === 'failed' ? '✕' : '!'}
                       </div>

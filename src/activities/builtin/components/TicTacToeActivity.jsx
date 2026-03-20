@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { ArrowPathIcon, TrophyIcon, HandRaisedIcon } from '@heroicons/react/24/solid'
+import GameCanvasShell from './shared/GameCanvasShell'
 
 const EMPTY = null
 const X = 'X'
@@ -237,6 +238,7 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
   const [lastPlacedIdx, setLastPlacedIdx] = useState(null)
 
   const seenEventsRef = useRef(new Set())
+  const stateRef = useRef(baseState)
   const joinedRef = useRef(false)
   const soundRef = useRef(null)
   const prevWinnerRef = useRef(null)
@@ -249,6 +251,16 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
     soundRef.current = mgr
     return mgr
   }, [])
+
+  useEffect(() => {
+    stateRef.current = gameState
+  }, [gameState])
+
+  const pushState = useCallback((nextState, cue = 'game_update') => {
+    stateRef.current = nextState
+    setGameState(nextState)
+    sdk?.updateState?.({ ttt: nextState }, { serverRelay: true, cue })
+  }, [sdk])
 
   // Initialize audio on first user interaction
   useEffect(() => {
@@ -307,6 +319,7 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
           next.status = 'waiting'
         }
 
+        stateRef.current = next
         return next
       })
 
@@ -456,7 +469,8 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
     rememberEvent(seenEventsRef, actionId)
 
     setLastPlacedIdx(idx)
-    setGameState((prev) => applyMove(prev, idx, mySymbol))
+    const nextState = applyMove(stateRef.current, idx, mySymbol)
+    pushState(nextState, 'move_valid')
     sound.playMove()
 
     sdk.emitEvent('ttt:move', {
@@ -468,7 +482,7 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
       serverRelay: true,
       cue: 'score_update'
     })
-  }, [gameState.cells, gameState.winner, gameState.isDraw, gameState.turn, mySymbol, sdk, currentUser?.id, sound])
+  }, [gameState.cells, gameState.winner, gameState.isDraw, gameState.turn, mySymbol, sdk, currentUser?.id, sound, pushState])
 
   if (!sdk) {
     return <div className="builtin-activity-loading"><div className="loading-spinner" /><p>Loading Tic Tac Toe...</p></div>
@@ -483,6 +497,19 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
 
     const actionId = `ttt_join_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     rememberEvent(seenEventsRef, actionId)
+
+    const player = {
+      id: String(currentUser.id),
+      username: String(currentUser.username || 'Player')
+    }
+    const current = stateRef.current
+    pushState({
+      ...current,
+      xPlayer: symbol === X ? player : current.xPlayer,
+      oPlayer: symbol === O ? player : current.oPlayer,
+      disconnected: current.disconnected === symbol ? null : current.disconnected,
+      status: (symbol === X ? current.oPlayer : current.xPlayer) ? 'playing' : 'waiting'
+    }, 'player_join')
 
     sdk.emitEvent('ttt:join', {
       playerId: currentUser.id,
@@ -501,6 +528,15 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
     const actionId = `ttt_leave_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     rememberEvent(seenEventsRef, actionId)
 
+    const current = stateRef.current
+    pushState({
+      ...current,
+      xPlayer: mySymbol === X ? null : current.xPlayer,
+      oPlayer: mySymbol === O ? null : current.oPlayer,
+      status: 'waiting',
+      disconnected: current.disconnected === mySymbol ? null : current.disconnected
+    }, 'player_leave')
+
     sdk.emitEvent('ttt:leave', {
       playerId: currentUser.id,
       symbol: mySymbol,
@@ -517,14 +553,15 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
     const actionId = `ttt_reset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     rememberEvent(seenEventsRef, actionId)
 
-    sdk.emitEvent('ttt:reset', { actionId }, { serverRelay: true, cue: 'round_start' })
-
-    setGameState((prev) => ({
+    const current = stateRef.current
+    pushState({
       ...baseState,
-      xPlayer: prev.xPlayer,
-      oPlayer: prev.oPlayer,
-      status: prev.xPlayer && prev.oPlayer ? 'playing' : 'waiting'
-    }))
+      xPlayer: current.xPlayer,
+      oPlayer: current.oPlayer,
+      status: current.xPlayer && current.oPlayer ? 'playing' : 'waiting'
+    }, 'round_start')
+
+    sdk.emitEvent('ttt:reset', { actionId }, { serverRelay: true, cue: 'round_start' })
     setLastPlacedIdx(null)
     sound.playReset()
   }
@@ -547,154 +584,172 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
     : gameState.disconnected === O
       ? gameState.oPlayer
       : null
+  const shellStatus = gameState.status === 'waiting'
+    ? 'Claim X or O and start the round. The shared shell now provides the interactive backdrop and music bed.'
+    : gameOver
+      ? gameState.isDraw
+        ? 'Draw game. Reset to run it back.'
+        : `${gameState.winner} closed the board.`
+      : isMyTurn
+        ? 'Your move. Pick an open square.'
+        : `Watching ${gameState.turn} line up the next mark.`
 
   return (
-    <div className={`builtin-activity-body ttt-activity ${gameOver ? 'game-ended' : ''}`}>
-      {/* Disconnect Banner */}
-      {gameState.disconnected && !gameOver && (
-        <DisconnectBanner player={disconnectedPlayer} symbol={gameState.disconnected} />
-      )}
+    <GameCanvasShell
+      title="Board Game"
+      subtitle="Tic Tac Toe"
+      status={shellStatus}
+      skin="arcade"
+      musicProfile="arcade"
+      contentStyle={{ paddingTop: 88 }}
+    >
+      <div className={`builtin-activity-body ttt-activity ${gameOver ? 'game-ended' : ''}`}>
+        {/* Disconnect Banner */}
+        {gameState.disconnected && !gameOver && (
+          <DisconnectBanner player={disconnectedPlayer} symbol={gameState.disconnected} />
+        )}
 
-      <div className="ttt-players-bar">
-        <div className={`ttt-player-slot ${gameState.turn === X && !gameOver ? 'active-turn' : ''} ${mySymbol === X ? 'is-me' : ''}`}>
-          <div className="ttt-symbol x">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <line x1="6" y1="6" x2="18" y2="18" />
-              <line x1="6" y1="18" x2="18" y2="6" />
-            </svg>
-          </div>
-          <div className="ttt-player-info">
-            <span className="ttt-player-name">{gameState.xPlayer?.username || 'Waiting...'}</span>
-            <span className="ttt-player-label">Player X</span>
-          </div>
-          {canJoinX && mySymbol !== O && <button className="ttt-join-btn" onClick={() => joinGame(X)}>Join</button>}
-          {mySymbol === X && <button className="ttt-leave-btn" onClick={leaveGame}>Leave</button>}
-        </div>
-
-        <div className="ttt-status">
-          {gameState.status === 'waiting' && (
-            <div className="ttt-status-content waiting">
-              <HandRaisedIcon className="ttt-status-icon" />
-              <span>Waiting for players...</span>
+        <div className="ttt-players-bar">
+          <div className={`ttt-player-slot ${gameState.turn === X && !gameOver ? 'active-turn' : ''} ${mySymbol === X ? 'is-me' : ''}`}>
+            <div className="ttt-symbol x">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="6" y1="18" x2="18" y2="6" />
+              </svg>
             </div>
-          )}
-          {gameState.status === 'playing' && !gameOver && (
-            <div className={`ttt-status-content ${isMyTurn ? 'my-turn' : ''}`}>
-              <div className="ttt-turn-indicator-wrapper">
-                <span className={isMyTurn ? 'turn-active' : ''}>
-                  {isMyTurn ? 'Your Turn!' : `${gameState.turn}'s Turn`}
-                </span>
-                {isMyTurn && <div className="turn-pulse" />}
+            <div className="ttt-player-info">
+              <span className="ttt-player-name">{gameState.xPlayer?.username || 'Waiting...'}</span>
+              <span className="ttt-player-label">Player X</span>
+            </div>
+            {canJoinX && mySymbol !== O && <button className="ttt-join-btn" onClick={() => joinGame(X)}>Join</button>}
+            {mySymbol === X && <button className="ttt-leave-btn" onClick={leaveGame}>Leave</button>}
+          </div>
+
+          <div className="ttt-status">
+            {gameState.status === 'waiting' && (
+              <div className="ttt-status-content waiting">
+                <HandRaisedIcon className="ttt-status-icon" />
+                <span>Waiting for players...</span>
               </div>
+            )}
+            {gameState.status === 'playing' && !gameOver && (
+              <div className={`ttt-status-content ${isMyTurn ? 'my-turn' : ''}`}>
+                <div className="ttt-turn-indicator-wrapper">
+                  <span className={isMyTurn ? 'turn-active' : ''}>
+                    {isMyTurn ? 'Your Turn!' : `${gameState.turn}'s Turn`}
+                  </span>
+                  {isMyTurn && <div className="turn-pulse" />}
+                </div>
+              </div>
+            )}
+            {gameState.winner && (
+              <div className="ttt-status-content winner">
+                <TrophyIcon className="ttt-status-icon" />
+                <span className="ttt-winner-text">
+                  {mySymbol && gameState.winner === mySymbol
+                    ? 'You Win!'
+                    : `${gameState.winner} Wins!`}
+                </span>
+              </div>
+            )}
+            {gameState.isDraw && (
+              <div className="ttt-status-content draw">
+                <span className="ttt-draw-text">It's a Draw!</span>
+              </div>
+            )}
+          </div>
+
+          <div className={`ttt-player-slot ${gameState.turn === O && !gameOver ? 'active-turn' : ''} ${mySymbol === O ? 'is-me' : ''}`}>
+            <div className="ttt-symbol o">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="8" />
+              </svg>
             </div>
-          )}
-          {gameState.winner && (
-            <div className="ttt-status-content winner">
-              <TrophyIcon className="ttt-status-icon" />
-              <span className="ttt-winner-text">
-                {mySymbol && gameState.winner === mySymbol
-                  ? 'You Win!'
-                  : `${gameState.winner} Wins!`}
-              </span>
+            <div className="ttt-player-info">
+              <span className="ttt-player-name">{gameState.oPlayer?.username || 'Waiting...'}</span>
+              <span className="ttt-player-label">Player O</span>
             </div>
-          )}
-          {gameState.isDraw && (
-            <div className="ttt-status-content draw">
-              <span className="ttt-draw-text">It's a Draw!</span>
-            </div>
-          )}
+            {canJoinO && mySymbol !== X && <button className="ttt-join-btn" onClick={() => joinGame(O)}>Join</button>}
+            {mySymbol === O && <button className="ttt-leave-btn" onClick={leaveGame}>Leave</button>}
+          </div>
         </div>
 
-        <div className={`ttt-player-slot ${gameState.turn === O && !gameOver ? 'active-turn' : ''} ${mySymbol === O ? 'is-me' : ''}`}>
-          <div className="ttt-symbol o">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="8" />
-            </svg>
+        <div className="ttt-game-board">
+          <div className="ttt-grid">
+            {gameState.cells.map((cell, idx) => {
+              const isWinning = gameState.winningLine?.includes(idx)
+              const isLastPlaced = lastPlacedIdx === idx && cell
+              return (
+                <button
+                  key={idx}
+                  className={[
+                    'ttt-cell',
+                    cell ? 'filled' : '',
+                    isWinning ? 'winning' : '',
+                    !cell && isMyTurn && isPlaying && !gameOver ? 'playable' : '',
+                    isLastPlaced ? 'last-placed' : ''
+                  ].filter(Boolean).join(' ')}
+                  onClick={() => play(idx)}
+                  disabled={!!cell || !!gameOver || !isPlaying}
+                  aria-label={cell ? `Cell ${idx + 1}: ${cell}` : `Cell ${idx + 1}: empty`}
+                >
+                  <span className="ttt-cell-content">{renderSymbol(cell)}</span>
+                </button>
+              )
+            })}
+            {gameState.winningLine && (
+              <svg className="ttt-winning-line" viewBox="0 0 300 300" aria-hidden="true">
+                <line
+                  x1={(() => {
+                    const startIdx = gameState.winningLine[0]
+                    const col = startIdx % 3
+                    return col * 100 + 50
+                  })()}
+                  y1={(() => {
+                    const startIdx = gameState.winningLine[0]
+                    const row = Math.floor(startIdx / 3)
+                    return row * 100 + 50
+                  })()}
+                  x2={(() => {
+                    const endIdx = gameState.winningLine[2]
+                    const col = endIdx % 3
+                    return col * 100 + 50
+                  })()}
+                  y2={(() => {
+                    const endIdx = gameState.winningLine[2]
+                    const row = Math.floor(endIdx / 3)
+                    return row * 100 + 50
+                  })()}
+                  stroke="currentColor"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
           </div>
-          <div className="ttt-player-info">
-            <span className="ttt-player-name">{gameState.oPlayer?.username || 'Waiting...'}</span>
-            <span className="ttt-player-label">Player O</span>
-          </div>
-          {canJoinO && mySymbol !== X && <button className="ttt-join-btn" onClick={() => joinGame(O)}>Join</button>}
-          {mySymbol === O && <button className="ttt-leave-btn" onClick={leaveGame}>Leave</button>}
-        </div>
-      </div>
 
-      <div className="ttt-game-board">
-        <div className="ttt-grid">
-          {gameState.cells.map((cell, idx) => {
-            const isWinning = gameState.winningLine?.includes(idx)
-            const isLastPlaced = lastPlacedIdx === idx && cell
-            return (
-              <button
-                key={idx}
-                className={[
-                  'ttt-cell',
-                  cell ? 'filled' : '',
-                  isWinning ? 'winning' : '',
-                  !cell && isMyTurn && isPlaying && !gameOver ? 'playable' : '',
-                  isLastPlaced ? 'last-placed' : ''
-                ].filter(Boolean).join(' ')}
-                onClick={() => play(idx)}
-                disabled={!!cell || !!gameOver || !isPlaying}
-                aria-label={cell ? `Cell ${idx + 1}: ${cell}` : `Cell ${idx + 1}: empty`}
-              >
-                <span className="ttt-cell-content">{renderSymbol(cell)}</span>
+          <div className="ttt-controls">
+            {gameOver && (
+              <button onClick={resetGame} className="ttt-reset-btn ttt-play-again-btn">
+                <ArrowPathIcon className="ttt-reset-icon" />
+                Play Again
               </button>
-            )
-          })}
-          {gameState.winningLine && (
-            <svg className="ttt-winning-line" viewBox="0 0 300 300" aria-hidden="true">
-              <line
-                x1={(() => {
-                  const startIdx = gameState.winningLine[0]
-                  const col = startIdx % 3
-                  return col * 100 + 50
-                })()}
-                y1={(() => {
-                  const startIdx = gameState.winningLine[0]
-                  const row = Math.floor(startIdx / 3)
-                  return row * 100 + 50
-                })()}
-                x2={(() => {
-                  const endIdx = gameState.winningLine[2]
-                  const col = endIdx % 3
-                  return col * 100 + 50
-                })()}
-                y2={(() => {
-                  const endIdx = gameState.winningLine[2]
-                  const row = Math.floor(endIdx / 3)
-                  return row * 100 + 50
-                })()}
-                stroke="currentColor"
-                strokeWidth="6"
-                strokeLinecap="round"
-              />
-            </svg>
-          )}
-        </div>
-
-        <div className="ttt-controls">
-          {gameOver && (
-            <button onClick={resetGame} className="ttt-reset-btn ttt-play-again-btn">
-              <ArrowPathIcon className="ttt-reset-icon" />
-              Play Again
-            </button>
-          )}
-          {!gameOver && (
-            <button onClick={resetGame} className="ttt-reset-btn">
-              <ArrowPathIcon className="ttt-reset-icon" />
-              New Game
-            </button>
-          )}
-          {isPlaying && !gameOver && (
-            <div className={`ttt-turn-indicator ${isMyTurn ? 'my-turn' : ''}`}>
-              {isMyTurn ? 'Make your move!' : 'Waiting for opponent...'}
-            </div>
-          )}
+            )}
+            {!gameOver && (
+              <button onClick={resetGame} className="ttt-reset-btn">
+                <ArrowPathIcon className="ttt-reset-icon" />
+                New Game
+              </button>
+            )}
+            {isPlaying && !gameOver && (
+              <div className={`ttt-turn-indicator ${isMyTurn ? 'my-turn' : ''}`}>
+                {isMyTurn ? 'Make your move!' : 'Waiting for opponent...'}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </GameCanvasShell>
   )
 }
 

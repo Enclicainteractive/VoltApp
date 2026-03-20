@@ -14,6 +14,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import GameCanvasShell from './shared/GameCanvasShell'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -336,6 +337,7 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
   const [pending, setPending]   = useState(false)  // waiting for server echo
 
   const seenRef  = useRef(new Set())
+  const stateRef = useRef(BASE_STATE)
   const soundRef = useRef(null)
 
   // Create sound manager once
@@ -344,6 +346,16 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
     soundRef.current = s
     return s
   }, [])
+
+  useEffect(() => {
+    stateRef.current = gs
+  }, [gs])
+
+  const pushState = useCallback((nextState, cue = 'game_update') => {
+    stateRef.current = nextState
+    setGs(nextState)
+    sdk?.updateState?.({ c4: nextState }, { serverRelay: true, cue })
+  }, [sdk])
 
   // Init audio on first interaction
   useEffect(() => {
@@ -371,7 +383,7 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
 
       const turn = (c4.turn === RED || c4.turn === YELLOW) ? c4.turn : RED
 
-      setGs({
+      const nextState = {
         board,
         turn,
         winner:       winResult?.winner   || null,
@@ -381,7 +393,9 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
         yellowPlayer,
         status:       winResult || isDraw ? 'finished' : hasBoth ? 'playing' : 'waiting',
         moveCount:    Number.isInteger(c4.moveCount) ? Math.max(0, c4.moveCount) : 0,
-      })
+      }
+      stateRef.current = nextState
+      setGs(nextState)
 
       // Sync my color from server state
       if (currentUser?.id) {
@@ -479,6 +493,22 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
 
     setPending(true)
     setHoverCol(null)
+    const dropped = dropPiece(stateRef.current.board, col, myColor)
+    if (dropped) {
+      const winResult = checkWin(dropped.board)
+      const isDraw = !winResult && isBoardFull(dropped.board)
+      pushState({
+        ...stateRef.current,
+        board: dropped.board,
+        turn: myColor === RED ? YELLOW : RED,
+        winner: winResult?.winner || null,
+        winCells: winResult?.cells || null,
+        isDraw,
+        status: winResult || isDraw ? 'finished' : stateRef.current.redPlayer && stateRef.current.yellowPlayer ? 'playing' : 'waiting',
+        moveCount: (stateRef.current.moveCount || 0) + 1,
+      }, 'move_valid')
+      setLastDrop({ row: dropped.row, col, color: myColor, ts: Date.now() })
+    }
 
     sdk.emitEvent('c4:move', {
       col,
@@ -486,7 +516,7 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
       playerId: currentUser?.id,
       actionId,
     }, { serverRelay: true, cue: 'piece_drop' })
-  }, [sdk, myColor, pending, gs.board, gs.winner, gs.isDraw, gs.turn, currentUser?.id, sound])
+  }, [sdk, myColor, pending, gs.board, gs.winner, gs.isDraw, gs.turn, currentUser?.id, sound, pushState])
 
   const joinGame = useCallback((color) => {
     if (!sdk || !currentUser?.id) return
@@ -497,6 +527,17 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
 
     const actionId = `c4j_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     rememberEvent(seenRef, actionId)
+    const player = {
+      id: String(currentUser.id),
+      username: String(currentUser.username || 'Player'),
+      avatar: currentUser.avatar || null,
+    }
+    pushState({
+      ...stateRef.current,
+      redPlayer: color === RED ? player : stateRef.current.redPlayer,
+      yellowPlayer: color === YELLOW ? player : stateRef.current.yellowPlayer,
+      status: (color === RED ? player : stateRef.current.redPlayer) && (color === YELLOW ? player : stateRef.current.yellowPlayer) ? 'playing' : 'waiting',
+    }, 'player_join')
 
     sdk.emitEvent('c4:join', {
       playerId: currentUser.id,
@@ -507,13 +548,22 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
     }, { serverRelay: true, cue: 'player_join' })
 
     setMyColor(color)
-  }, [sdk, currentUser, gs.redPlayer, gs.yellowPlayer, sound])
+  }, [sdk, currentUser, gs.redPlayer, gs.yellowPlayer, sound, pushState])
 
   const leaveGame = useCallback(() => {
     if (!sdk || !myColor || !currentUser?.id) return
 
     const actionId = `c4l_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     rememberEvent(seenRef, actionId)
+    pushState({
+      ...stateRef.current,
+      redPlayer: myColor === RED ? null : stateRef.current.redPlayer,
+      yellowPlayer: myColor === YELLOW ? null : stateRef.current.yellowPlayer,
+      status: 'waiting',
+      winner: null,
+      winCells: null,
+      isDraw: false,
+    }, 'player_leave')
 
     sdk.emitEvent('c4:leave', {
       playerId: currentUser.id,
@@ -522,16 +572,22 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
     }, { serverRelay: true, cue: 'player_leave' })
 
     setMyColor(null)
-  }, [sdk, myColor, currentUser?.id])
+  }, [sdk, myColor, currentUser?.id, pushState])
 
   const resetGame = useCallback(() => {
     if (!sdk) return
 
     const actionId = `c4r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     rememberEvent(seenRef, actionId)
+    pushState({
+      ...BASE_STATE,
+      redPlayer: stateRef.current.redPlayer,
+      yellowPlayer: stateRef.current.yellowPlayer,
+      status: stateRef.current.redPlayer && stateRef.current.yellowPlayer ? 'playing' : 'waiting',
+    }, 'game_reset')
 
     sdk.emitEvent('c4:reset', { actionId }, { serverRelay: true, cue: 'game_reset' })
-  }, [sdk])
+  }, [sdk, pushState])
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
@@ -571,134 +627,143 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
   }
 
   return (
-    <div className="builtin-activity-body c4">
-      <style>{CSS}</style>
+    <GameCanvasShell
+      title="Connect Four"
+      subtitle="Shared Drop Grid"
+      status="Interactive canvas shell with the original board logic and synth drop cues intact."
+      skin="sport"
+      musicProfile="sport"
+      contentStyle={{ paddingTop: 96, paddingBottom: 24 }}
+    >
+      <div className="builtin-activity-body c4" style={{ width: '100%', maxWidth: 720 }}>
+        <style>{CSS}</style>
 
-      {/* ── Players bar ── */}
-      <div className="c4-bar">
-        {/* Red slot */}
-        <div className={`c4-slot red-slot${gs.turn === RED && !gameOver ? ' active' : ''}`}>
-          <div className="c4-disc-sm red" />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="c4-pname">
-              {gs.redPlayer?.username || 'Open'}
-              {gs.redPlayer?.id === currentUser?.id && ' (You)'}
+        {/* ── Players bar ── */}
+        <div className="c4-bar">
+          {/* Red slot */}
+          <div className={`c4-slot red-slot${gs.turn === RED && !gameOver ? ' active' : ''}`}>
+            <div className="c4-disc-sm red" />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="c4-pname">
+                {gs.redPlayer?.username || 'Open'}
+                {gs.redPlayer?.id === currentUser?.id && ' (You)'}
+              </div>
+              <div className="c4-psub">Red</div>
             </div>
-            <div className="c4-psub">Red</div>
+            {!myColor && canJoinRed && !gs.redPlayer && (
+              <button className="c4-join-btn red" onClick={() => joinGame(RED)}>Join</button>
+            )}
+            {myColor === RED && (
+              <button className="c4-leave-btn" onClick={leaveGame}>Leave</button>
+            )}
           </div>
-          {!myColor && canJoinRed && !gs.redPlayer && (
-            <button className="c4-join-btn red" onClick={() => joinGame(RED)}>Join</button>
-          )}
-          {myColor === RED && (
-            <button className="c4-leave-btn" onClick={leaveGame}>Leave</button>
-          )}
-        </div>
 
-        {/* Status pill */}
-        <div className={`c4-status ${statusClass}`}>{statusText}</div>
+          {/* Status pill */}
+          <div className={`c4-status ${statusClass}`}>{statusText}</div>
 
-        {/* Yellow slot */}
-        <div className={`c4-slot yel-slot${gs.turn === YELLOW && !gameOver ? ' active' : ''}`}>
-          <div className="c4-disc-sm yellow" />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="c4-pname">
-              {gs.yellowPlayer?.username || 'Open'}
-              {gs.yellowPlayer?.id === currentUser?.id && ' (You)'}
+          {/* Yellow slot */}
+          <div className={`c4-slot yel-slot${gs.turn === YELLOW && !gameOver ? ' active' : ''}`}>
+            <div className="c4-disc-sm yellow" />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="c4-pname">
+                {gs.yellowPlayer?.username || 'Open'}
+                {gs.yellowPlayer?.id === currentUser?.id && ' (You)'}
+              </div>
+              <div className="c4-psub">Yellow</div>
             </div>
-            <div className="c4-psub">Yellow</div>
+            {!myColor && canJoinYellow && !gs.yellowPlayer && (
+              <button className="c4-join-btn yellow" onClick={() => joinGame(YELLOW)}>Join</button>
+            )}
+            {myColor === YELLOW && (
+              <button className="c4-leave-btn" onClick={leaveGame}>Leave</button>
+            )}
           </div>
-          {!myColor && canJoinYellow && !gs.yellowPlayer && (
-            <button className="c4-join-btn yellow" onClick={() => joinGame(YELLOW)}>Join</button>
-          )}
-          {myColor === YELLOW && (
-            <button className="c4-leave-btn" onClick={leaveGame}>Leave</button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Board ── */}
-      <div className="c4-board-wrap">
-        {/* Column hover hints */}
-        <div className="c4-col-hints">
-          {Array.from({ length: COLS }, (_, col) => {
-            const active = isMyTurn && !gameOver && canDrop(gs.board, col) && !pending
-            return (
-              <button
-                key={col}
-                className="c4-col-hint"
-                disabled={!active}
-                onClick={() => playCol(col)}
-                onMouseEnter={() => active && setHoverCol(col)}
-                onMouseLeave={() => setHoverCol(null)}
-              >
-                {hoverCol === col && active && (
-                  <div className={`c4-hint-disc ${myColor}`} />
-                )}
-              </button>
-            )
-          })}
         </div>
 
-        {/* Grid */}
-        <div className="c4-grid">
-          {gs.board.map((row, r) =>
-            row.map((cell, c) => {
-              const isWin  = gs.winCells?.some(([wr, wc]) => wr === r && wc === c)
-              const isDrop = lastDrop && lastDrop.row === r && lastDrop.col === c
-              const clickable = isMyTurn && !gameOver && !cell && canDrop(gs.board, c) && !pending
-
+        {/* ── Board ── */}
+        <div className="c4-board-wrap">
+          {/* Column hover hints */}
+          <div className="c4-col-hints">
+            {Array.from({ length: COLS }, (_, col) => {
+              const active = isMyTurn && !gameOver && canDrop(gs.board, col) && !pending
               return (
-                <div
-                  key={`${r}_${c}`}
-                  className={`c4-cell${clickable ? ' clickable' : ''}${isWin ? ' winning' : ''}`}
-                  onClick={() => clickable && playCol(c)}
-                  onMouseEnter={() => clickable && setHoverCol(c)}
+                <button
+                  key={col}
+                  className="c4-col-hint"
+                  disabled={!active}
+                  onClick={() => playCol(col)}
+                  onMouseEnter={() => active && setHoverCol(col)}
                   onMouseLeave={() => setHoverCol(null)}
                 >
-                  {cell && (
-                    <div className={`c4-disc ${cell}${isDrop ? ' dropping' : ''}`} />
+                  {hoverCol === col && active && (
+                    <div className={`c4-hint-disc ${myColor}`} />
                   )}
-                  {pending && cell == null && hoverCol === c && isMyTurn && (
-                    <div className="c4-pending">
-                      <div className="c4-pending-dot" />
-                    </div>
-                  )}
-                </div>
+                </button>
               )
-            })
-          )}
+            })}
+          </div>
+
+          {/* Grid */}
+          <div className="c4-grid">
+            {gs.board.map((row, r) =>
+              row.map((cell, c) => {
+                const isWin = gs.winCells?.some(([wr, wc]) => wr === r && wc === c)
+                const isDrop = lastDrop && lastDrop.row === r && lastDrop.col === c
+                const clickable = isMyTurn && !gameOver && !cell && canDrop(gs.board, c) && !pending
+
+                return (
+                  <div
+                    key={`${r}_${c}`}
+                    className={`c4-cell${clickable ? ' clickable' : ''}${isWin ? ' winning' : ''}`}
+                    onClick={() => clickable && playCol(c)}
+                    onMouseEnter={() => clickable && setHoverCol(c)}
+                    onMouseLeave={() => setHoverCol(null)}
+                  >
+                    {cell && (
+                      <div className={`c4-disc ${cell}${isDrop ? ' dropping' : ''}`} />
+                    )}
+                    {pending && cell == null && hoverCol === c && isMyTurn && (
+                      <div className="c4-pending">
+                        <div className="c4-pending-dot" />
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ── Controls ── */}
+        <div className="c4-controls">
+          <button
+            className="c4-new-btn"
+            onClick={resetGame}
+            disabled={!gs.redPlayer && !gs.yellowPlayer}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+              <path d="M8 16H3v5"/>
+            </svg>
+            New Game
+          </button>
+
+          <div className={`c4-hint-text${isMyTurn && !gameOver ? ' active' : ''}`}>
+            {myColor
+              ? isMyTurn && !gameOver
+                ? 'Click a column to drop your disc'
+                : gameOver
+                  ? 'Game over — start a new game!'
+                  : 'Waiting for opponent…'
+              : 'Choose a color to join!'}
+          </div>
+
+          <div className="c4-moves">Moves: {gs.moveCount}</div>
         </div>
       </div>
-
-      {/* ── Controls ── */}
-      <div className="c4-controls">
-        <button
-          className="c4-new-btn"
-          onClick={resetGame}
-          disabled={!gs.redPlayer && !gs.yellowPlayer}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
-            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-            <path d="M21 3v5h-5"/>
-            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-            <path d="M8 16H3v5"/>
-          </svg>
-          New Game
-        </button>
-
-        <div className={`c4-hint-text${isMyTurn && !gameOver ? ' active' : ''}`}>
-          {myColor
-            ? isMyTurn && !gameOver
-              ? 'Click a column to drop your disc'
-              : gameOver
-                ? 'Game over — start a new game!'
-                : 'Waiting for opponent…'
-            : 'Choose a color to join!'}
-        </div>
-
-        <div className="c4-moves">Moves: {gs.moveCount}</div>
-      </div>
-    </div>
+    </GameCanvasShell>
   )
 }
 

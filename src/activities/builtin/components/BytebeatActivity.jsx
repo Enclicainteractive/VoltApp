@@ -133,6 +133,7 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
   const workletLoadedRef = useRef(false)
   const lastDrawBufferRef = useRef([])
   const participantTimeoutsRef = useRef({})
+  const participantsRef = useRef([])
   const codeRef = useRef(code)
 
   const visualLRef = useRef(new Float32Array(2048))
@@ -174,6 +175,10 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
   useEffect(() => {
     codeRef.current = code
   }, [code])
+
+  useEffect(() => {
+    participantsRef.current = participants
+  }, [participants])
 
   // Load AudioWorklet
   const loadWorklet = useCallback(async () => {
@@ -351,19 +356,34 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
           clearTimeout(participantTimeoutsRef.current[userId])
           delete participantTimeoutsRef.current[userId]
           setParticipants(prev => {
-            if (prev.find(p => p.id === userId)) return prev
+            if (prev.find(p => p.id === userId)) {
+              sdk.emitEvent('bytebeat:participants-list', {
+                participants: participantsRef.current.map((participant) => ({ id: participant.id, username: participant.username })),
+                requesterId: userId
+              }, { serverRelay: true })
+              return prev
+            }
             const colors = ['#f472b6', '#34d399', '#60a5fa', '#fbbf24', '#a78bfa', '#fb923c']
             const color = colors[userId.charCodeAt(0) % colors.length]
-            return [...prev, { id: userId, username: username || 'Unknown', color }]
-          })
-          // Broadcast current participants to the new joiner
-          const currentParticipants = participants.map(p => ({ id: p.id, username: p.username }))
-          if (currentParticipants.length > 0) {
+            const nextParticipants = [...prev, { id: userId, username: username || 'Unknown', color }]
+            participantsRef.current = nextParticipants
             sdk.emitEvent('bytebeat:participants-list', { 
-              participants: currentParticipants,
+              participants: nextParticipants.map((participant) => ({ id: participant.id, username: participant.username })),
               requesterId: userId 
             }, { serverRelay: true })
-          }
+            return nextParticipants
+          })
+        }
+      }
+
+      if (evt.eventType === 'bytebeat:request-participants') {
+        const { userId: requesterId } = evt.payload || {}
+        const ownId = sdk?.session?.user?.id || sdk?.user?.id
+        if (requesterId && requesterId !== ownId) {
+          sdk.emitEvent('bytebeat:participants-list', {
+            participants: participantsRef.current.map((participant) => ({ id: participant.id, username: participant.username })),
+            requesterId
+          }, { serverRelay: true })
         }
       }
 
@@ -387,7 +407,11 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
         if (userId) {
           clearTimeout(participantTimeoutsRef.current[userId])
           delete participantTimeoutsRef.current[userId]
-          setParticipants(prev => prev.filter(p => p.id !== userId))
+          setParticipants(prev => {
+            const next = prev.filter(p => p.id !== userId)
+            participantsRef.current = next
+            return next
+          })
           setRemoteCursors(prev => {
             const next = { ...prev }
             delete next[userId]

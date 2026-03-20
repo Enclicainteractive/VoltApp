@@ -183,9 +183,7 @@ const useVoltVerseStore = create(
     updatePlayer: (playerId, updates) => set((state) => {
       const newPlayers = new Map(state.players)
       const player = newPlayers.get(playerId)
-      if (player) {
-        newPlayers.set(playerId, { ...player, ...updates })
-      }
+      newPlayers.set(playerId, { id: playerId, ...(player || {}), ...updates })
       return { players: newPlayers }
     }),
     setLocalPlayerPosition: (position) => set((state) => {

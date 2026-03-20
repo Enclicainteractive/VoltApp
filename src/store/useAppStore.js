@@ -106,6 +106,23 @@ export const useAppStore = create((set, get) => ({
       activeActivities: [...state.activeActivities, activity] 
     }
   }),
+  upsertActivity: (activity) => set((state) => {
+    if (!activity?.sessionId) return state
+    const index = state.activeActivities.findIndex((entry) => entry.sessionId === activity.sessionId)
+    if (index === -1) {
+      return {
+        activeActivities: [...state.activeActivities, activity]
+      }
+    }
+    const next = [...state.activeActivities]
+    next[index] = {
+      ...next[index],
+      ...activity
+    }
+    return {
+      activeActivities: next
+    }
+  }),
   removeActivity: (sessionId) => set((state) => ({ 
     activeActivities: state.activeActivities.filter(a => a.sessionId !== sessionId),
     // Clear focus if the focused activity was removed

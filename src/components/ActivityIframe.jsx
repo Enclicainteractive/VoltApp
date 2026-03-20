@@ -6,6 +6,7 @@ const ActivityIframe = ({
   session, 
   activity, 
   onClose,
+  inputSuspended = false,
   className = '' 
 }) => {
   const socket = useSocket()
@@ -31,7 +32,7 @@ const ActivityIframe = ({
     if (iframeRef.current) {
       iframeRef.current.src = url.toString()
     }
-  }, [launchUrl, session])
+  }, [launchUrl, session?.sessionId, session?.contextType, session?.contextId, session?.userId])
 
   const handleLoad = () => {
     setLoading(false)
@@ -70,6 +71,24 @@ const ActivityIframe = ({
       iframeRef.current.contentWindow.postMessage({ type, payload, source: 'voltchat' }, '*')
     }
   }, [])
+
+  useEffect(() => {
+    if (!iframeRef.current) return
+
+    if (inputSuspended) {
+      try {
+        iframeRef.current.blur?.()
+      } catch {}
+
+      try {
+        if (document.activeElement === iframeRef.current) {
+          document.activeElement?.blur?.()
+        }
+      } catch {}
+    }
+
+    postMessage('input-suspended', { suspended: !!inputSuspended })
+  }, [inputSuspended, postMessage])
 
   useEffect(() => {
     const handleMessage = (event) => {
@@ -141,6 +160,11 @@ const ActivityIframe = ({
       </div>
       
       <div className="activity-iframe-wrapper">
+        {inputSuspended && (
+          <div className="activity-iframe-loading">
+            <span>Activity input is paused while voice is minimized.</span>
+          </div>
+        )}
         {loading && (
           <div className="activity-iframe-loading">
             <div className="spinner" />
