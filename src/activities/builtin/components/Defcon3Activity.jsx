@@ -1,1987 +1,1755 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { Html, OrbitControls, Stars } from '@react-three/drei'
-import * as THREE from 'three'
-import { createDefconAudio } from './shared/defconAudio'
-import GameCanvasShell from './shared/GameCanvasShell'
-import CanvasText from './shared/CanvasText'
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 
-const PHASES = ['intel', 'diplomacy', 'military', 'resolution']
-const PHASE_DURATION_MS = 22000
-const NULLFIRE_DURATION_MS = 30000
-const MAX_COUNTRIES = 8
-const AI_FILL = 6
-const ECONOMIC_VICTORY_GDP = 165
-const DIPLOMATIC_VICTORY_SEASON = 6
-const SANCTIONS_DURATION = 2
-const AI_COMMIT_DELAY_MS = 2200
-const MAD_STRIKE_COOLDOWN_MS = 18000
-const INTERCEPT_COOLDOWN_MS = 30000
-const INTERCEPT_SUCCESS_RATE = 0.5
-const DECOY_CHANCE = 0.28
-const NULLFIRE_RESPONSE_MS = 60000
+/**
+ * DEFCON: MAD — Strategic Defense Simulation
+ * ─────────────────────────────────────────────
+ * 28 nations, multiplayer + bot AI for unassigned nations.
+ * Deadman switch: if tension stays critical too long without de-escalation → automatic MAD.
+ * Point of No Return: if global tension reaches 100%, MAD is unavoidable.
+ * Players MUST act — evacuate, de-escalate, negotiate, or strike.
+ * Web Audio sound effects throughout.
+ */
 
-const CITY_NAMES = {
-  superpower: ['Crown Basin', 'Blue Mesa', 'Hallow Port'],
-  rising: ['Glass Delta', 'Sunspire', 'Neon Reach'],
-  rogue: ['Obsidian Gate', 'Viper Bay', 'Iron Hollow'],
-  neutral: ['Ivory Step', 'Peace Harbor', 'Helix Square'],
-  anchor: ['Northgate', 'Treaty Point', 'Harbor Nine'],
-  fractured: ['Ashfall', 'Broken Hill', 'Kestrel Yard'],
-  maritime: ['Drift City', 'Tideglass', 'Beacon Quay'],
-  industrial: ['Steelhaven', 'Foundry Crown', 'Rail Zenith']
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUDIO ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let _ac = null
+const ac = () => {
+  if (!_ac) try { _ac = new (window.AudioContext || window.webkitAudioContext)() } catch {}
+  return _ac
+}
+const tone = (f, d, t = 'sine', v = 0.25, delay = 0) => {
+  const ctx = ac(); if (!ctx) return
+  try {
+    const o = ctx.createOscillator(), g = ctx.createGain()
+    o.connect(g); g.connect(ctx.destination)
+    o.type = t; o.frequency.setValueAtTime(f, ctx.currentTime + delay)
+    g.gain.setValueAtTime(0.001, ctx.currentTime + delay)
+    g.gain.exponentialRampToValueAtTime(v, ctx.currentTime + delay + 0.01)
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + d)
+    o.start(ctx.currentTime + delay); o.stop(ctx.currentTime + delay + d + 0.05)
+  } catch {}
+}
+const noise = (d, v = 0.2, delay = 0, fc = 400) => {
+  const ctx = ac(); if (!ctx) return
+  try {
+    const sz = ctx.sampleRate * d, buf = ctx.createBuffer(1, sz, ctx.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < sz; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / sz * 6)
+    const src = ctx.createBufferSource(), flt = ctx.createBiquadFilter(), g = ctx.createGain()
+    src.buffer = buf; flt.type = 'lowpass'; flt.frequency.value = fc
+    src.connect(flt); flt.connect(g); g.connect(ctx.destination)
+    g.gain.setValueAtTime(v, ctx.currentTime + delay)
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + d)
+    src.start(ctx.currentTime + delay)
+  } catch {}
 }
 
-const ARCHETYPES = [
-  { id: 'superpower', label: 'The Superpower', countryName: 'Aster Union', color: '#60a5fa', lat: 45, lon: -100, economy: 8, stability: 7, conventional: 8, nuclearTier: 5, arsenal: 9, doctrine: 'heavy' },
-  { id: 'rising', label: 'The Rising Power', countryName: 'Orion Pact', color: '#f97316', lat: 28, lon: 110, economy: 7, stability: 6, conventional: 7, nuclearTier: 3, arsenal: 6, doctrine: 'growth' },
-  { id: 'rogue', label: 'The Rogue State', countryName: 'Vanta Republic', color: '#ef4444', lat: 36, lon: 45, economy: 4, stability: 4, conventional: 5, nuclearTier: 2, arsenal: 4, doctrine: 'spike' },
-  { id: 'neutral', label: 'The Neutral', countryName: 'Helios Accord', color: '#34d399', lat: 12, lon: 15, economy: 8, stability: 8, conventional: 3, nuclearTier: 0, arsenal: 0, doctrine: 'deescalate' },
-  { id: 'anchor', label: 'The Alliance Anchor', countryName: 'Northwatch League', color: '#a78bfa', lat: 54, lon: 12, economy: 6, stability: 7, conventional: 6, nuclearTier: 2, arsenal: 4, doctrine: 'bloc' },
-  { id: 'fractured', label: 'The Fractured State', countryName: 'Sable Federation', color: '#f43f5e', lat: -9, lon: 29, economy: 5, stability: 3, conventional: 5, nuclearTier: 1, arsenal: 2, doctrine: 'volatile' },
-  { id: 'maritime', label: 'The Maritime Power', countryName: 'Pelagic Crown', color: '#22d3ee', lat: -28, lon: 142, economy: 6, stability: 6, conventional: 6, nuclearTier: 2, arsenal: 3, doctrine: 'naval' },
-  { id: 'industrial', label: 'The Industrial Bloc', countryName: 'Iron Meridian', color: '#fbbf24', lat: 52, lon: 82, economy: 7, stability: 5, conventional: 7, nuclearTier: 4, arsenal: 7, doctrine: 'shield' }
+const SFX = {
+  launch:      () => { tone(80, 1.5, 'sawtooth', 0.3); tone(200, 1.0, 'sawtooth', 0.2, 0.3); noise(1.5, 0.4, 0.1, 300) },
+  explosion:   () => { noise(2.0, 0.8, 0, 150); tone(60, 1.5, 'triangle', 0.4, 0.1); noise(0.8, 0.5, 0.3, 600) },
+  alert:       () => { for (let i = 0; i < 4; i++) { tone(880, 0.2, 'square', 0.3, i * 0.35); tone(660, 0.2, 'square', 0.25, i * 0.35 + 0.2) } },
+  siren:       () => { for (let i = 0; i < 3; i++) { tone(400 + i * 200, 0.5, 'sine', 0.3, i * 0.6); tone(600 + i * 200, 0.5, 'sine', 0.25, i * 0.6 + 0.3) } },
+  click:       () => tone(800, 0.05, 'sine', 0.15),
+  warning:     () => { tone(440, 0.3, 'square', 0.3); tone(330, 0.3, 'square', 0.25, 0.35) },
+  deescalate:  () => { [523, 659, 784].forEach((f, i) => tone(f, 0.25, 'sine', 0.3, i * 0.15)) },
+  deadman:     () => { for (let i = 0; i < 6; i++) { tone(220 - i * 20, 0.4, 'sawtooth', 0.5, i * 0.3); noise(0.3, 0.6, i * 0.3 + 0.1) } },
+  negotiate:   () => { tone(523, 0.15, 'sine', 0.2); tone(659, 0.15, 'sine', 0.2, 0.2) },
+  radiation:   () => { for (let i = 0; i < 5; i++) tone(100 + i * 30, 0.3, 'sine', 0.15, i * 0.1) },
+  gameStart:   () => { [261, 329, 392, 523, 659].forEach((f, i) => tone(f, 0.3, 'sine', 0.35, i * 0.1)) },
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WORLD DATA — 28 NATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const NATIONS = [
+  // NATO
+  { id: 'usa',        name: 'United States',       side: 'nato',    x: 0.04, y: 0.28, w: 0.22, h: 0.18, pop: 331e6,  mil: 100, eco: 95,  nukes: 1800, cities: ['Washington DC','New York','Los Angeles','Chicago','Houston'] },
+  { id: 'uk',         name: 'United Kingdom',       side: 'nato',    x: 0.46, y: 0.21, w: 0.03, h: 0.05, pop: 67e6,   mil: 80,  eco: 85,  nukes: 225,  cities: ['London','Birmingham','Manchester'] },
+  { id: 'france',     name: 'France',               side: 'nato',    x: 0.48, y: 0.27, w: 0.04, h: 0.05, pop: 68e6,   mil: 80,  eco: 85,  nukes: 290,  cities: ['Paris','Marseille','Lyon'] },
+  { id: 'germany',    name: 'Germany',              side: 'nato',    x: 0.51, y: 0.24, w: 0.03, h: 0.05, pop: 83e6,   mil: 75,  eco: 90,  nukes: 0,    cities: ['Berlin','Hamburg','Munich'] },
+  { id: 'canada',     name: 'Canada',               side: 'nato',    x: 0.06, y: 0.12, w: 0.20, h: 0.16, pop: 38e6,   mil: 65,  eco: 80,  nukes: 0,    cities: ['Ottawa','Toronto','Vancouver'] },
+  { id: 'australia',  name: 'Australia',            side: 'nato',    x: 0.76, y: 0.62, w: 0.14, h: 0.14, pop: 26e6,   mil: 60,  eco: 80,  nukes: 0,    cities: ['Canberra','Sydney','Melbourne'] },
+  { id: 'turkey',     name: 'Turkey',               side: 'nato',    x: 0.57, y: 0.32, w: 0.06, h: 0.04, pop: 85e6,   mil: 70,  eco: 65,  nukes: 0,    cities: ['Ankara','Istanbul','Izmir'] },
+  { id: 'poland',     name: 'Poland',               side: 'nato',    x: 0.54, y: 0.22, w: 0.03, h: 0.04, pop: 38e6,   mil: 65,  eco: 70,  nukes: 0,    cities: ['Warsaw','Krakow','Gdansk'] },
+  // Warsaw Pact / Adversaries
+  { id: 'russia',     name: 'Russian Federation',   side: 'warsaw',  x: 0.56, y: 0.08, w: 0.28, h: 0.22, pop: 146e6,  mil: 95,  eco: 70,  nukes: 2000, cities: ['Moscow','St. Petersburg','Novosibirsk','Yekaterinburg'] },
+  { id: 'china',      name: "People's Rep. China",  side: 'warsaw',  x: 0.68, y: 0.32, w: 0.18, h: 0.16, pop: 1400e6, mil: 90,  eco: 90,  nukes: 400,  cities: ['Beijing','Shanghai','Guangzhou','Shenzhen'] },
+  { id: 'nkorea',     name: 'North Korea',          side: 'warsaw',  x: 0.82, y: 0.30, w: 0.03, h: 0.04, pop: 26e6,   mil: 70,  eco: 20,  nukes: 40,   cities: ['Pyongyang','Hamhung'] },
+  { id: 'iran',       name: 'Iran',                 side: 'warsaw',  x: 0.60, y: 0.35, w: 0.06, h: 0.06, pop: 85e6,   mil: 65,  eco: 50,  nukes: 5,    cities: ['Tehran','Isfahan','Mashhad'] },
+  { id: 'belarus',    name: 'Belarus',              side: 'warsaw',  x: 0.56, y: 0.20, w: 0.03, h: 0.03, pop: 9e6,    mil: 55,  eco: 45,  nukes: 0,    cities: ['Minsk','Gomel'] },
+  { id: 'venezuela',  name: 'Venezuela',            side: 'warsaw',  x: 0.20, y: 0.52, w: 0.06, h: 0.06, pop: 29e6,   mil: 45,  eco: 30,  nukes: 0,    cities: ['Caracas','Maracaibo'] },
+  { id: 'cuba',       name: 'Cuba',                 side: 'warsaw',  x: 0.17, y: 0.42, w: 0.04, h: 0.02, pop: 11e6,   mil: 40,  eco: 30,  nukes: 0,    cities: ['Havana','Santiago'] },
+  { id: 'syria',      name: 'Syria',                side: 'warsaw',  x: 0.58, y: 0.33, w: 0.03, h: 0.03, pop: 21e6,   mil: 40,  eco: 20,  nukes: 0,    cities: ['Damascus','Aleppo'] },
+  // Neutral
+  { id: 'india',      name: 'India',                side: 'neutral', x: 0.64, y: 0.40, w: 0.12, h: 0.16, pop: 1380e6, mil: 75,  eco: 70,  nukes: 160,  cities: ['New Delhi','Mumbai','Bangalore','Kolkata'] },
+  { id: 'japan',      name: 'Japan',                side: 'neutral', x: 0.84, y: 0.34, w: 0.06, h: 0.13, pop: 125e6,  mil: 70,  eco: 85,  nukes: 0,    cities: ['Tokyo','Osaka','Yokohama'] },
+  { id: 'brazil',     name: 'Brazil',               side: 'neutral', x: 0.22, y: 0.55, w: 0.14, h: 0.18, pop: 215e6,  mil: 60,  eco: 65,  nukes: 0,    cities: ['Brasilia','São Paulo','Rio de Janeiro'] },
+  { id: 'southafrica',name: 'South Africa',         side: 'neutral', x: 0.52, y: 0.72, w: 0.08, h: 0.10, pop: 60e6,   mil: 50,  eco: 55,  nukes: 0,    cities: ['Pretoria','Cape Town','Johannesburg'] },
+  { id: 'mexico',     name: 'Mexico',               side: 'neutral', x: 0.10, y: 0.38, w: 0.10, h: 0.10, pop: 130e6,  mil: 50,  eco: 60,  nukes: 0,    cities: ['Mexico City','Guadalajara','Monterrey'] },
+  { id: 'egypt',      name: 'Egypt',                side: 'neutral', x: 0.55, y: 0.40, w: 0.05, h: 0.06, pop: 104e6,  mil: 55,  eco: 45,  nukes: 0,    cities: ['Cairo','Alexandria','Giza'] },
+  { id: 'nigeria',    name: 'Nigeria',              side: 'neutral', x: 0.49, y: 0.52, w: 0.05, h: 0.07, pop: 220e6,  mil: 45,  eco: 40,  nukes: 0,    cities: ['Abuja','Lagos','Kano'] },
+  { id: 'argentina',  name: 'Argentina',            side: 'neutral', x: 0.22, y: 0.70, w: 0.08, h: 0.16, pop: 46e6,   mil: 45,  eco: 50,  nukes: 0,    cities: ['Buenos Aires','Córdoba','Rosario'] },
+  { id: 'indonesia',  name: 'Indonesia',            side: 'neutral', x: 0.76, y: 0.52, w: 0.12, h: 0.08, pop: 275e6,  mil: 55,  eco: 60,  nukes: 0,    cities: ['Jakarta','Surabaya','Bandung'] },
+  { id: 'pakistan',   name: 'Pakistan',             side: 'neutral', x: 0.63, y: 0.37, w: 0.05, h: 0.06, pop: 225e6,  mil: 60,  eco: 40,  nukes: 165,  cities: ['Islamabad','Karachi','Lahore'] },
+  { id: 'israel',     name: 'Israel',               side: 'neutral', x: 0.57, y: 0.36, w: 0.02, h: 0.02, pop: 9e6,    mil: 75,  eco: 80,  nukes: 90,   cities: ['Jerusalem','Tel Aviv'] },
+  { id: 'saudiarabia',name: 'Saudi Arabia',         side: 'neutral', x: 0.59, y: 0.38, w: 0.05, h: 0.06, pop: 35e6,   mil: 65,  eco: 75,  nukes: 0,    cities: ['Riyadh','Jeddah','Mecca'] },
 ]
 
-const EVENT_FEED_LIMIT = 10
-const RED_PHONE_COLOR = '#fb7185'
-const blocNames = ['Aegis Bloc', 'Solstice Compact', 'Northern Shield']
-
-const actionCatalog = {
-  intel: [
-    { id: 'scan', label: 'Intel Scan', description: 'Build a better read on rival intent.' },
-    { id: 'cyber', label: 'Cyber Disrupt', description: 'Damage a rival economy and spike suspicion.' },
-    { id: 'counterintel', label: 'Counterintel', description: 'Harden domestic stability.' }
-  ],
-  diplomacy: [
-    { id: 'red-phone', label: 'Red Phone', description: 'Attempt a bilateral de-escalation.' },
-    { id: 'trade-pact', label: 'Trade Pact', description: 'Build GDP while lowering tension.' },
-    { id: 'peace-summit', label: 'Peace Summit', description: 'Push the room toward a pause.' },
-    { id: 'bloc-charter', label: 'Bloc Charter', description: 'Build a military bloc.' },
-    { id: 'sanctions', label: 'Sanctions', description: 'Punish a rival economy.' },
-    { id: 'aid-corridor', label: 'Aid Corridor', description: 'Deliver relief and reduce instability in a target nation.' },
-    { id: 'evacuation-sos', label: 'Evacuation SOS', description: 'Request civilian extraction routes and relief capacity.' }
-  ],
-  military: [
-    { id: 'hold', label: 'Hold', description: 'Stand down and preserve posture.' },
-    { id: 'mobilize', label: 'Mobilize', description: 'Raise readiness and conventional power.' },
-    { id: 'strike', label: 'Conventional Strike', description: 'Hit a rival without crossing the nuclear line.' },
-    { id: 'arm-tactical', label: 'Arm Tactical', description: 'Ready theater weapons.' },
-    { id: 'arm-strategic', label: 'Arm Strategic', description: 'Ready full strategic forces.' },
-    { id: 'shield', label: 'Missile Shield', description: 'Improve survival odds after launch.' },
-    { id: 'disarm', label: 'Disarm', description: 'Publicly lower nuclear readiness.' },
-    { id: 'civil-defense', label: 'Civil Defense', description: 'Move shelters, medics, and reserves into place.' }
-  ]
+const SIDE_COLORS = {
+  nato:    { fill: 'rgba(0,80,200,0.22)',  border: '#3b82f6', label: '#60a5fa' },
+  warsaw:  { fill: 'rgba(200,30,30,0.22)', border: '#ef4444', label: '#f87171' },
+  neutral: { fill: 'rgba(200,160,0,0.18)', border: '#eab308', label: '#fbbf24' },
+  rogue:   { fill: 'rgba(128,0,128,0.22)', border: '#a855f7', label: '#c084fc' },
 }
 
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
-const toFeedId = () => `feed-${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`
-const randomChoice = (array) => array[Math.floor(Math.random() * array.length)]
-const countryPoint = (lat, lon, radius = 2.6) => {
-  const phi = (90 - lat) * (Math.PI / 180)
-  const theta = (lon + 180) * (Math.PI / 180)
-  return new THREE.Vector3(
-    -(radius * Math.sin(phi) * Math.cos(theta)),
-    radius * Math.cos(phi),
-    radius * Math.sin(phi) * Math.sin(theta)
-  )
-}
+const BOMB_TYPES = [
+  { id: 'dirty',   name: 'Dirty Bomb',         color: '#8B4513', baseDamage: 200, speed: 0.04, interceptDifficulty: 0.2, radiationMult: 0.5 },
+  { id: 'icbm',    name: 'ICBM',               color: '#ef4444', baseDamage: 500, speed: 0.08, interceptDifficulty: 0.5, radiationMult: 1.0 },
+  { id: 'mirv',    name: 'MIRV',               color: '#a855f7', baseDamage: 800, speed: 0.10, interceptDifficulty: 0.8, radiationMult: 1.5 },
+  { id: 'tactical',name: 'Tactical Nuke',       color: '#f97316', baseDamage: 300, speed: 0.12, interceptDifficulty: 0.4, radiationMult: 0.8 },
+  { id: 'hydrogen',name: 'Hydrogen Bomb',       color: '#ffffff', baseDamage: 1200, speed: 0.03, interceptDifficulty: 0.1, radiationMult: 2.0 },
+]
 
-const surfaceQuaternion = (normal) => {
-  const quaternion = new THREE.Quaternion()
-  quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize())
-  return quaternion
-}
+const BOMB_TYPE_MAP = Object.fromEntries(BOMB_TYPES.map(b => [b.id, b]))
+const INTERCEPTION_RANGE = 0.015 // map units (≈1.5% of world width)
 
-const createPoliticalTexture = (countries) => {
-  const canvas = document.createElement('canvas')
-  canvas.width = 1024
-  canvas.height = 512
-  const ctx = canvas.getContext('2d')
-  const oceanGradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
-  oceanGradient.addColorStop(0, '#08111d')
-  oceanGradient.addColorStop(0.48, '#0c2236')
-  oceanGradient.addColorStop(1, '#050b14')
-  ctx.fillStyle = oceanGradient
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  ctx.fillStyle = 'rgba(120,200,255,0.05)'
-  for (let x = 0; x <= canvas.width; x += 64) {
-    ctx.fillRect(x, 0, 1, canvas.height)
+function getRandomBombType() {
+  // Weighted random: dirty and tactical more common, hydrogen rare
+  const weights = [0.3, 0.3, 0.1, 0.2, 0.1] // dirty, icbm, mirv, tactical, hydrogen
+  const total = weights.reduce((a, b) => a + b, 0)
+  let r = Math.random() * total
+  for (let i = 0; i < weights.length; i++) {
+    r -= weights[i]
+    if (r <= 0) return BOMB_TYPES[i]
   }
-  for (let y = 0; y <= canvas.height; y += 32) {
-    ctx.fillRect(0, y, canvas.width, y % 64 === 0 ? 1.5 : 1)
-  }
+  return BOMB_TYPES[0]
+}
 
-  const landMasses = [
-    { x: 0.18, y: 0.3, rx: 0.18, ry: 0.16, rot: -0.2 },
-    { x: 0.28, y: 0.65, rx: 0.08, ry: 0.18, rot: 0.08 },
-    { x: 0.52, y: 0.3, rx: 0.16, ry: 0.18, rot: 0.04 },
-    { x: 0.54, y: 0.63, rx: 0.11, ry: 0.16, rot: -0.12 },
-    { x: 0.75, y: 0.58, rx: 0.15, ry: 0.12, rot: 0.18 },
-    { x: 0.81, y: 0.26, rx: 0.08, ry: 0.08, rot: 0.28 }
-  ]
-  const landGradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
-  landGradient.addColorStop(0, '#2d5548')
-  landGradient.addColorStop(0.45, '#335f50')
-  landGradient.addColorStop(1, '#193126')
-  ctx.fillStyle = landGradient
-  landMasses.forEach((mass) => {
-    ctx.save()
-    ctx.translate(mass.x * canvas.width, mass.y * canvas.height)
-    ctx.rotate(mass.rot)
-    ctx.beginPath()
-    ctx.ellipse(0, 0, mass.rx * canvas.width, mass.ry * canvas.height, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(215,255,231,0.12)'
-    ctx.lineWidth = 2
-    ctx.stroke()
-    ctx.restore()
+// ═══════════════════════════════════════════════════════════════════════════════
+// WORLD BUILDER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function rnd(a, b) { return a + Math.random() * (b - a) }
+
+function buildWorld() {
+  const countries = {}, cities = {}, evacuationCenters = {}, militaryBases = {}
+  NATIONS.forEach(n => {
+     countries[n.id] = {
+       ...n, destroyed: false, evacuationStatus: 0, damageLevel: 0,
+       tension: 30 + Math.random() * 20,  // 0-100 tension level
+       lastAction: 0,                      // game time of last player action
+       isBot: true,                        // will be set false when player joins
+       botCooldown: 0,
+       interceptionsUsed: 0,
+       maxInterceptions: 30,
+     }
+    n.cities.forEach((name, i) => {
+      const id = `${n.id}_c${i}`
+      const mults = [0.08, 0.04, 0.025, 0.02, 0.015]
+      const pop = Math.floor(n.pop * (mults[i] || 0.005) * rnd(0.8, 1.2))
+      cities[id] = {
+        id, name, country: n.id, population: pop,
+        x: n.x + rnd(0.005, n.w - 0.005),
+        y: n.y + rnd(0.005, n.h - 0.005),
+        isCapital: i === 0, destroyed: false, evacuated: false, casualties: 0,
+      }
+    })
+    // Evac centers
+    for (let i = 0; i < 2; i++) {
+      const id = `${n.id}_ev${i}`
+      evacuationCenters[id] = {
+        id, country: n.id, operational: true,
+        x: n.x + rnd(0.005, n.w - 0.005),
+        y: n.y + rnd(0.005, n.h - 0.005),
+        capacity: rnd(300000, 1200000), currentOccupancy: 0,
+      }
+    }
+    // Military bases
+    const bc = Math.floor(n.mil / 25)
+    for (let i = 0; i < bc; i++) {
+      const id = `${n.id}_b${i}`
+      const types = ['command','missile','air','naval','radar']
+      militaryBases[id] = {
+        id, country: n.id, type: types[i % types.length], operational: true,
+        x: n.x + rnd(0.005, n.w - 0.005),
+        y: n.y + rnd(0.005, n.h - 0.005),
+      }
+    }
   })
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)'
-  ctx.lineWidth = 1
-  landMasses.forEach((mass) => {
-    const cx = mass.x * canvas.width
-    const cy = mass.y * canvas.height
-    ctx.beginPath()
-    ctx.moveTo(cx - mass.rx * canvas.width * 0.6, cy - 12)
-    ctx.lineTo(cx + mass.rx * canvas.width * 0.55, cy + 6)
-    ctx.stroke()
-  })
-
-  countries.forEach((country) => {
-    const x = ((country.lon + 180) / 360) * canvas.width
-    const y = ((90 - country.lat) / 180) * canvas.height
-    const radius = 30 + country.nuclearTier * 7
-    const gradient = ctx.createRadialGradient(x, y, 4, x, y, radius)
-    gradient.addColorStop(0, `${country.color}ee`)
-    gradient.addColorStop(0.42, `${country.color}99`)
-    gradient.addColorStop(1, `${country.color}00`)
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    ctx.arc(x, y, radius, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.strokeStyle = `${country.color}88`
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
-    ctx.ellipse(x, y, radius * 1.35, radius * 0.72, ((country.lat + country.lon) % 18) * (Math.PI / 180), 0, Math.PI * 2)
-    ctx.stroke()
-  })
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.needsUpdate = true
-  return texture
+  return { countries, cities, evacuationCenters, militaryBases }
 }
 
-const createCities = (base) => {
-  const names = CITY_NAMES[base.id] || ['Capital', 'Harbor', 'Interior']
-  return names.map((name, index) => ({
-    id: `${base.id}-city-${index + 1}`,
-    name,
-    lat: base.lat + [0, 7, -6][index % 3],
-    lon: base.lon + [0, 9, -11][index % 3],
-    populationWeight: [0.4, 0.34, 0.26][index % 3],
-    integrity: 100,
-    contamination: 0,
-    destroyed: false
-  }))
-}
-
-const getCountrySummaryStats = (country) => ({
-  casualties: 100 - country.population,
-  contamination: country.contamination || 0,
-  cityIntegrity: country.cities?.length
-    ? Math.round(country.cities.reduce((total, city) => total + city.integrity, 0) / country.cities.length)
-    : country.infrastructure
-})
-
-const getRecommendedActions = (country, phase, countries, threat) => {
-  if (!country) return []
-  const target = selectStrategicTarget(country, phase, countries)
-  if (phase === 'intel') {
-    if ((country.hostileTo || []).length && target) return ['Cyber Disrupt', `Focus ${target.countryName}`]
-    if ((country.intel || 0) < 2) return ['Intel Scan', 'Build situational awareness']
-    return ['Counterintel', 'Stabilize domestic systems']
-  }
-  if (phase === 'diplomacy') {
-    if ((country.population || 0) < 78 || (country.contamination || 0) > 16) return ['Evacuation SOS', 'Open relief channels immediately']
-    if (threat > 2.7) return ['Red Phone', target ? `Call ${target.countryName}` : 'Force de-escalation']
-    if ((country.gdp || 0) < 110 && target) return ['Trade Pact', `Grow GDP with ${target.countryName}`]
-    if (target && (target.gdp || 0) > 120) return ['Sanctions', `Pressure ${target.countryName}`]
-    return ['Peace Summit', 'Bleed threat out of the room']
-  }
-  if ((country.population || 0) < 70 || (country.contamination || 0) > 20) return ['Civil Defense', 'Protect civilians and infrastructure']
-  if (threat > 3.2 && country.armed > 0) return ['Disarm', 'Reduce launch pressure now']
-  if ((country.shield || 0) < 2) return ['Missile Shield', 'Harden against NULLFIRE']
-  if (target && country.conventional < target.conventional) return ['Mobilize', `Match ${target.countryName}`]
-  return ['Hold', 'Avoid pushing DEFCON further']
-}
-
-const getFocusSummary = (country, phase, countries, threat) => {
-  if (!country) return { title: 'Command Window', description: 'Select a nation to inspect its posture and best next moves.', recommendations: [] }
+function makeInitialState() {
+  const world = buildWorld()
   return {
-    title: `Focus: ${country.countryName}`,
-    description: `${country.countryName} is the nation currently under review. Hovering or selecting a marker pins its stats, risks, and recommended moves.`,
-    recommendations: getRecommendedActions(country, phase, countries, threat)
-  }
-}
-
-const createCountry = (playerId, leaderName, index, ai = false) => {
-  const base = ARCHETYPES[index % ARCHETYPES.length]
-  return {
-    id: `${ai ? 'ai' : 'country'}-${index + 1}-${String(playerId)}`,
-    playerId,
-    leaderName,
-    ai,
-    countryName: base.countryName,
-    archetype: base.id,
-    archetypeLabel: base.label,
-    color: base.color,
-    lat: base.lat,
-    lon: base.lon,
-    economy: base.economy,
-    stability: base.stability,
-    conventional: base.conventional,
-    nuclearTier: base.nuclearTier,
-    arsenal: base.arsenal,
-    armed: 0,
-    shield: 0,
-    gdp: base.economy * 10,
-    population: 100,
-    infrastructure: 100,
-    contamination: 0,
-    casualties: 0,
-    reputation: 50,
-    blocId: null,
-    hostileTo: [],
-    sanctions: 0,
-    action: null,
-    actionTargetId: null,
-    committed: ai,
-    ready: ai,
-    intel: 0,
-    doctrine: base.doctrine,
-    cities: createCities(base),
-    eliminated: false
-  }
-}
-
-const withBots = (countries) => {
-  const humanCountries = countries.filter((entry) => !entry.ai)
-  const next = [...humanCountries]
-  const fill = Math.min(ARCHETYPES.length, Math.max(AI_FILL, humanCountries.length + 1))
-  while (next.length < fill) {
-    const index = next.length
-    next.push(createCountry(`ai-${index + 1}`, `Directive ${index + 1}`, index, true))
-  }
-  return next.slice(0, MAX_COUNTRIES)
-}
-
-const defaultState = () => ({
-  season: 1,
-  phase: 'lobby',
-  phaseEndsAt: 0,
-  threat: 0,
-  countries: [],
-  missiles: [],
-  strikes: [],
-  logs: [{ id: toFeedId(), text: 'Global watch floor online. Join the lobby and signal ready.', createdAt: Date.now() }],
-  selectedBlocIndex: 0,
-  nullfireEndsAt: 0,
-  rankings: [],
-  victory: null
-})
-
-const currentDefcon = (threat) => clamp(5 - Math.floor(threat), 1, 5)
-
-const appendLog = (state, text) => ({
-  ...state,
-  logs: [{ id: toFeedId(), text, createdAt: Date.now() }, ...state.logs].slice(0, EVENT_FEED_LIMIT)
-})
-
-const setLobbyReady = (state, playerId, ready) => {
-  if (state.phase !== 'lobby') return state
-  return {
-    ...state,
-    countries: state.countries.map((country) => (
-      !country.ai && country.playerId === playerId
-        ? { ...country, ready: !!ready }
-        : country
-    ))
-  }
-}
-
-const startMatchFromLobby = (state) => {
-  if (state.phase !== 'lobby') return state
-  const humans = state.countries.filter((country) => !country.ai)
-  if (!humans.length || humans.some((country) => !country.ready)) return state
-  return appendLog({
-    ...state,
-    phase: 'intel',
-    season: 1,
-    threat: 0,
+    phase: 'lobby',
+    players: {},   // userId -> { id, username, countryId }
+    ready: {},
+    gameTime: 0,
+    ...world,
     missiles: [],
-    strikes: [],
-    nullfireEndsAt: 0,
-    rankings: [],
-    victory: null,
-    phaseEndsAt: Date.now() + PHASE_DURATION_MS,
-    countries: state.countries.map((country) => ({
-      ...country,
-      action: null,
-      actionTargetId: null,
-      committed: country.ai,
-      ready: country.ai || country.ready,
-      armed: 0,
-      shield: 0,
-      hostileTo: [],
-      eliminated: false,
-      population: 100,
-      infrastructure: 100,
-      contamination: 0,
-      casualties: 0,
-      sanctions: 0,
-      cities: createCities(ARCHETYPES.find((entry) => entry.id === country.archetype) || ARCHETYPES[0]),
-      stability: ARCHETYPES.find((entry) => entry.id === country.archetype)?.stability || country.stability,
-      economy: ARCHETYPES.find((entry) => entry.id === country.archetype)?.economy || country.economy,
-      conventional: ARCHETYPES.find((entry) => entry.id === country.archetype)?.conventional || country.conventional,
-      gdp: (ARCHETYPES.find((entry) => entry.id === country.archetype)?.economy || country.economy) * 10
-    }))
-  }, 'Lobby sealed. Season one has begun.')
+    explosions: [],
+    radiationZones: [],
+    refugees: [],
+    terminalLines: [],
+    civilianPanic: 0,
+    evacuationEfficiency: 80,
+    complianceRate: 90,
+    economicCollapse: 0,
+    warCrimesCount: 0,
+    alertBanner: null,
+    alertBannerExpiry: 0,
+    message: 'Waiting for players...',
+    // Global tension / deadman switch
+    globalTension: 20,          // 0-100
+    deadmanTimer: 0,            // seconds at critical tension
+    deadmanThreshold: 120,      // seconds before MAD triggers
+    deadmanTriggered: false,
+    // Diplomacy
+    ceaseFireActive: false,
+    ceaseFireExpiry: 0,
+    negotiations: [],           // [{ from, to, type, expiry }]
+    // Events log for terminal
+    eventQueue: [],
+  }
 }
 
-const queueCountryAction = (state, payload) => {
-  if (!actionCatalog[state.phase]?.length) return state
-  const actingCountry = state.countries.find((country) => country.id === payload.countryId)
-  if (!actingCountry || actingCountry.eliminated) return state
-  if (actingCountry.action === payload.actionId && (actingCountry.actionTargetId || null) === (payload.targetId || null)) return state
-  const nextState = {
-    ...state,
-    countries: state.countries.map((country) => (
-      country.id === payload.countryId
-        ? { ...country, action: payload.actionId, actionTargetId: payload.targetId || null, committed: false }
-        : country
-    )),
-    logs: [{ id: toFeedId(), text: `${payload.countryName || 'A nation'} committed orders for ${state.phase}.`, createdAt: Date.now() }, ...state.logs].slice(0, EVENT_FEED_LIMIT)
-  }
-  if (state.phase === 'diplomacy' && payload.actionId === 'sanctions' && payload.targetId) {
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Game End Detection ────────────────────────────────────────────────────────
+function checkGameEnd(state, myCountryId) {
+  // If already in ended phase, return false to avoid duplicate triggers
+  if (state.phase === 'ended') return false;
+
+  // Count alive countries by side
+  const natoAlive = Object.values(state.countries).filter(c => c.side === 'nato' && !c.destroyed).length;
+  const warsawAlive = Object.values(state.countries).filter(c => c.side === 'warsaw' && !c.destroyed).length;
+  const neutralAlive = Object.values(state.countries).filter(c => c.side === 'neutral' && !c.destroyed).length;
+  const totalAlive = natoAlive + warsawAlive + neutralAlive;
+
+  // Total starting populations (for collapse calculations)
+  const startingPop = Object.values(state.countries).reduce((sum, c) => sum + c.pop, 0);
+  const currentPop = Object.values(state.countries).reduce((sum, c) => sum + (c.destroyed ? 0 : c.pop), 0);
+  const popSurvivingRatio = startingPop > 0 ? currentPop / startingPop : 0;
+
+  // 1. Total MAD: All major powers destroyed (no NATO and no Warsaw)
+  if (natoAlive === 0 && warsawAlive === 0) {
     return {
-      ...nextState,
-      countries: nextState.countries.map((country) => {
-        if (country.id === payload.countryId) {
-          return { ...country, hostileTo: Array.from(new Set([...country.hostileTo, payload.targetId])) }
+      ended: true,
+      reason: 'TOTAL_MAD',
+      title: 'MUTUALLY ASSURED DESTRUCTION',
+      description: 'All major powers have been annihilated. No victors remain.',
+      color: '#ff0000',
+      details: [
+        `NATO nations destroyed: ${NATIONS.filter(n => n.side === 'nato').length}`,
+        `Warsaw nations destroyed: ${NATIONS.filter(n => n.side === 'warsaw').length}`,
+        `Total casualties: ${((startingPop - currentPop) / 1e6).toFixed(1)}M`
+      ]
+    };
+  }
+
+  // 2. Limited Exchange: One side eliminated, the other survives with few cities
+  if ((natoAlive === 0 && warsawAlive > 0) || (warsawAlive === 0 && natoAlive > 0)) {
+    const survivingSide = natoAlive > 0 ? 'NATO' : 'WARSAW';
+    const survivingCountries = Object.values(state.countries).filter(c => 
+      (survivingSide === 'NATO' && c.side === 'nato' && !c.destroyed) ||
+      (survivingSide === 'WARSAW' && c.side === 'warsaw' && !c.destroyed)
+    );
+    const survivingCities = survivingCountries.reduce((sum, c) => {
+      const countryCities = Object.values(state.cities).filter(city => city.country === c.id && !city.destroyed);
+      return sum + countryCities.length;
+    }, 0);
+    const totalCities = survivingCountries.reduce((sum, c) => {
+      const countryCities = Object.values(state.cities).filter(city => city.country === c.id);
+      return sum + countryCities.length;
+    }, 0);
+    const citySurvivalRatio = totalCities > 0 ? survivingCities / totalCities : 0;
+
+    if (citySurvivalRatio < 0.2) { // Less than 20% of cities survive
+      return {
+        ended: true,
+        reason: 'LIMITED_EXCHANGE',
+        title: 'LIMITED NUCLEAR EXCHANGE',
+        description: `${survivingSide} survives but with devastating losses.`,
+        color: survivingSide === 'NATO' ? '#3b82f6' : '#ef4444',
+        details: [
+          `Surviving ${survivingSide} nations: ${survivingCountries.length}`,
+          `Cities remaining: ${survivingCities}/${totalCities}`,
+          `Casualties: ${((startingPop - currentPop) / 1e6).toFixed(1)}M`
+        ]
+      };
+    }
+  }
+
+  // 3. Global Cease-Fire: Cease-fire active for >30s and no missiles in flight
+  if (state.ceaseFireActive && state.missiles.length === 0) {
+    const ceaseFireDuration = (state.gameTime - (state.ceaseFireExpiry - 60000)) / 1000; // seconds since start
+    if (ceaseFireDuration > 30) {
+      return {
+        ended: true,
+        reason: 'CEASE_FIRE',
+        title: 'GLOBAL CEASE-FIRE ACHIEVED',
+        description: 'Diplomacy has prevailed. All nations stand down.',
+        color: '#22c55e',
+        details: [
+          `Cease-fire duration: ${ceaseFireDuration.toFixed(1)}s`,
+          `Missiles in flight: 0`,
+          `Tension level: ${state.globalTension}%`
+        ]
+      };
+    }
+  }
+
+  // 4. Insane AI Victory: Rogue/insane country is the last survivor
+  const rogueCountries = Object.values(state.countries).filter(c => c.side === 'rogue' && !c.destroyed);
+  if (rogueCountries.length === 1 && natoAlive === 0 && warsawAlive === 0 && neutralAlive <= 1) {
+    const rogue = rogueCountries[0];
+    return {
+      ended: true,
+      reason: 'INSANE_AI_VICTORY',
+      title: 'INSANE AI TRIUMPH',
+      description: `The AI of ${rogue.name} has gone insane and outlasted all rational powers.`,
+      color: '#a855f7',
+      details: [
+        `Insane nation: ${rogue.name}`,
+        `Remaining population: ${(rogue.pop / 1e6).toFixed(1)}M`,
+        `Total enemy casualties: ${((startingPop - rogue.pop) / 1e6).toFixed(1)}M`
+      ]
+    };
+  }
+
+  // 5. Human Triumph: Player's side survives with strong position
+  if (myCountryId) {
+    const playerCountry = state.countries[myCountryId];
+    if (playerCountry && !playerCountry.destroyed) {
+      const playerSide = playerCountry.side;
+      const playerSideAlive = Object.values(state.countries).filter(c => 
+        c.side === playerSide && !c.destroyed
+      ).length;
+      const otherSideAlive = Object.values(state.countries).filter(c => 
+        c.side !== playerSide && c.side !== 'neutral' && !c.destroyed
+      ).length;
+      const playerSideCities = Object.values(state.cities).filter(city => 
+        !city.destroyed && state.countries[city.country]?.side === playerSide
+      ).length;
+      const totalCities = Object.values(state.cities).filter(city => !city.destroyed).length;
+      const playerSideCityRatio = totalCities > 0 ? playerSideCities / totalCities : 0;
+
+      // If player's side has no enemy opposition and controls at least 40% of cities
+      if (otherSideAlive === 0 && playerSideCityRatio >= 0.4) {
+        return {
+          ended: true,
+          reason: 'HUMAN_TRIUMPH',
+          title: 'HUMAN TRIUMPH',
+          description: 'Your leadership has guided your alliance to survival and victory.',
+          color: playerSide === 'nato' ? '#3b82f6' : playerSide === 'warsaw' ? '#ef4444' : '#eab308',
+          details: [
+            `Your alliance: ${playerSide}`,
+            `Surviving nations: ${playerSideAlive}`,
+            `Territory controlled: ${(playerSideCityRatio * 100).toFixed(0)}% of remaining cities`,
+            `Casualties inflicted: ${((startingPop - currentPop) / 1e6).toFixed(1)}M`
+          ]
+        };
+      }
+    }
+  }
+
+  // 6. Economic Collapse: Global economy destroyed
+  if (state.economicCollapse >= 95) {
+    return {
+      ended: true,
+      reason: 'ECONOMIC_COLLAPSE',
+      title: 'GLOBAL ECONOMIC COLLAPSE',
+      description: 'The world economy has been utterly destroyed by the conflict.',
+      color: '#f97316',
+      details: [
+        `Economic collapse: ${state.economicCollapse}%`,
+        `Estimated global GDP loss: >90%`,
+        `Recovery time: Decades to centuries`
+      ]
+    };
+  }
+
+  // 7. Radiation Winter: Too much radiation
+  const totalRadiationIntensity = state.radiationZones.reduce((sum, z) => sum + z.intensity, 0);
+  if (totalRadiationIntensity > 50) { // arbitrary threshold
+    return {
+      ended: true,
+      reason: 'RADIATION_WINTER',
+      title: 'NUCLEAR WINTER',
+      description: 'Radioactive fallout has triggered a catastrophic climate shift.',
+      color: '#eab308',
+      details: [
+        `Total radiation intensity: ${totalRadiationIntensity.toFixed(1)}`,
+        `Estimated temperature drop: -20°C`,
+        `Growing season reduction: 90%`
+      ]
+    };
+  }
+
+  // 8. Deadman Success: Tension reduced before deadman triggers
+  if (state.deadmanTriggered === false && state.globalTension < 30 && state.missiles.length === 0) {
+    // Only if we've been under high tension before
+    if (state.eventQueue && state.eventQueue.some(e => e.includes('DEADMAN') && e.includes('CRITICAL'))) {
+      return {
+        ended: true,
+        reason: 'DEADMAN_SUCCESS',
+        title: 'DEADMAN SWITCH AVOIDED',
+        description: 'Through swift de-escalation, mutual destruction has been prevented.',
+        color: '#00ff00',
+        details: [
+          `Final tension level: ${state.globalTension}%`,
+          `Time since critical tension: >2 minutes`,
+          `Nuclear launches prevented: Countless`
+        ]
+      };
+    }
+  }
+
+  // 9. Pyrrhic Victory: Winner survives but at devastating cost
+  if (totalAlive > 0 && totalAlive < 3 && popSurvivingRatio < 0.1) {
+    const winningSide = natoAlive > 0 ? 'NATO' : warsawAlive > 0 ? 'WARSAW' : 'NEUTRAL';
+    return {
+      ended: true,
+      reason: 'PYRRHIC_VICTORY',
+      title: 'PYRRHIC VICTORY',
+      description: 'Victory achieved, but at an apocalyptic cost to civilization.',
+      color: winningSide === 'NATO' ? '#3b82f6' : winningSide === 'WARSAW' ? '#ef4444' : '#eab308',
+      details: [
+        `Winning alliance: ${winningSide}`,
+        `Surviving population: ${(popSurvivingRatio * 100).toFixed(0)}% of pre-war total`,
+        `Infrastructure loss: >95%`,
+        `Long-term viability: Questionable`
+      ]
+    };
+  }
+
+  // 10. Stalemate: Cease-fire holds and no significant action for 2 minutes
+  if (state.ceaseFireActive && state.missiles.length === 0) {
+    const timeSinceLastImpact = state.gameTime - (state.eventQueue?.findLastIndex(e => e.includes('IMPACT')) || 0) * 1000; // rough
+    // Simpler: if no explosions in last 30 seconds and cease-fire active
+    const recentExplosions = state.explosions.filter(e => Date.now() - e.createdAt < 30000);
+    if (recentExplosions.length === 0 && state.ceaseFireExpiry - Date.now() > 60000) { // cease-fire has >1 minute left
+      return {
+        ended: true,
+        reason: 'STALEMATE',
+        title: 'STRATEGIC STALEMATE',
+        description: 'Both sides have exhausted their will to fight. An uneasy peace remains.',
+        color: '#555',
+        details: [
+          `Cease-fire time remaining: ${((state.ceaseFireExpiry - Date.now()) / 1000).toFixed(0)}s`,
+          `Active missiles: 0`,
+          `Recent explosions: 0 (last 30s)`,
+          `Tension level: ${state.globalTension}%`
+        ]
+      };
+    }
+  }
+
+  return false;
+}
+
+function addLog(state, text) {
+  const time = new Date().toLocaleTimeString()
+  const lines = [...(state.terminalLines || []), `${time} ${text}`]
+  return lines.slice(-150)
+}
+
+function applyMissileImpact(state, missile) {
+  let s = { ...state }
+  const city = missile.targetCityId ? s.cities[missile.targetCityId] : null
+  const bombType = BOMB_TYPE_MAP[missile.bombType] || BOMB_TYPES[1] // default to ICBM
+  const radMult = bombType.radiationMult || 1.0
+  s.explosions = [...s.explosions, {
+    id: missile.id + '_e', x: missile.targetX, y: missile.targetY,
+    power: missile.power, createdAt: Date.now(), duration: 3500,
+  }]
+  s.radiationZones = [...s.radiationZones, {
+    id: missile.id + '_r', x: missile.targetX, y: missile.targetY,
+    radius: missile.power * 0.045 * radMult, intensity: 1.0, createdAt: Date.now(),
+  }]
+  if (city) {
+    // If city evacuated, reduce casualties
+    const casualtyFactor = city.evacuated ? 0.1 : 1.0
+    const casualties = Math.floor(city.population * casualtyFactor)
+    s.cities = { ...s.cities, [city.id]: { ...city, destroyed: true, casualties } }
+    s.terminalLines = addLog(s, `[IMPACT] ☢ ${city.name} destroyed — ${(casualties / 1e6).toFixed(1)}M casualties`)
+    const country = s.countries[city.country]
+    if (country) {
+      const dmg = Math.min(100, country.damageLevel + 20)
+      s.countries = { ...s.countries, [country.id]: { ...country, damageLevel: dmg, destroyed: dmg >= 80, tension: Math.min(100, country.tension + 30) } }
+      if (dmg >= 80) s.terminalLines = addLog(s, `[STRATEGIC] ${country.name} eliminated from conflict`)
+    }
+    s.economicCollapse = Math.min(100, s.economicCollapse + 5)
+    s.civilianPanic = Math.min(100, s.civilianPanic + 15)
+    s.globalTension = Math.min(100, s.globalTension + 8)
+  }
+  return s
+}
+
+function applyEvacuateCity(state, cityId) {
+  const city = state.cities[cityId]
+  if (!city || city.evacuated || city.destroyed) return state
+  let nearest = null, minD = Infinity
+  Object.values(state.evacuationCenters).forEach(c => {
+    if (!c.operational || c.currentOccupancy >= c.capacity) return
+    const d = Math.hypot(city.x - c.x, city.y - c.y)
+    if (d < minD) { minD = d; nearest = c }
+  })
+  let s = { ...state, cities: { ...state.cities, [cityId]: { ...city, evacuated: true } } }
+  if (nearest) {
+    s.refugees = [...s.refugees, {
+      id: Date.now() + Math.random(), startX: city.x, startY: city.y,
+      targetX: nearest.x, targetY: nearest.y, x: city.x, y: city.y,
+      progress: 0, speed: 0.04 + Math.random() * 0.04, count: city.population,
+    }]
+  }
+  s.terminalLines = addLog(s, `[EVACUATION] ${city.name} evacuation initiated`)
+  return s
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BOT AI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function runBotAI(state, dt) {
+  let s = { ...state }
+  const now = s.gameTime
+
+  // Check for recent impacts to determine retaliation
+  const recentImpacts = s.explosions.filter(e => now * 1000 - e.createdAt < 5000)
+  
+  // Track which sides were attacked recently
+  const attackedSides = new Set()
+  recentImpacts.forEach(e => {
+    Object.values(s.cities).forEach(city => {
+      if (city.destroyed && Math.hypot(city.x - e.x, city.y - e.y) < 0.08) {
+        const country = s.countries[city.country]
+        if (country) attackedSides.add(country.side)
+      }
+    })
+  })
+
+  Object.values(s.countries).forEach(country => {
+    if (!country.isBot || country.destroyed) return
+    if (country.botCooldown > 0) {
+      s.countries = { ...s.countries, [country.id]: { ...country, botCooldown: country.botCooldown - dt } }
+      return
+    }
+
+    const tension = country.tension
+    const roll = Math.random()
+    
+    // Check if this bot's side was recently attacked (retaliation trigger)
+    const mySideAttacked = attackedSides.has(country.side)
+    const isHighTension = tension > 70 || mySideAttacked
+    
+    // RETALIATION: If attacked, launch immediate counter-strike
+    if (mySideAttacked && roll < 0.4) {
+      const enemies = Object.values(s.countries).filter(c =>
+        c.side !== country.side && c.side !== 'neutral' && !c.destroyed
+      )
+      if (enemies.length > 0) {
+        // Target the enemy that attacked us or random enemy
+        const target = enemies[Math.floor(Math.random() * enemies.length)]
+        const targetCities = Object.values(s.cities).filter(c => c.country === target.id && !c.destroyed && !c.evacuated)
+        if (targetCities.length > 0) {
+          const tc = targetCities[Math.floor(Math.random() * targetCities.length)]
+          const bombType = getRandomBombType()
+          const missile = {
+            id: Date.now() + Math.random(),
+            side: country.side,
+            startX: country.x + country.w / 2, startY: country.y + country.h / 2,
+            targetX: tc.x, targetY: tc.y,
+            x: country.x + country.w / 2, y: country.y + country.h / 2,
+            progress: 0, speed: bombType.speed * (0.8 + Math.random() * 0.4), 
+            power: bombType.baseDamage * (0.8 + Math.random() * 0.4), 
+            targetCityId: tc.id,
+            bombType: bombType.id,
+            color: bombType.color,
+          }
+          s.missiles = [...s.missiles, missile]
+          s.terminalLines = addLog(s, `[BOT-AI] ${country.name} RETALIATES against ${tc.name}`)
+          s.globalTension = Math.min(100, s.globalTension + 10)
+          s.countries = { ...s.countries, [country.id]: { ...country, tension: Math.min(100, tension + 30), botCooldown: 8 + Math.random() * 10 } }
+          return
         }
-        if (country.id === payload.targetId) {
-          return {
-            ...country,
-            sanctions: Math.max(country.sanctions || 0, SANCTIONS_DURATION),
-            economy: clamp(country.economy - 1, 1, 12),
-            gdp: clamp(country.gdp - 8, 0, 240)
+      }
+    }
+
+    // High tension bots are more aggressive
+    if (isHighTension && roll < 0.02) {
+      // Bot launches missile at enemy
+      const enemies = Object.values(s.countries).filter(c =>
+        c.side !== country.side && c.side !== 'neutral' && !c.destroyed
+      )
+      if (enemies.length > 0) {
+        const target = enemies[Math.floor(Math.random() * enemies.length)]
+        const targetCities = Object.values(s.cities).filter(c => c.country === target.id && !c.destroyed && !c.evacuated)
+        if (targetCities.length > 0) {
+          const tc = targetCities[Math.floor(Math.random() * targetCities.length)]
+          const bombType = getRandomBombType()
+          const missile = {
+            id: Date.now() + Math.random(),
+            side: country.side,
+            startX: country.x + country.w / 2, startY: country.y + country.h / 2,
+            targetX: tc.x, targetY: tc.y,
+            x: country.x + country.w / 2, y: country.y + country.h / 2,
+            progress: 0, speed: bombType.speed * (0.8 + Math.random() * 0.4), 
+            power: bombType.baseDamage * (0.8 + Math.random() * 0.4), 
+            targetCityId: tc.id,
+            bombType: bombType.id,
+            color: bombType.color,
+          }
+          s.missiles = [...s.missiles, missile]
+          s.terminalLines = addLog(s, `[BOT-AI] ${country.name} launched missile at ${tc.name}`)
+          s.globalTension = Math.min(100, s.globalTension + 5)
+          // If this launch was unprompted (not retaliation), country goes rogue
+          if (!mySideAttacked) {
+            s.countries = { ...s.countries, [country.id]: { ...country, side: 'rogue', botCooldown: 20 + Math.random() * 30 } }
+            s.terminalLines = addLog(s, `[ROGUE] ${country.name} has gone ROGUE! They launched an unprompted attack!`)
+          } else {
+            s.countries = { ...s.countries, [country.id]: { ...country, botCooldown: 20 + Math.random() * 30 } }
           }
         }
-        return country
-      }),
-      logs: [{ id: toFeedId(), text: `${payload.countryName || 'A nation'} imposed immediate sanctions.`, createdAt: Date.now() }, ...nextState.logs].slice(0, EVENT_FEED_LIMIT)
-    }
-  }
-  return nextState
-}
-
-const finalizeVictory = (state, victory) => {
-  const rankings = state.countries
-    .map((country) => ({
-      id: country.id,
-      label: country.countryName,
-      score: Math.round(country.gdp + country.population * 0.4 + country.infrastructure * 0.35 + country.stability * 4 - (country.contamination || 0) * 1.5),
-      population: country.population,
-      infrastructure: country.infrastructure,
-      contamination: country.contamination || 0,
-      gdp: Math.round(country.gdp)
-    }))
-    .sort((a, b) => b.score - a.score)
-  return {
-    ...state,
-    rankings,
-    phase: 'reconstruction',
-    phaseEndsAt: 0,
-    victory,
-    logs: [{ id: toFeedId(), text: victory.summary, createdAt: Date.now() }, ...state.logs].slice(0, EVENT_FEED_LIMIT)
-  }
-}
-
-const commitCountryOrders = (state, countryId) => {
-  if (!actionCatalog[state.phase]?.length) return state
-  const actingCountry = state.countries.find((country) => country.id === countryId)
-  if (!actingCountry || actingCountry.eliminated || !actingCountry.action || actingCountry.committed) return state
-  return {
-    ...state,
-    countries: state.countries.map((country) => (
-      country.id === countryId
-        ? { ...country, committed: true }
-        : country
-    )),
-    logs: [{ id: toFeedId(), text: `${actingCountry.countryName} locked in ${state.phase} orders.`, createdAt: Date.now() }, ...state.logs].slice(0, EVENT_FEED_LIMIT)
-  }
-}
-
-const evaluateVictory = (state) => {
-  const livingCountries = state.countries.filter((country) => !country.eliminated)
-  const blocGroups = Object.values(livingCountries.reduce((acc, country) => {
-    if (!country.blocId) return acc
-    if (!acc[country.blocId]) acc[country.blocId] = []
-    acc[country.blocId].push(country)
-    return acc
-  }, {}))
-
-  const economicWinner = livingCountries.find((country) => country.gdp >= ECONOMIC_VICTORY_GDP && state.threat <= 2.4)
-  if (economicWinner) {
-    return {
-      type: 'economic',
-      winnerId: economicWinner.id,
-      title: 'Economic Hegemony',
-      summary: `${economicWinner.countryName} dominated global GDP without tipping the world into NULLFIRE.`
-    }
-  }
-
-  const blocWinner = blocGroups.find((bloc) => bloc.reduce((sum, country) => sum + country.gdp, 0) >= livingCountries.reduce((sum, country) => sum + country.gdp, 0) * 0.55)
-  if (blocWinner && state.threat <= 2.8) {
-    return {
-      type: 'alliance',
-      winnerId: blocWinner[0].id,
-      title: 'Bloc Supremacy',
-      summary: `${blocWinner.map((country) => country.countryName).join(', ')} controlled the world order without triggering launch.`
-    }
-  }
-
-  if (state.season >= DIPLOMATIC_VICTORY_SEASON && state.threat <= 1.2) {
-    const diplomaticWinner = [...livingCountries].sort((a, b) => (b.reputation + b.stability + b.intel) - (a.reputation + a.stability + a.intel))[0]
-    if (diplomaticWinner) {
-      return {
-        type: 'diplomatic',
-        winnerId: diplomaticWinner.id,
-        title: 'Architect of Peace',
-        summary: `${diplomaticWinner.countryName} held the room together long enough for a diplomatic victory.`
+      }
+    } else if (tension > 50 && roll < 0.008) {
+      // Bot evacuates a city
+      const cities = Object.values(s.cities).filter(c => c.country === country.id && !c.evacuated && !c.destroyed)
+      if (cities.length > 0) {
+        const city = cities[Math.floor(Math.random() * cities.length)]
+        s = applyEvacuateCity(s, city.id)
+        s.countries = { ...s.countries, [country.id]: { ...country, evacuationStatus: 1, botCooldown: 15 } }
+      }
+    } else if (tension > 40 && roll < 0.005) {
+      // Bot de-escalates (less likely if under attack)
+      if (!mySideAttacked || roll < 0.001) {
+        const newTension = Math.max(0, tension - 10)
+        s.countries = { ...s.countries, [country.id]: { ...country, tension: newTension, botCooldown: 25 } }
+        s.globalTension = Math.max(0, s.globalTension - 2)
+        s.terminalLines = addLog(s, `[DIPLOMACY] ${country.name} signals de-escalation`)
       }
     }
-  }
-
-  return null
-}
-
-const scoreTargetForCountry = (country, target, phase) => {
-  let score = 0
-  score += (target.gdp || 0) * 0.45
-  score += (target.arsenal || 0) * 3
-  score += (target.armed || 0) * 4
-  score += (100 - (target.population || 0)) * 0.12
-  score += (100 - (target.infrastructure || 0)) * 0.08
-  score += (country.hostileTo || []).includes(target.id) ? 24 : 0
-  score += (target.hostileTo || []).includes(country.id) ? 16 : 0
-  score += (target.blocId && target.blocId !== country.blocId) ? 10 : 0
-  score -= (target.shield || 0) * 4
-  if (phase === 'diplomacy') score += (target.sanctions || 0) > 0 ? 12 : 0
-  if (phase === 'military') score += (target.nuclearTier || 0) * 5 + (target.conventional || 0) * 1.5
-  return score
-}
-
-const selectStrategicTarget = (country, phase, countries) => {
-  const livingTargets = countries.filter((entry) => entry.id !== country.id && !entry.eliminated)
-  if (!livingTargets.length) return null
-  return [...livingTargets].sort((a, b) => scoreTargetForCountry(country, b, phase) - scoreTargetForCountry(country, a, phase))[0] || null
-}
-
-const selectAutoAction = (country, phase, countries, threat) => {
-  const target = selectStrategicTarget(country, phase, countries)
-  if (phase === 'intel') {
-    if ((country.hostileTo || []).length && target) return { action: 'cyber', targetId: target.id }
-    if (country.doctrine === 'growth') return { action: 'scan', targetId: null }
-    if (country.doctrine === 'volatile' && target) return { action: 'cyber', targetId: target.id }
-    if (country.doctrine === 'deescalate') return { action: 'counterintel', targetId: null }
-    return target && Math.random() > 0.4 ? { action: 'cyber', targetId: target.id } : { action: 'scan', targetId: null }
-  }
-  if (phase === 'diplomacy') {
-    if ((country.population || 0) < 76 || (country.contamination || 0) > 18) return { action: 'evacuation-sos', targetId: null }
-    if (country.doctrine === 'deescalate' && target && ((target.population || 0) < 80 || (target.contamination || 0) > 10)) return { action: 'aid-corridor', targetId: target.id }
-    if ((country.sanctions || 0) > 0 && target) return { action: 'red-phone', targetId: target.id }
-    if (country.doctrine === 'bloc') return { action: 'bloc-charter', targetId: null }
-    if (country.doctrine === 'deescalate') return { action: 'peace-summit', targetId: null }
-    if (country.doctrine === 'growth' && target) return { action: 'trade-pact', targetId: target.id }
-    if (threat > 2.7) return target ? { action: 'red-phone', targetId: target.id } : { action: 'peace-summit', targetId: null }
-    return target && (target.gdp || 0) > 90 ? { action: 'sanctions', targetId: target.id } : (target ? { action: 'red-phone', targetId: target.id } : { action: 'peace-summit', targetId: null })
-  }
-  if (threat > 3.2 && country.armed > 0) return { action: 'disarm', targetId: null }
-  if (country.doctrine === 'shield') return { action: 'shield', targetId: null }
-  if ((country.population || 0) < 72 || (country.contamination || 0) > 16) return { action: 'civil-defense', targetId: null }
-  if (country.doctrine === 'heavy' && target && country.armed < Math.max(2, country.arsenal - 1)) return { action: 'arm-strategic', targetId: target.id }
-  if (country.doctrine === 'volatile' && target) return { action: 'strike', targetId: target.id }
-  if ((country.contamination || 0) > 24 || country.population < 48) return { action: 'shield', targetId: null }
-  if (country.doctrine === 'deescalate') return { action: 'hold', targetId: null }
-  if (target && country.conventional < target.conventional) return { action: 'mobilize', targetId: target.id }
-  return target && Math.random() > 0.6 ? { action: 'strike', targetId: target.id } : { action: 'hold', targetId: null }
-}
-
-const resolvePhase = (state) => {
-  let nextState = {
-    ...state,
-    countries: state.countries.map((country) => ({ ...country })),
-    missiles: [],
-    strikes: state.strikes ? [...state.strikes] : []
-  }
-  const countriesById = Object.fromEntries(nextState.countries.map((country) => [country.id, country]))
-  const livingCountries = nextState.countries.filter((entry) => !entry.eliminated)
-  livingCountries.forEach((country) => {
-    if (!country.action) {
-      const auto = selectAutoAction(country, state.phase, livingCountries, state.threat)
-      country.action = auto.action
-      country.actionTargetId = auto.targetId
-      country.committed = true
-    }
-  })
-
-  const getTarget = (country) => countriesById[country.actionTargetId]
-  let threatDelta = -0.18
-  const blocSignups = livingCountries.filter((entry) => entry.action === 'bloc-charter')
-  const summitCalls = livingCountries.filter((entry) => entry.action === 'peace-summit')
-
-  livingCountries.forEach((country) => {
-    const target = getTarget(country)
-    if (state.phase === 'intel') {
-      if (country.action === 'scan') {
-        country.intel += 2
-        country.reputation += 1
-      }
-      if (country.action === 'cyber' && target) {
-        target.economy = clamp(target.economy - 1, 1, 12)
-        target.stability = clamp(target.stability - 1, 0, 10)
-        country.intel += 1
-        country.hostileTo = Array.from(new Set([...country.hostileTo, target.id]))
-        threatDelta += 0.32
-        nextState = appendLog(nextState, `${country.countryName} hit ${target.countryName} with a covert disruption.`)
-      }
-      if (country.action === 'counterintel') {
-        country.stability = clamp(country.stability + 1, 0, 10)
-        country.reputation += 1
-      }
-    }
-
-    if (state.phase === 'diplomacy') {
-      if (country.action === 'red-phone' && target) {
-        country.reputation += 2
-        threatDelta -= 0.15
-        nextState = appendLog(nextState, `${country.countryName} opened the Red Phone to ${target.countryName}.`)
-      }
-      if (country.action === 'trade-pact' && target) {
-        country.economy = clamp(country.economy + 1, 1, 12)
-        target.economy = clamp(target.economy + 1, 1, 12)
-        country.gdp = clamp(country.gdp + 6, 0, 240)
-        target.gdp = clamp(target.gdp + 6, 0, 240)
-        threatDelta -= 0.22
-      }
-      if (country.action === 'aid-corridor' && target) {
-        target.stability = clamp(target.stability + 2, 0, 10)
-        target.population = clamp(target.population + 2, 0, 100)
-        target.infrastructure = clamp(target.infrastructure + 3, 0, 100)
-        target.contamination = clamp((target.contamination || 0) - 5, 0, 100)
-        country.gdp = clamp(country.gdp - 5, 0, 240)
-        country.reputation += 4
-        threatDelta -= 0.18
-        nextState = appendLog(nextState, `${country.countryName} opened an aid corridor toward ${target.countryName}.`)
-      }
-      if (country.action === 'evacuation-sos') {
-        country.population = clamp(country.population + 3, 0, 100)
-        country.stability = clamp(country.stability + 1, 0, 10)
-        country.gdp = clamp(country.gdp - 4, 0, 240)
-        country.reputation += 3
-        threatDelta -= 0.1
-        nextState = appendLog(nextState, `${country.countryName} pushed an evacuation SOS through the crisis net.`)
-      }
-      if (country.action === 'sanctions' && target) {
-        target.sanctions = Math.max(target.sanctions || 0, SANCTIONS_DURATION)
-        threatDelta += 0.14
-        nextState = appendLog(nextState, `${country.countryName} locked ${target.countryName} into a sanctions regime.`)
-      }
-    }
-
-    if (state.phase === 'military') {
-      if (country.action === 'hold') {
-        threatDelta -= 0.06
-      }
-      if (country.action === 'mobilize') {
-        country.conventional = clamp(country.conventional + 1, 0, 12)
-        threatDelta += 0.35
-      }
-      if (country.action === 'shield') {
-        country.shield = clamp(country.shield + 1, 0, 5)
-        country.economy = clamp(country.economy - 1, 1, 12)
-        threatDelta += 0.1
-      }
-      if (country.action === 'strike' && target) {
-        target.conventional = clamp(target.conventional - 2, 0, 12)
-        target.infrastructure = clamp(target.infrastructure - 9, 0, 100)
-        target.population = clamp(target.population - 4, 0, 100)
-        target.stability = clamp(target.stability - 1, 0, 10)
-        country.hostileTo = Array.from(new Set([...country.hostileTo, target.id]))
-        target.hostileTo = Array.from(new Set([...target.hostileTo, country.id]))
-        threatDelta += 0.92
-        nextState = appendLog(nextState, `${country.countryName} launched a conventional strike on ${target.countryName}.`)
-      }
-      if (country.action === 'arm-tactical') {
-        country.armed = clamp(country.armed + 1, 0, country.arsenal)
-        threatDelta += 1
-      }
-      if (country.action === 'arm-strategic') {
-        country.armed = clamp(country.armed + 2, 0, country.arsenal)
-        threatDelta += 1.42
-      }
-      if (country.action === 'disarm') {
-        country.armed = clamp(country.armed - 2, 0, country.arsenal)
-        threatDelta -= 0.4
-      }
-      if (country.action === 'civil-defense') {
-        country.shield = clamp(country.shield + 1, 0, 5)
-        country.population = clamp(country.population + 2, 0, 100)
-        country.infrastructure = clamp(country.infrastructure + 2, 0, 100)
-        country.gdp = clamp(country.gdp - 6, 0, 240)
-        threatDelta += 0.06
-      }
-    }
-  })
-
-  if (state.phase === 'diplomacy' && blocSignups.length >= 2) {
-    const blocId = `bloc-${state.selectedBlocIndex + 1}`
-    blocSignups.forEach((country) => { country.blocId = blocId })
-    nextState.selectedBlocIndex = (state.selectedBlocIndex + 1) % blocNames.length
-    threatDelta += 0.18
-    nextState = appendLog(nextState, `${blocNames[state.selectedBlocIndex]} formed and redrew the map.`)
-  }
-
-  if (state.phase === 'diplomacy' && summitCalls.length >= 2) {
-    threatDelta -= 1.05
-    nextState = appendLog(nextState, 'A peace summit froze the room long enough for the clock to step back.')
-  }
-
-  nextState.countries.forEach((country) => {
-    if (country.sanctions > 0) {
-      country.sanctions = Math.max(0, country.sanctions - 1)
-      country.economy = clamp(country.economy - 1, 1, 12)
-      country.gdp = clamp(country.gdp - 5, 0, 240)
-      country.reputation = clamp(country.reputation - 1, 0, 100)
-    }
-    country.contamination = clamp((country.contamination || 0) * 0.93, 0, 100)
-    country.cities = (country.cities || []).map((city) => ({
-      ...city,
-      contamination: clamp(city.contamination * 0.94, 0, 100)
-    }))
-    country.gdp = clamp(country.gdp + country.economy * 1.8 - Math.max(0, 3 - country.stability), 0, 240)
-    if (country.stability <= 0 && !country.eliminated) {
-      country.population = clamp(country.population - 12, 0, 100)
-      country.infrastructure = clamp(country.infrastructure - 14, 0, 100)
-      threatDelta += 0.55
-      nextState = appendLog(nextState, `${country.countryName} slipped into internal collapse, inviting proxy chaos.`)
-    }
-    if (country.population <= 0 || country.infrastructure <= 0) {
-      country.eliminated = true
-      threatDelta += country.armed > 0 ? 0.8 : 0.2
-      nextState = appendLog(nextState, `${country.countryName} ceased to function as a sovereign state.`)
-    }
-    country.action = null
-    country.actionTargetId = null
-    country.committed = country.ai
-  })
-
-  const crisisRoll = Math.random()
-  if (crisisRoll > 0.72) {
-    threatDelta += 0.4
-    nextState = appendLog(nextState, randomChoice([
-      'A rogue flight path triggered emergency radar locks.',
-      'A reactor incident spread panic through global markets.',
-      'A disputed election pulled security forces into the streets.'
-    ]))
-  }
-
-  const nextThreat = clamp(nextState.threat + threatDelta, 0, 4.4)
-  nextState.threat = nextThreat
-  if (nextThreat >= 4) {
-    const missiles = []
-    nextState.countries
-      .filter((country) => !country.eliminated && country.armed > 0)
-      .forEach((country) => {
-        const hostileIds = country.hostileTo.length
-          ? country.hostileTo.filter((id) => countriesById[id] && !countriesById[id].eliminated)
-          : nextState.countries.filter((entry) => entry.id !== country.id && !entry.eliminated).map((entry) => entry.id)
-        hostileIds.forEach((targetId, index) => {
-          const target = countriesById[targetId]
-          const targetCity = target?.cities?.[index % Math.max(1, target.cities.length)] || null
-          missiles.push({
-            id: `${country.id}-${targetId}-${index}`,
-            fromId: country.id,
-            toId: targetId,
-            fromLat: country.lat,
-            fromLon: country.lon,
-            toLat: targetCity?.lat ?? target?.lat ?? 0,
-            toLon: targetCity?.lon ?? target?.lon ?? 0,
-            targetCityId: targetCity?.id || null,
-            targetCityName: targetCity?.name || null,
-            impactAt: Date.now() + 4000 + index * 260,
-            strategic: country.nuclearTier >= 3,
-            launchedAt: Date.now()
-          })
-        })
-      })
-    nextState.phase = 'nullfire'
-    nextState.nullfireEndsAt = Date.now() + NULLFIRE_DURATION_MS
-    nextState.phaseEndsAt = nextState.nullfireEndsAt
-    nextState.missiles = missiles
-    nextState = appendLog(nextState, 'DEFCON 1. NULLFIRE engaged. All armed nations have launched.')
-    return nextState
-  }
-
-  const victory = evaluateVictory(nextState)
-  if (victory) return finalizeVictory(nextState, victory)
-
-  const nextPhaseIndex = (PHASES.indexOf(state.phase) + 1) % PHASES.length
-  nextState.phase = PHASES[nextPhaseIndex]
-  nextState.season = state.phase === 'resolution' ? state.season + 1 : state.season
-  nextState.phaseEndsAt = Date.now() + PHASE_DURATION_MS
-  return nextState
-}
-
-const resolveNullfire = (state) => {
-  const countries = state.countries.map((country) => ({ ...country }))
-  const countriesById = Object.fromEntries(countries.map((country) => [country.id, country]))
-  const strikes = []
-  state.missiles.forEach((missile, index) => {
-    const target = countriesById[missile.toId]
-    if (!target || target.eliminated) return
-    const shieldFactor = clamp(target.shield * 0.12, 0, 0.48)
-    const populationHit = missile.strategic ? 34 : 16
-    const infrastructureHit = missile.strategic ? 42 : 20
-    const adjustedPopulationHit = Math.round(populationHit * (1 - shieldFactor))
-    const adjustedInfrastructureHit = Math.round(infrastructureHit * (1 - shieldFactor))
-    const contaminationHit = missile.strategic ? 32 : 15
-    target.population = clamp(target.population - adjustedPopulationHit, 0, 100)
-    target.infrastructure = clamp(target.infrastructure - adjustedInfrastructureHit, 0, 100)
-    target.stability = clamp(target.stability - (missile.strategic ? 4 : 2), 0, 10)
-    target.contamination = clamp((target.contamination || 0) + contaminationHit, 0, 100)
-    target.casualties = clamp((target.casualties || 0) + adjustedPopulationHit, 0, 100)
-    target.cities = (target.cities || []).map((city) => (
-      city.id === missile.targetCityId
-        ? {
-          ...city,
-          integrity: clamp(city.integrity - adjustedInfrastructureHit, 0, 100),
-          contamination: clamp(city.contamination + contaminationHit, 0, 100),
-          destroyed: city.integrity - adjustedInfrastructureHit <= 0
+    
+    // INSANITY:极高 tension 下随机发疯，向所有国家发射
+    if (tension > 95 && roll < 0.002) {
+      // Country goes insane, launches at ALL other sides (including neutral)
+      const allEnemies = Object.values(s.countries).filter(c => c.id !== country.id && !c.destroyed)
+      if (allEnemies.length > 0) {
+        // Pick random enemy
+        const target = allEnemies[Math.floor(Math.random() * allEnemies.length)]
+        const targetCities = Object.values(s.cities).filter(c => c.country === target.id && !c.destroyed)
+        if (targetCities.length > 0) {
+          const bombType = getRandomBombType()
+          const missile = {
+            id: Date.now() + Math.random(),
+            side: country.side,
+            startX: country.x + country.w / 2, startY: country.y + country.h / 2,
+            targetX: targetCities[0].x, targetY: targetCities[0].y,
+            x: country.x + country.w / 2, y: country.y + country.h / 2,
+            progress: 0, speed: bombType.speed * (0.8 + Math.random() * 0.4), 
+            power: bombType.baseDamage * (0.8 + Math.random() * 0.4), 
+            targetCityId: targetCities[0].id,
+            bombType: bombType.id,
+            color: bombType.color,
+          }
+          s.missiles = [...s.missiles, missile]
+          s.terminalLines = addLog(s, `[INSANITY] ${country.name} has gone INSANE and launched at ${target.name}!`)
+          s.globalTension = Math.min(100, s.globalTension + 20)
+          s.countries = { ...s.countries, [country.id]: { ...country, tension: 100, botCooldown: 30 } }
         }
-        : city
-    ))
-    strikes.push({
-      id: `strike-${missile.id}-${index}`,
-      toId: missile.toId,
-      lat: missile.toLat,
-      lon: missile.toLon,
-      cityName: missile.targetCityName,
-      contamination: contaminationHit,
-      strategic: missile.strategic
-    })
-    if (target.population <= 0 || target.infrastructure <= 0) target.eliminated = true
-  })
-  const rankings = countries
-    .map((country) => ({
-      id: country.id,
-      label: country.countryName,
-      score: Math.round(country.population * 0.42 + country.infrastructure * 0.34 + country.stability * 2 + country.shield * 3 + country.gdp * 0.08 - (country.contamination || 0) * 1.6),
-      population: country.population,
-      infrastructure: country.infrastructure,
-      contamination: Math.round(country.contamination || 0),
-      casualties: Math.round(country.casualties || 0),
-      gdp: Math.round(country.gdp)
-    }))
-    .sort((a, b) => b.score - a.score)
-  return {
-    ...state,
-    countries,
-    rankings,
-    missiles: state.missiles,
-    strikes,
-    phase: 'reconstruction',
-    phaseEndsAt: 0,
-    victory: {
-      type: 'survival',
-      winnerId: rankings[0]?.id || null,
-      title: 'Pyrrhic Survival',
-      summary: `${rankings[0]?.label || 'Unknown'} emerged with the highest survival score after NULLFIRE.`
-    },
-    logs: [{ id: toFeedId(), text: `${rankings[0]?.label || 'Unknown'} emerged with the highest survival score.`, createdAt: Date.now() }, ...state.logs].slice(0, EVENT_FEED_LIMIT)
-  }
-}
-
-const Atmosphere = ({ threat }) => {
-  const meshRef = useRef(null)
-  useFrame(({ clock }) => {
-    if (!meshRef.current) return
-    meshRef.current.rotation.y = clock.getElapsedTime() * 0.04
-    meshRef.current.material.opacity = 0.16 + threat * 0.08 + Math.sin(clock.getElapsedTime() * 1.6) * 0.02
-  })
-  return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[2.82, 48, 48]} />
-      <meshStandardMaterial color={new THREE.Color().setHSL(0.58 - threat * 0.1, 0.8, 0.5)} transparent opacity={0.18} side={THREE.BackSide} />
-    </mesh>
-  )
-}
-
-const CityMarker = ({ city, countryColor, onTarget, madMode, targeted }) => {
-  const position = useMemo(() => countryPoint(city.lat, city.lon, 2.69), [city.lat, city.lon])
-  const contaminationScale = 0.04 + (city.contamination || 0) * 0.001
-  const ringRef = useRef(null)
-  useFrame(({ clock }) => {
-    if (!ringRef.current) return
-    ringRef.current.material.opacity = targeted
-      ? 0.55 + Math.sin(clock.getElapsedTime() * 8) * 0.35
-      : madMode && !city.destroyed ? 0.28 + Math.sin(clock.getElapsedTime() * 3) * 0.12 : 0
-  })
-  return (
-    <group position={position.toArray()}>
-      <mesh
-        onClick={(e) => { e.stopPropagation(); if (madMode && !city.destroyed && onTarget) onTarget(city) }}
-        onPointerOver={(e) => e.stopPropagation()}
-      >
-        <sphereGeometry args={[city.destroyed ? 0.035 : 0.055, 14, 14]} />
-        <meshBasicMaterial color={city.destroyed ? '#fb7185' : targeted ? '#ff0000' : madMode ? '#fbbf24' : '#fde68a'} transparent opacity={city.destroyed ? 0.4 : 0.9} depthWrite={false} />
-      </mesh>
-      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.08, 0.13, 20]} />
-        <meshBasicMaterial color={targeted ? '#ef4444' : '#fbbf24'} transparent opacity={0} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
-      {city.contamination > 2 ? (
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.07 + contaminationScale, 0.1 + contaminationScale * 2.4, 24]} />
-          <meshBasicMaterial color="#f97316" transparent opacity={0.24} side={THREE.DoubleSide} depthWrite={false} />
-        </mesh>
-      ) : null}
-      {(madMode || targeted) && !city.destroyed ? (
-        <Html position={[0, 0.12, 0]} transform sprite distanceFactor={6} zIndexRange={[20, 0]} pointerEvents="none">
-          <div style={{ fontSize: 9, color: targeted ? '#ef4444' : '#fbbf24', fontFamily: 'Courier New, monospace', whiteSpace: 'nowrap', textShadow: '0 0 6px rgba(0,0,0,0.9)', background: 'rgba(0,0,0,0.6)', padding: '1px 4px', borderRadius: 3 }}>
-            {city.name}{targeted ? ' ◉' : ''}
-          </div>
-        </Html>
-      ) : null}
-    </group>
-  )
-}
-
-const CityLights = ({ country, madMode, targetedCityId, onTargetCity }) => {
-  return (
-    <>
-      {(country.cities || []).map((city) => (
-        <CityMarker
-          key={city.id}
-          city={city}
-          countryColor={country.color}
-          madMode={madMode}
-          targeted={targetedCityId === city.id}
-          onTarget={onTargetCity}
-        />
-      ))}
-    </>
-  )
-}
-
-const ContaminationField = ({ countries, strikes }) => {
-  return (
-    <>
-      {countries.filter((country) => (country.contamination || 0) > 1).map((country) => {
-        const normal = countryPoint(country.lat, country.lon, 1).normalize()
-        const position = normal.clone().multiplyScalar(2.62)
-        const quaternion = surfaceQuaternion(normal)
-        const radius = 0.18 + (country.contamination || 0) * 0.006
-        return (
-          <mesh key={`contamination-${country.id}`} position={position.toArray()} quaternion={quaternion}>
-            <ringGeometry args={[radius, radius + 0.09, 40]} />
-            <meshBasicMaterial color="#fb7185" transparent opacity={0.18} side={THREE.DoubleSide} depthWrite={false} />
-          </mesh>
-        )
-      })}
-      {(strikes || []).map((strike) => {
-        const position = countryPoint(strike.lat, strike.lon, 2.74)
-        return (
-          <mesh key={strike.id} position={position.toArray()}>
-            <sphereGeometry args={[0.05 + strike.contamination * 0.0012, 20, 20]} />
-            <meshBasicMaterial color={strike.strategic ? '#fb7185' : '#fdba74'} transparent opacity={0.12} depthWrite={false} />
-          </mesh>
-        )
-      })}
-    </>
-  )
-}
-
-const CountryMarker = ({ country, hovered, selected, onHover, onSelect }) => {
-  const normal = useMemo(() => countryPoint(country.lat, country.lon, 1).normalize(), [country.lat, country.lon])
-  const markerPosition = useMemo(() => normal.clone().multiplyScalar(2.66), [normal])
-  const patchQuaternion = useMemo(() => surfaceQuaternion(normal), [normal])
-  const summary = `${country.archetypeLabel}
-GDP ${Math.round(country.gdp)} | Economy ${country.economy} | Stability ${country.stability}
-Population ${country.population}% | Infra ${country.infrastructure}% | Casualties ${Math.round(country.casualties || 0)}
-Nuclear ${country.nuclearTier} | Armed ${country.armed}/${country.arsenal} | Shield ${country.shield}
-Intel ${country.intel} | Reputation ${country.reputation} | Fallout ${Math.round(country.contamination || 0)}
-Bloc ${country.blocId || 'None'} | Sanctions ${country.sanctions} | Hostiles ${country.hostileTo.length}`
-  return (
-    <group>
-      <mesh
-        position={markerPosition.toArray()}
-        quaternion={patchQuaternion}
-        onPointerOver={(event) => {
-          event.stopPropagation()
-          onHover(country.id)
-        }}
-        onPointerOut={(event) => {
-          event.stopPropagation()
-          onHover(null)
-        }}
-        onClick={(event) => {
-          event.stopPropagation()
-          onSelect(country.id)
-        }}
-      >
-        <circleGeometry args={[0.17 + country.nuclearTier * 0.02, 28]} />
-        <meshBasicMaterial color={country.color} transparent opacity={hovered || selected ? 0.48 : 0.18} depthWrite={false} depthTest={false} />
-      </mesh>
-      <mesh position={markerPosition.toArray()}>
-        <sphereGeometry args={[0.08 + country.nuclearTier * 0.01, 20, 20]} />
-        <meshStandardMaterial color={country.color} emissive={country.color} emissiveIntensity={hovered || selected ? 0.9 : 0.45 + country.armed * 0.06} />
-      </mesh>
-      <mesh position={[markerPosition.x, markerPosition.y + 0.14, markerPosition.z]}>
-        <boxGeometry args={[0.04, 0.18 + country.conventional * 0.008, 0.04]} />
-        <meshStandardMaterial color="#dbeafe" emissive="#93c5fd" emissiveIntensity={hovered || selected ? 0.4 : 0.2} />
-      </mesh>
-      {(hovered || selected) ? (
-        <Html position={markerPosition.clone().multiplyScalar(1.18).toArray()} transform sprite distanceFactor={5.6} zIndexRange={[30, 0]} pointerEvents="none">
-          <div style={{ width: 230, background: 'rgba(2,6,23,0.92)', border: `1px solid ${country.color}77`, borderRadius: 12, padding: '10px 12px', color: '#f8fafc', boxShadow: '0 18px 45px rgba(0,0,0,0.45)', fontFamily: 'Courier New, monospace' }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{country.countryName}</div>
-            <div style={{ marginTop: 4, fontSize: 11, color: country.color }}>{country.leaderName || 'National command'}</div>
-            <div style={{ marginTop: 8, fontSize: 10, lineHeight: 1.45, whiteSpace: 'pre-line', color: '#dbeafe' }}>{summary}</div>
-          </div>
-        </Html>
-      ) : null}
-    </group>
-  )
-}
-
-const MissileArc = ({ missile, phase }) => {
-  const missileRef = useRef(null)
-  const flashRef = useRef(null)
-  const plumeRef = useRef(null)
-  const curve = useMemo(() => {
-    const start = countryPoint(missile.fromLat, missile.fromLon, 2.72)
-    const end = countryPoint(missile.toLat, missile.toLon, 2.72)
-    const mid = start.clone().add(end).multiplyScalar(0.5).normalize().multiplyScalar(4.1)
-    return new THREE.CatmullRomCurve3([start, mid, end])
-  }, [missile.fromLat, missile.fromLon, missile.toLat, missile.toLon])
-  const points = useMemo(() => curve.getPoints(24), [curve])
-  useFrame(() => {
-    if (!missileRef.current) return
-    const progress = phase === 'nullfire'
-      ? clamp((Date.now() - missile.launchedAt) / Math.max(1, missile.impactAt - missile.launchedAt), 0, 1)
-      : 0
-    const point = curve.getPointAt(progress)
-    missileRef.current.position.copy(point)
-    missileRef.current.visible = progress < 1
-    const tangent = curve.getTangentAt(Math.min(0.999, progress + 0.001)).normalize()
-    missileRef.current.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent)
-    if (plumeRef.current) {
-      plumeRef.current.scale.set(1, 0.9 + Math.sin(Date.now() * 0.02) * 0.2, 1)
-    }
-    if (flashRef.current) {
-      const impactWindow = Date.now() - missile.impactAt
-      const active = impactWindow >= 0 && impactWindow < 6000
-      flashRef.current.visible = active
-      if (active) {
-        const pulse = 1 + Math.sin(impactWindow * 0.01) * 0.18
-        flashRef.current.scale.setScalar(pulse)
       }
     }
   })
-  const impactPosition = useMemo(() => countryPoint(missile.toLat, missile.toLon, 2.72), [missile.toLat, missile.toLon])
-  return (
-    <group>
-      <line>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            count={points.length}
-            array={new Float32Array(points.flatMap((point) => [point.x, point.y, point.z]))}
-            itemSize={3}
-          />
-        </bufferGeometry>
-        <lineBasicMaterial color={missile.strategic ? '#fca5a5' : '#fdba74'} linewidth={2} />
-      </line>
-      <group ref={missileRef}>
-        <mesh position={[0, 0, 0]}>
-          <cylinderGeometry args={[0.028, 0.04, missile.strategic ? 0.34 : 0.24, 10]} />
-          <meshStandardMaterial color={missile.strategic ? '#f3f4f6' : '#fde68a'} emissive={missile.strategic ? '#fb7185' : '#f59e0b'} emissiveIntensity={0.24} metalness={0.45} roughness={0.48} />
-        </mesh>
-        <mesh position={[0, (missile.strategic ? 0.2 : 0.14), 0]}>
-          <coneGeometry args={[0.05, missile.strategic ? 0.14 : 0.1, 10]} />
-          <meshStandardMaterial color="#f8fafc" emissive="#fca5a5" emissiveIntensity={0.12} />
-        </mesh>
-        <mesh ref={plumeRef} position={[0, -(missile.strategic ? 0.22 : 0.16), 0]}>
-          <coneGeometry args={[0.06, missile.strategic ? 0.22 : 0.16, 10]} />
-          <meshBasicMaterial color={missile.strategic ? '#fb7185' : '#fdba74'} transparent opacity={0.55} depthWrite={false} />
-        </mesh>
-      </group>
-      <mesh ref={flashRef} position={impactPosition.toArray()} visible={false}>
-        <sphereGeometry args={[missile.strategic ? 0.28 : 0.18, 20, 20]} />
-        <meshBasicMaterial color={missile.strategic ? '#ffffff' : '#fde68a'} transparent opacity={0.28} depthWrite={false} />
-      </mesh>
-    </group>
-  )
+
+  return s
 }
 
-const MissileArcs = ({ missiles, phase }) => missiles.map((missile) => (
-  <MissileArc key={missile.id} missile={missile} phase={phase} />
-))
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
 
-const StrikeAftermath = ({ strike }) => {
-  const rootRef = useRef(null)
-  const normal = useMemo(() => countryPoint(strike.lat, strike.lon, 1).normalize(), [strike.lat, strike.lon])
-  const position = useMemo(() => normal.clone().multiplyScalar(2.75), [normal])
-  const quaternion = useMemo(() => surfaceQuaternion(normal), [normal])
-  useFrame(({ clock }) => {
-    if (!rootRef.current) return
-    rootRef.current.scale.y = 1 + Math.sin(clock.getElapsedTime() * 1.8 + strike.contamination) * 0.08
+const Defcon3Activity = ({ sdk, currentUser }) => {
+  const [gs, setGs] = useState(makeInitialState)
+  const gsRef = useRef(null)
+  const [zoom, setZoom] = useState(1.0)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [panning, setPanning] = useState(false)
+  const panStart = useRef({ x: 0, y: 0, px: 0, py: 0 })
+  const [selectedCountry, setSelectedCountry] = useState(null)
+  const [showMiniMap, setShowMiniMap] = useState(true)
+  const [showDiplomacy, setShowDiplomacy] = useState(false)
+  const [redPhoneOpen, setRedPhoneOpen] = useState(false)
+  const [redPhoneMessage, setRedPhoneMessage] = useState('')
+  const [redPhoneHistory, setRedPhoneHistory] = useState([])
+  const [ended, setEnded] = useState(false)
+  const [endingData, setEndingData] = useState(null)
+  const miniMapRef = useRef(null)
+  const animRef = useRef(null)
+  const lastTickRef = useRef(Date.now())
+  const botTickRef = useRef(0)
+  const lastStateUpdateRef = useRef(0)
+  const serverSyncRef = useRef(0)
+  const STATE_UPDATE_INTERVAL = 100 // ms between UI updates
+  const SERVER_SYNC_INTERVAL = 500 // ms between server syncs
+
+  const userId   = currentUser?.id       || 'guest'
+  const username = currentUser?.username || 'Player'
+
+  const myPlayer = gs.players[userId]
+  const myCountryId = myPlayer?.countryId
+
+  useEffect(() => { gsRef.current = gs }, [gs])
+
+  const push = useCallback(next => {
+    gsRef.current = next
+    setGs(next)
+    sdk?.updateState?.({ defcon3: next }, { serverRelay: true })
+  }, [sdk])
+
+  useEffect(() => {
+    if (!sdk) return
+    const off = sdk.subscribeServerState(st => {
+      const d = st?.defcon3
+      if (d && typeof d === 'object') { gsRef.current = d; setGs(d) }
+    })
+    return () => { try { off?.() } catch {} }
+  }, [sdk])
+
+  // ─── Game tick ────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now()
+      const dt = Math.min((now - lastTickRef.current) / 1000, 1 / 15)
+      lastTickRef.current = now
+      const state = gsRef.current
+      if (!state || state.phase !== 'playing') { animRef.current = requestAnimationFrame(tick); return }
+
+// Update missiles
+       const impacted = []
+       const intercepted = []
+       const survivingMissiles = state.missiles.map(m => {
+         const np = m.progress + m.speed * dt
+         if (np >= 1) { impacted.push({ ...m, progress: 1 }); return null; }
+
+         // Interception attempt
+         const mx = m.startX + (m.targetX - m.startX) * np;
+         const my = m.startY + (m.targetY - m.startY) * np;
+         let interceptedBy = null;
+         Object.values(state.countries).forEach(c => {
+           if (c.side === m.side || c.interceptionsUsed >= c.maxInterceptions || c.destroyed) return;
+           const d = Math.hypot(mx - c.x, my - c.y);
+           if (d < INTERCEPTION_RANGE) {
+             const bombType = BOMB_TYPE_MAP[m.bombType] || BOMB_TYPES[1];
+             const chance = 1 - bombType.interceptDifficulty;
+             if (Math.random() < chance) {
+               interceptedBy = c;
+             }
+           }
+         });
+         if (interceptedBy) {
+           interceptedBy.interceptionsUsed += 1;
+           intercepted.push({ ...m, progress: 1, intercepted: true, x: mx, y: my });
+           return null;
+         }
+         return { ...m, progress: np, x: mx, y: my };
+       }).filter(Boolean);
+
+       // Original explosions (from impacts) plus interception explosions
+       const baseExplosions = state.explosions.filter(e => now - e.createdAt < e.duration);
+       const interceptExplosions = intercepted.map(m => {
+         const bombType = BOMB_TYPE_MAP[m.bombType] || BOMB_TYPES[1];
+         return {
+           id: m.id + '_int',
+           x: m.x,
+           y: m.y,
+           power: bombType.baseDamage * 0.15, // smaller visual for interception
+           createdAt: Date.now(),
+           duration: 800,
+           color: '#00ff00', // blue-ish
+           intercept: true
+         };
+       });
+       const explosions = [...baseExplosions, ...interceptExplosions];
+
+       const radiationZones = state.radiationZones.map(z => ({ ...z, intensity: z.intensity * (1 - dt * 0.001) })).filter(z => z.intensity > 0.02)
+       const refugees = state.refugees.map(r => {
+         const p = Math.min(1, r.progress + r.speed * dt)
+         return { ...r, progress: p, x: r.startX + (r.targetX - r.startX) * p, y: r.startY + (r.targetY - r.startY) * p }
+       }).filter(r => r.progress < 1)
+
+       // Limit arrays to prevent performance issues
+       const maxMissiles = 50
+       const maxExplosions = 30
+       const maxRadiation = 20
+       const limitedMissiles = survivingMissiles.slice(-maxMissiles)
+       const limitedExplosions = explosions.slice(-maxExplosions)
+       const limitedRadiation = radiationZones.slice(-maxRadiation)
+
+       let next = { ...state, missiles: limitedMissiles, explosions: limitedExplosions, radiationZones: limitedRadiation, refugees, gameTime: state.gameTime + dt }
+
+      // Apply impacts
+      impacted.forEach(m => { next = applyMissileImpact(next, m) })
+      if (impacted.length > 0) SFX.explosion()
+
+       // Update global tension
+       const activeMissiles = next.missiles.length
+       const tensionDrift = activeMissiles > 0 ? dt * 0.5 : -dt * 0.3
+       next.globalTension = Math.max(0, Math.min(100, next.globalTension + tensionDrift))
+       
+       // If tension reaches 100%, it's too late - immediate unavoidable MAD
+       if (next.globalTension >= 100 && !next.deadmanTriggered) {
+         next.deadmanTriggered = true
+         next.alertBanner = '☢☢☢ GLOBAL TENSION AT 100% — MUTUAL ASSURED DESTRUCTION UNAVOIDABLE ☢☢☢'
+         next.alertBannerExpiry = Date.now() + 5000
+         next.terminalLines = addLog(next, '[MAD] ☢☢☢ GLOBAL TENSION REACHED 100% — MAD PROTOCOL TRIGGERED — NO WAY BACK ☢☢☢')
+         // Launch massive strike from ALL sides
+         const allCountries = Object.values(next.countries).filter(c => !c.destroyed)
+         const newMissiles = []
+         allCountries.forEach(country => {
+           const targetCountries = Object.values(next.countries).filter(c => c.id !== country.id && !c.destroyed)
+           if (targetCountries.length > 0) {
+             // Launch 2-4 missiles at random targets
+             const missileCount = 2 + Math.floor(Math.random() * 3)
+             for (let i = 0; i < missileCount; i++) {
+               const target = targetCountries[Math.floor(Math.random() * targetCountries.length)]
+               const targetCities = Object.values(next.cities).filter(c => c.country === target.id && !c.destroyed)
+               if (targetCities.length > 0) {
+                 const tc = targetCities[Math.floor(Math.random() * targetCities.length)]
+                 const bombType = getRandomBombType()
+                 newMissiles.push({ 
+                   id: Date.now() + Math.random() + i, 
+                   side: country.side, 
+                   startX: country.x + country.w/2, 
+                   startY: country.y + country.h/2, 
+                   targetX: tc.x, 
+                   targetY: tc.y, 
+                   x: country.x + country.w/2, 
+                   y: country.y + country.h/2, 
+                   progress: 0, 
+                   speed: bombType.speed * (0.8 + Math.random() * 0.4), 
+                   power: bombType.baseDamage * (0.8 + Math.random() * 0.4), 
+                   targetCityId: tc.id, 
+                   bombType: bombType.id, 
+                   color: bombType.color 
+                 })
+               }
+             }
+           }
+         })
+         next.missiles = [...next.missiles, ...newMissiles]
+         SFX.deadman()
+         // Also increase tension further to show it's truly unrecoverable
+         next.globalTension = 100
+       }
+
+      // Deadman switch
+      if (next.globalTension >= 90) {
+        next.deadmanTimer = (next.deadmanTimer || 0) + dt
+        if (next.deadmanTimer >= next.deadmanThreshold && !next.deadmanTriggered) {
+          next.deadmanTriggered = true
+          next.alertBanner = '☢ DEADMAN SWITCH TRIGGERED — MUTUAL ASSURED DESTRUCTION INITIATED ☢'
+          next.alertBannerExpiry = Date.now() + 30000
+          next.terminalLines = addLog(next, '[DEADMAN] ☢ CRITICAL: No de-escalation detected — MAD protocol activated')
+          // Launch missiles from all sides
+          const natoCountries = Object.values(next.countries).filter(c => c.side === 'nato' && !c.destroyed)
+          const warsawCountries = Object.values(next.countries).filter(c => c.side === 'warsaw' && !c.destroyed)
+          const newMissiles = []
+           natoCountries.slice(0, 3).forEach(nc => {
+             warsawCountries.slice(0, 2).forEach(wc => {
+               const tcs = Object.values(next.cities).filter(c => c.country === wc.id && !c.destroyed)
+               if (tcs.length > 0) {
+                 const tc = tcs[0]
+                 const bombType = getRandomBombType()
+                 newMissiles.push({ id: Date.now() + Math.random(), side: 'nato', startX: nc.x + nc.w/2, startY: nc.y + nc.h/2, targetX: tc.x, targetY: tc.y, x: nc.x + nc.w/2, y: nc.y + nc.h/2, progress: 0, speed: bombType.speed * (0.8 + Math.random() * 0.4), power: bombType.baseDamage * (0.8 + Math.random() * 0.4), targetCityId: tc.id, bombType: bombType.id, color: bombType.color })
+               }
+             })
+           })
+           warsawCountries.slice(0, 3).forEach(wc => {
+             natoCountries.slice(0, 2).forEach(nc => {
+               const tcs = Object.values(next.cities).filter(c => c.country === nc.id && !c.destroyed)
+               if (tcs.length > 0) {
+                 const tc = tcs[0]
+                 const bombType = getRandomBombType()
+                 newMissiles.push({ id: Date.now() + Math.random(), side: 'warsaw', startX: wc.x + wc.w/2, startY: wc.y + wc.h/2, targetX: tc.x, targetY: tc.y, x: wc.x + wc.w/2, y: wc.y + wc.h/2, progress: 0, speed: bombType.speed * (0.8 + Math.random() * 0.4), power: bombType.baseDamage * (0.8 + Math.random() * 0.4), targetCityId: tc.id, bombType: bombType.id, color: bombType.color })
+               }
+             })
+           })
+          next.missiles = [...next.missiles, ...newMissiles]
+          SFX.deadman()
+        }
+      } else {
+        next.deadmanTimer = Math.max(0, (next.deadmanTimer || 0) - dt * 2)
+      }
+
+      // Cease-fire expiry
+      if (next.ceaseFireActive && Date.now() > next.ceaseFireExpiry) {
+        next.ceaseFireActive = false
+        next.terminalLines = addLog(next, '[DIPLOMACY] Cease-fire agreement has expired')
+      }
+
+      // Bot AI tick (every 2 seconds)
+      botTickRef.current += dt
+      if (botTickRef.current >= 2) {
+        botTickRef.current = 0
+        next = runBotAI(next, 2)
+      }
+
+      // Alert banner expiry
+      if (next.alertBanner && Date.now() > next.alertBannerExpiry && !next.deadmanTriggered) {
+        next.alertBanner = null
+      }
+
+       gsRef.current = next
+       
+       // Check for game end conditions
+       const endedResult = checkGameEnd(next, myCountryId);
+       if (endedResult) {
+         setEnded(true);
+         setEndingData(endedResult);
+         // Mark phase as ended to stop further game logic
+         next.phase = 'ended';
+       }
+       
+       // Throttle UI updates to prevent lag
+      if (now - lastStateUpdateRef.current > STATE_UPDATE_INTERVAL) {
+        lastStateUpdateRef.current = now
+        setGs(next)
+      }
+      
+      // Only sync to server on impacts or less frequently
+      if (impacted.length > 0 || now - serverSyncRef.current > SERVER_SYNC_INTERVAL) {
+        serverSyncRef.current = now
+        sdk?.updateState?.({ defcon3: next }, { serverRelay: true })
+      }
+
+      animRef.current = requestAnimationFrame(tick)
+    }
+    animRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(animRef.current)
+  }, [sdk])
+
+  // ─── Mini-map ─────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const canvas = miniMapRef.current
+    if (!canvas || !showMiniMap || gs.phase !== 'playing') return
+    const ctx = canvas.getContext('2d')
+    const W = canvas.width, H = canvas.height
+    ctx.fillStyle = '#050510'; ctx.fillRect(0, 0, W, H)
+    ctx.strokeStyle = '#00ff00'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, W, H)
+    Object.values(gs.countries).forEach(c => {
+      const col = SIDE_COLORS[c.side] || SIDE_COLORS.neutral
+      ctx.fillStyle = c.destroyed ? '#330000' : col.border
+      ctx.globalAlpha = c.destroyed ? 0.4 : 0.7
+      ctx.fillRect(c.x * W, c.y * H, Math.max(2, c.w * W), Math.max(2, c.h * H))
+    })
+    ctx.globalAlpha = 1
+    gs.explosions.forEach(e => {
+      const age = (Date.now() - e.createdAt) / e.duration
+      ctx.fillStyle = `rgba(255,200,0,${1 - age})`
+      ctx.beginPath(); ctx.arc(e.x * W, e.y * H, Math.max(2, e.power * 0.002 * W), 0, Math.PI * 2); ctx.fill()
+    })
+    gs.missiles.forEach(m => {
+      ctx.fillStyle = m.side === 'nato' ? '#00ff00' : '#ff0000'
+      ctx.fillRect(m.x * W - 1, m.y * H - 1, 2, 2)
+    })
+    // Tension bar
+    const t = gs.globalTension / 100
+    ctx.fillStyle = t > 0.8 ? '#ff0000' : t > 0.5 ? '#ff8800' : '#00ff00'
+    ctx.fillRect(2, H - 8, (W - 4) * t, 6)
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.strokeRect(2, H - 8, W - 4, 6)
+    ctx.fillStyle = '#00ff00'; ctx.font = '8px monospace'; ctx.textAlign = 'center'
+    ctx.fillText('GLOBAL SITUATION', W / 2, 10)
+    ctx.fillText(`TENSION: ${Math.round(gs.globalTension)}%`, W / 2, H - 12)
   })
-  return (
-    <group ref={rootRef} position={position.toArray()} quaternion={quaternion}>
-      <mesh position={[0, 0.06, 0]}>
-        <cylinderGeometry args={[0.03, 0.08, 0.16, 10]} />
-        <meshStandardMaterial color="#374151" emissive="#f97316" emissiveIntensity={0.18} />
-      </mesh>
-      <mesh position={[0, 0.22, 0]}>
-        <sphereGeometry args={[0.09 + strike.contamination * 0.0018, 18, 18]} />
-        <meshBasicMaterial color={strike.strategic ? '#f5d0fe' : '#fed7aa'} transparent opacity={0.34} depthWrite={false} />
-      </mesh>
-      <mesh position={[0, -0.005, 0]}>
-        <ringGeometry args={[0.11, 0.18 + strike.contamination * 0.0025, 28]} />
-        <meshBasicMaterial color="#fb7185" transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
-      {[[-0.06, 0.015], [0.06, 0.02], [0.015, -0.055], [-0.02, -0.045]].map(([x, z], index) => (
-        <mesh key={`${strike.id}-ruin-${index}`} position={[x, 0.02, z]} rotation={[0, index * 0.4, 0]}>
-          <boxGeometry args={[0.03, 0.045 + index * 0.01, 0.03]} />
-          <meshStandardMaterial color="#475569" emissive="#1f2937" emissiveIntensity={0.14} />
-        </mesh>
-      ))}
-    </group>
-  )
-}
 
-const GlobeMarkers = ({ countries, missiles, strikes, threat, phase, hoveredCountryId, selectedCountryId, onHoverCountry, onSelectCountry, madMode, targetedCityId, onTargetCity }) => {
-  const groupRef = useRef(null)
-  const politicalTexture = useMemo(() => createPoliticalTexture(countries), [countries])
-  useEffect(() => () => politicalTexture.dispose(), [politicalTexture])
-  useFrame(({ clock }) => {
-    if (!groupRef.current) return
-    groupRef.current.rotation.y = clock.getElapsedTime() * 0.04
-  })
-  return (
-    <group ref={groupRef}>
-      <mesh>
-        <sphereGeometry args={[2.6, 48, 48]} />
-        <meshStandardMaterial map={politicalTexture} color="#cbd5e1" emissive={new THREE.Color().setHSL(0.58, 0.35, 0.08 + threat * 0.08)} emissiveIntensity={0.32 + threat * 0.08} roughness={0.86} metalness={0.08} />
-      </mesh>
-      <Atmosphere threat={threat} />
-      <ContaminationField countries={countries} strikes={strikes} />
-      {(strikes || []).map((strike) => <StrikeAftermath key={`aftermath-${strike.id}`} strike={strike} />)}
-      {countries.filter((country) => !country.eliminated).map((country) => (
-        <group key={country.id}>
-          <CityLights country={country} madMode={madMode} targetedCityId={targetedCityId} onTargetCity={onTargetCity} />
-          <CountryMarker
-            country={country}
-            hovered={hoveredCountryId === country.id}
-            selected={selectedCountryId === country.id}
-            onHover={onHoverCountry}
-            onSelect={onSelectCountry}
-          />
-        </group>
-      ))}
-      <MissileArcs countries={countries} missiles={missiles} phase={phase} />
-    </group>
-  )
-}
+  // ─── Derived ──────────────────────────────────────────────────────────────────
 
-const DefconWorld = ({ countries, missiles, strikes, threat, phase, hoveredCountryId, selectedCountryId, onHoverCountry, onSelectCountry, madMode, targetedCityId, onTargetCity }) => {
-  const clockLight = useRef(null)
-  useFrame(({ clock }) => {
-    if (!clockLight.current) return
-    clockLight.current.intensity = 1.2 + threat * 0.5 + Math.sin(clock.getElapsedTime() * 5) * 0.12
-  })
-  return (
-    <>
-      <color attach="background" args={['#020617']} />
-      <fog attach="fog" args={['#020617', 8, 16]} />
-      <Stars radius={24} depth={18} count={1000} factor={3.4} fade speed={0.3} />
-      <ambientLight intensity={0.42} color="#8fb2ff" />
-      <directionalLight ref={clockLight} position={[5, 6, 5]} intensity={1.4} color={phase === 'nullfire' ? '#fecaca' : '#bfdbfe'} />
-      <pointLight position={[-5, -3, -3]} intensity={0.5 + threat * 0.3} color="#f97316" />
-      <GlobeMarkers countries={countries} missiles={missiles} strikes={strikes} threat={threat} phase={phase} hoveredCountryId={hoveredCountryId} selectedCountryId={selectedCountryId} onHoverCountry={onHoverCountry} onSelectCountry={onSelectCountry} madMode={madMode} targetedCityId={targetedCityId} onTargetCity={onTargetCity} />
-      <OrbitControls enablePan={false} enableZoom={false} minPolarAngle={0.95} maxPolarAngle={2.15} rotateSpeed={0.45} />
-    </>
-  )
-}
+  const isPlaying = gs.phase === 'playing'
+  const selCountry = selectedCountry ? gs.countries[selectedCountry] : null
+  const alertActive = gs.alertBanner && Date.now() < gs.alertBannerExpiry
+  const deadmanPct = Math.min(100, ((gs.deadmanTimer || 0) / gs.deadmanThreshold) * 100)
 
-const DefconScene = ({ countries, missiles, strikes, threat, phase, hoveredCountryId, selectedCountryId, onHoverCountry, onSelectCountry, madMode, targetedCityId, onTargetCity }) => {
-  return (
-    <Canvas camera={{ position: [0, 0.8, 8.8], fov: 44 }} style={{ position: 'absolute', inset: 0 }}>
-      <DefconWorld countries={countries} missiles={missiles} strikes={strikes} threat={threat} phase={phase} hoveredCountryId={hoveredCountryId} selectedCountryId={selectedCountryId} onHoverCountry={onHoverCountry} onSelectCountry={onSelectCountry} madMode={madMode} targetedCityId={targetedCityId} onTargetCity={onTargetCity} />
-    </Canvas>
-  )
-}
+  const stats = useMemo(() => {
+    if (!isPlaying) return null
+    const natoAlive = Object.values(gs.countries).filter(c => c.side === 'nato' && !c.destroyed).length
+    const warsawAlive = Object.values(gs.countries).filter(c => c.side === 'warsaw' && !c.destroyed).length
+    const neutralAlive = Object.values(gs.countries).filter(c => c.side === 'neutral' && !c.destroyed).length
+    const citiesDestroyed = Object.values(gs.cities).filter(c => c.destroyed).length
+    const casualties = Object.values(gs.cities).filter(c => c.destroyed).reduce((s, c) => s + c.population, 0)
+    const evacuatedCities = Object.values(gs.cities).filter(c => c.evacuated && !c.destroyed).length
+    const gh = Math.floor(gs.gameTime / 3600), gm = Math.floor((gs.gameTime % 3600) / 60), gss = Math.floor(gs.gameTime % 60)
+    return { natoAlive, warsawAlive, neutralAlive, citiesDestroyed, casualties, evacuatedCities, gh, gm, gs: gss }
+  }, [gs, isPlaying])
 
-const DefconHUD = ({
-  containerRef,
-  gameState,
-  defcon,
-  readyCount,
-  humanCountries,
-  phaseTimeLeft,
-  hoveredCountry,
-  selectedCountry,
-  myCountry,
-  userId,
-  isHost,
-  canLaunch,
-  handleReadyToggle,
-  handleStart,
-  availableActions,
-  actionsNeedingTarget,
-  targetOptions,
-  handleAction,
-  handleCommit,
-  handleResetMatch,
-  setHoveredCountryId,
-  setSelectedCountryId,
-  uiHidden,
-  setUiHidden
-}) => {
-  if (!containerRef.current) return null
-  const focusCountry = selectedCountry || hoveredCountry || myCountry
-  const worldCasualties = Math.round(gameState.countries.reduce((total, country) => total + (country.casualties || 0), 0))
-  const peakFallout = Math.max(0, ...gameState.countries.map((country) => Math.round(country.contamination || 0)))
-  const didWin = !!(gameState.victory?.winnerId && myCountry?.id === gameState.victory.winnerId)
-  const focusSummary = getFocusSummary(focusCountry, gameState.phase, gameState.countries.filter((country) => !country.eliminated), gameState.threat)
+  // ─── Handlers ────────────────────────────────────────────────────────────────
 
-  const hud = (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10, overflow: 'hidden', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
-      <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(13,17,23,0.9)', border: '1px solid #374151', borderRadius: 6, padding: '5px 14px', color: '#f9fafb', textAlign: 'center', whiteSpace: 'nowrap', pointerEvents: 'auto' }}>
-        <button
-          type="button"
-          onClick={() => setUiHidden((current) => !current)}
-          style={{ background: 'transparent', color: '#f9fafb', border: 'none', fontSize: 12, cursor: 'pointer', padding: 0 }}
-        >
-          {uiHidden ? 'Show UI (H)' : 'Hide UI (H)'}
-        </button>
+  const handleJoin = useCallback(() => {
+    if (!sdk || gs.players[userId]) return
+    const taken = new Set(Object.values(gs.players).map(p => p.countryId))
+    const available = NATIONS.filter(n => !taken.has(n.id))
+    const assigned = available.length > 0 ? available[0].id : null
+    SFX.click()
+    const next = {
+      ...gs,
+      players: { ...gs.players, [userId]: { id: userId, username, countryId: assigned } },
+      ready: { ...gs.ready, [userId]: false },
+      countries: assigned ? { ...gs.countries, [assigned]: { ...gs.countries[assigned], isBot: false } } : gs.countries,
+      terminalLines: addLog(gs, `[COMM] ${username} joined as ${assigned || 'observer'}`)
+    }
+    push(next)
+  }, [sdk, gs, userId, username, push])
+
+  const handleLeave = useCallback(() => {
+    if (!sdk || !gs.players[userId]) return
+    const { [userId]: _, ...restP } = gs.players
+    const { [userId]: __, ...restR } = gs.ready
+    const myC = gs.players[userId]?.countryId
+    SFX.click()
+    push({
+      ...gs, players: restP, ready: restR,
+      countries: myC ? { ...gs.countries, [myC]: { ...gs.countries[myC], isBot: true } } : gs.countries,
+      terminalLines: addLog(gs, `[COMM] ${username} left the war room`)
+    })
+  }, [sdk, gs, userId, username, push])
+
+  const handleReady = useCallback(() => {
+    if (!sdk || !gs.players[userId]) return
+    SFX.click()
+    const next = { ...gs, ready: { ...gs.ready, [userId]: !gs.ready[userId] } }
+    const allReady = Object.keys(next.players).length >= 1 && Object.keys(next.players).every(id => next.ready[id])
+    if (allReady && gs.phase === 'lobby') {
+      next.phase = 'playing'
+      next.gameTime = 0
+      next.terminalLines = addLog(next, '[SYSTEM] DEFCON: MAD — Strategic Defense System Online')
+      next.terminalLines = addLog(next, '[DEFCON] Alert level: DEFCON 1 — Maximum Readiness')
+      next.terminalLines = addLog(next, '[WARNING] Deadman switch armed — de-escalate or face MAD')
+      next.alertBanner = 'GLOBAL NUCLEAR ALERT — ALL CITIZENS PREPARE FOR EVACUATION'
+      next.alertBannerExpiry = Date.now() + 10000
+      setTimeout(() => SFX.gameStart(), 200)
+      setTimeout(() => SFX.alert(), 1500)
+    } else {
+      next.terminalLines = addLog(next, `[COMM] ${username} is ${next.ready[userId] ? 'ready' : 'not ready'}`)
+    }
+    push(next)
+  }, [sdk, gs, userId, username, push])
+
+  const handleReset = useCallback(() => {
+    if (!sdk) return
+    SFX.click()
+    push(makeInitialState())
+  }, [sdk, push])
+
+  const handleLaunchMissile = useCallback((targetCityId) => {
+    const state = gsRef.current
+    if (!state || state.phase !== 'playing') return
+    if (state.ceaseFireActive) {
+      push({ ...state, terminalLines: addLog(state, '[ERROR] Cease-fire active — cannot launch') })
+      return
+    }
+    const player = state.players[userId]
+    if (!player?.countryId) return
+    const launchCountry = state.countries[player.countryId]
+    const targetCity = state.cities[targetCityId]
+    if (!launchCountry || !targetCity) return
+    SFX.launch()
+    const bombType = getRandomBombType()
+    const missile = {
+      id: Date.now() + Math.random(), side: launchCountry.side,
+      startX: launchCountry.x + launchCountry.w / 2, startY: launchCountry.y + launchCountry.h / 2,
+      targetX: targetCity.x, targetY: targetCity.y,
+      x: launchCountry.x + launchCountry.w / 2, y: launchCountry.y + launchCountry.h / 2,
+      progress: 0, speed: bombType.speed * (0.8 + Math.random() * 0.4), 
+      power: bombType.baseDamage * (0.8 + Math.random() * 0.4), 
+      targetCityId,
+      bombType: bombType.id,
+      color: bombType.color,
+    }
+    let next = {
+      ...state, missiles: [...state.missiles, missile],
+      warCrimesCount: (state.warCrimesCount || 0) + 1,
+      globalTension: Math.min(100, state.globalTension + 10),
+      terminalLines: addLog(state, `[WEAPONS] 🚀 ${bombType.name} launched targeting ${targetCity.name}`)
+    }
+    // Update player's country last action time
+    if (player.countryId) {
+      next.countries = { ...next.countries, [player.countryId]: { ...next.countries[player.countryId], lastAction: next.gameTime } }
+    }
+    push(next)
+    setSelectedCountry(null)
+  }, [userId, push])
+
+  const handleEvacuateCountry = useCallback((countryId) => {
+    const state = gsRef.current
+    if (!state) return
+    const country = state.countries[countryId]
+    if (!country) return
+    SFX.siren()
+    let next = {
+      ...state,
+      countries: { ...state.countries, [countryId]: { ...country, evacuationStatus: 1 } },
+      alertBanner: `EVACUATION ORDER: ${country.name.toUpperCase()} — PROCEED TO EVACUATION CENTERS`,
+      alertBannerExpiry: Date.now() + 8000,
+      terminalLines: addLog(state, `[EVACUATION] 🚁 Emergency evacuation ordered for ${country.name}`)
+    }
+    Object.values(state.cities).filter(c => c.country === countryId && !c.evacuated && !c.destroyed).forEach(city => {
+      next = applyEvacuateCity(next, city.id)
+    })
+    if (myCountryId) next.countries = { ...next.countries, [myCountryId]: { ...next.countries[myCountryId], lastAction: next.gameTime } }
+    push(next)
+    setSelectedCountry(null)
+  }, [push, myCountryId])
+
+  const handleNuclearStrike = useCallback((countryId) => {
+    const state = gsRef.current
+    if (!state) return
+    if (state.ceaseFireActive) {
+      push({ ...state, terminalLines: addLog(state, '[ERROR] Cease-fire active — cannot strike') })
+      return
+    }
+    const player = state.players[userId]
+    if (!player?.countryId) return
+    const launchCountry = state.countries[player.countryId]
+    const targetCountry = state.countries[countryId]
+    if (!launchCountry || !targetCountry) return
+    if (targetCountry.side === launchCountry.side) {
+      push({ ...state, terminalLines: addLog(state, `[ERROR] Cannot target allied nation ${targetCountry.name}`) })
+      return
+    }
+    SFX.launch()
+    const targetCities = Object.values(state.cities).filter(c => c.country === countryId && !c.destroyed)
+    const count = Math.min(3, targetCities.length)
+    const newMissiles = targetCities.slice(0, count).map((city, i) => {
+      const bombType = getRandomBombType()
+      return {
+        id: Date.now() + Math.random() + i, side: launchCountry.side,
+        startX: launchCountry.x + launchCountry.w / 2, startY: launchCountry.y + launchCountry.h / 2,
+        targetX: city.x, targetY: city.y,
+        x: launchCountry.x + launchCountry.w / 2, y: launchCountry.y + launchCountry.h / 2,
+        progress: 0, speed: bombType.speed * (0.8 + Math.random() * 0.4), 
+        power: bombType.baseDamage * (0.8 + Math.random() * 0.4), 
+        targetCityId: city.id,
+        bombType: bombType.id,
+        color: bombType.color,
+      }
+    })
+    let next = {
+      ...state, missiles: [...state.missiles, ...newMissiles],
+      warCrimesCount: (state.warCrimesCount || 0) + 1,
+      globalTension: Math.min(100, state.globalTension + 15),
+      terminalLines: addLog(state, `[WEAPONS] ☢ Strategic nuclear strike on ${targetCountry.name} — ${count} missiles`)
+    }
+    if (player.countryId) next.countries = { ...next.countries, [player.countryId]: { ...next.countries[player.countryId], lastAction: next.gameTime } }
+    push(next)
+    setSelectedCountry(null)
+  }, [userId, push])
+
+  const handleDeescalate = useCallback((countryId) => {
+    const state = gsRef.current
+    if (!state) return
+    const country = state.countries[countryId || myCountryId]
+    if (!country) return
+    SFX.deescalate()
+    const newTension = Math.max(0, country.tension - 20)
+    let next = {
+      ...state,
+      countries: { ...state.countries, [country.id]: { ...country, tension: newTension } },
+      globalTension: Math.max(0, state.globalTension - 5),
+      deadmanTimer: Math.max(0, (state.deadmanTimer || 0) - 20),
+      terminalLines: addLog(state, `[DIPLOMACY] 🕊 ${country.name} initiates de-escalation — tension reduced`)
+    }
+    if (myCountryId) next.countries = { ...next.countries, [myCountryId]: { ...next.countries[myCountryId], lastAction: next.gameTime } }
+    push(next)
+    setSelectedCountry(null)
+  }, [push, myCountryId])
+
+  const handleCeaseFire = useCallback(() => {
+    const state = gsRef.current
+    if (!state) return
+    SFX.negotiate()
+    const next = {
+      ...state,
+      ceaseFireActive: true,
+      ceaseFireExpiry: Date.now() + 60000,
+      globalTension: Math.max(0, state.globalTension - 15),
+      deadmanTimer: Math.max(0, (state.deadmanTimer || 0) - 30),
+      alertBanner: '🕊 GLOBAL CEASE-FIRE DECLARED — 60 SECOND TRUCE IN EFFECT',
+      alertBannerExpiry: Date.now() + 8000,
+      terminalLines: addLog(state, '[DIPLOMACY] 🕊 Global cease-fire declared — 60 second truce')
+    }
+    if (myCountryId) next.countries = { ...next.countries, [myCountryId]: { ...next.countries[myCountryId], lastAction: next.gameTime } }
+    push(next)
+  }, [push, myCountryId])
+
+  const handleGlobalEvacuation = useCallback(() => {
+    const state = gsRef.current
+    if (!state) return
+    SFX.siren()
+    push({
+      ...state,
+      alertBanner: 'IMMEDIATE EVACUATION — SEEK NEAREST EVACUATION CENTER',
+      alertBannerExpiry: Date.now() + 15000,
+      terminalLines: addLog(state, '[EVACUATION] 🚨 Global evacuation order issued')
+    })
+  }, [push])
+
+  const handleRedPhoneMessage = useCallback((message) => {
+    const state = gsRef.current
+    if (!state || !message.trim()) return
+    const player = state.players[userId]
+    const senderCountry = player?.countryId ? state.countries[player.countryId] : null
+    const senderName = senderCountry ? senderCountry.name : username
+    const senderColor = senderCountry ? (SIDE_COLORS[senderCountry.side]?.label || '#fff') : '#fff'
+    
+    // Add to terminal
+    const terminalMessage = `[RED PHONE] ${senderName}: ${message}`
+    const next = {
+      ...state,
+      terminalLines: addLog(state, terminalMessage),
+      // Increase global tension slightly when red phone is used
+      globalTension: Math.min(100, state.globalTension + 2)
+    }
+    push(next)
+    
+    // Add to red phone history
+    setRedPhoneHistory(prev => [...prev.slice(-50), {
+      id: Date.now(),
+      sender: senderName,
+      senderColor,
+      message,
+      timestamp: Date.now(),
+      isPlayer: player?.countryId === myCountryId
+    }])
+    setRedPhoneMessage('')
+  }, [userId, username, myCountryId, push])
+
+  // ─── Pan / Zoom ───────────────────────────────────────────────────────────────
+
+  const onWheel = useCallback(e => {
+    e.preventDefault()
+    setZoom(z => Math.max(0.4, Math.min(5.0, z * (e.deltaY > 0 ? 0.9 : 1.1))))
+  }, [])
+
+  const onMouseDown = useCallback(e => {
+    if (e.target.closest('[data-country]') || e.target.closest('[data-popup]')) return
+    e.preventDefault(); setPanning(true)
+    panStart.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }
+  }, [pan])
+
+  const onMouseMove = useCallback(e => {
+    if (!panning) return
+    setPan({ x: panStart.current.px + e.clientX - panStart.current.x, y: panStart.current.py + e.clientY - panStart.current.y })
+  }, [panning])
+
+  const onMouseUp = useCallback(() => setPanning(false), [])
+  const resetView = useCallback(() => { setZoom(1.0); setPan({ x: 0, y: 0 }) }, [])
+
+  // ─── Loading ──────────────────────────────────────────────────────────────────
+
+  if (!sdk) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#000', color: '#00ff00', flexDirection: 'column', gap: 16, fontFamily: 'Courier New' }}>
+        <div style={{ width: 40, height: 40, border: '3px solid #003300', borderTopColor: '#00ff00', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <span>Loading DEFCON: MAD...</span>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
+    )
+  }
 
-      {!uiHidden ? (
-        <>
-          <div style={{ position: 'absolute', top: 12, left: 12, width: 210, background: 'rgba(13,17,23,0.88)', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 12px', color: '#f9fafb', pointerEvents: 'auto' }}>
-            <div style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 4 }}>DEFCON {defcon}</div>
-            <div style={{ fontSize: 12, color: '#9ca3af' }}>{gameState.phase === 'lobby' ? 'Lobby' : `Season ${gameState.season} · ${gameState.phase}`}</div>
-            <div style={{ marginTop: 8, height: 8, borderRadius: 999, background: '#111827', overflow: 'hidden' }}>
-              <div style={{ width: `${(gameState.threat / 4) * 100}%`, height: '100%', background: defcon <= 2 ? 'linear-gradient(90deg, #f97316, #ef4444)' : 'linear-gradient(90deg, #38bdf8, #facc15)' }} />
-            </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: '#d1d5db', lineHeight: 1.45 }}>
-              {gameState.phase === 'lobby'
-                ? `${readyCount}/${humanCountries.length} ready`
-                : `${Math.ceil(phaseTimeLeft / 1000)}s until resolution`}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 11, color: focusCountry ? focusCountry.color : '#9ca3af' }}>
-              {focusCountry ? `${focusCountry.countryName} · ${focusCountry.archetypeLabel}` : 'Drag to rotate. Hover or click markers for intel.'}
-            </div>
-            <div style={{ marginTop: 6, fontSize: 10, color: '#94a3b8' }}>Global casualties {worldCasualties} · Peak fallout {peakFallout}</div>
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #1f2937', fontSize: 10, lineHeight: 1.5, color: '#cbd5e1' }}>
-              {focusSummary.description}
-            </div>
+  const joined = !!gs.players[userId]
+  const ready = !!gs.ready[userId]
+  const tensionColor = gs.globalTension > 80 ? '#ff0000' : gs.globalTension > 60 ? '#ff8800' : gs.globalTension > 40 ? '#ffff00' : '#00ff00'
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#000011', overflow: 'hidden', fontFamily: 'Courier New, monospace', userSelect: 'none' }}>
+
+      {/* Alert Banner */}
+      {alertActive && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: 56,
+          background: gs.deadmanTriggered ? 'linear-gradient(45deg,#ff0000,#880000)' : 'linear-gradient(45deg,#ff0000,#ff6600)',
+          color: '#fff', fontSize: 15, fontWeight: 'bold', textAlign: 'center',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 3000, letterSpacing: 2, textShadow: '0 0 10px rgba(255,255,255,0.8)',
+          animation: 'alertFlash 0.8s infinite',
+        }}>
+          {gs.alertBanner}
+        </div>
+      )}
+
+      {/* Deadman switch progress bar */}
+      {isPlaying && gs.globalTension >= 80 && (
+        <div style={{
+          position: 'fixed', top: alertActive ? 56 : 0, left: 0, width: '100%', height: 8,
+          background: '#111', zIndex: 2500,
+        }}>
+          <div style={{
+            height: '100%', width: `${deadmanPct}%`,
+            background: `linear-gradient(90deg, #ff8800, #ff0000)`,
+            transition: 'width 0.5s',
+            boxShadow: deadmanPct > 80 ? '0 0 8px #ff0000' : 'none',
+            animation: deadmanPct > 80 ? 'deadmanPulse 0.5s infinite' : 'none',
+          }} />
+          <div style={{ position: 'absolute', top: 0, right: 8, fontSize: 7, color: '#ff4444', lineHeight: '8px', fontFamily: 'monospace' }}>
+            DEADMAN: {Math.round(deadmanPct)}%
           </div>
+        </div>
+      )}
 
-          <div style={{ position: 'absolute', top: 12, right: 12, width: 220, background: 'rgba(13,17,23,0.88)', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 12px', color: '#f9fafb', pointerEvents: 'auto' }}>
-            <div style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 6 }}>Nations</div>
-            <div style={{ height: 1, background: '#1f2937', marginBottom: 8 }} />
-            <div style={{ display: 'grid', gap: 6, maxHeight: 280, overflow: 'auto' }}>
-              {gameState.countries.map((country) => (
-                <div
-                  key={country.id}
-                  style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', gap: 8, alignItems: 'center', padding: '6px 8px', borderRadius: 6, background: (selectedCountry?.id === country.id || hoveredCountry?.id === country.id) ? 'rgba(30,41,59,0.95)' : 'rgba(17,24,39,0.92)', border: `1px solid ${country.color}33`, cursor: 'pointer' }}
-                  onMouseEnter={() => setHoveredCountryId(country.id)}
-                  onMouseLeave={() => setHoveredCountryId((current) => (current === country.id ? null : current))}
-                  onClick={() => setSelectedCountryId((current) => (current === country.id ? null : country.id))}
-                >
-                  <div style={{ width: 10, height: 10, borderRadius: 999, background: country.color }} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: country.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {country.countryName}{country.playerId === userId ? ' (you)' : country.ai ? ' [AI]' : ''}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>
-                      GDP {Math.round(country.gdp)} · P {country.population} · C {Math.round(country.contamination || 0)}
-                    </div>
+      {/* World viewport */}
+      <div
+        style={{ flex: 1, position: 'relative', overflow: 'hidden', cursor: panning ? 'grabbing' : 'crosshair', marginTop: alertActive ? 56 : (isPlaying && gs.globalTension >= 80 ? 8 : 0) }}
+        onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+        onContextMenu={e => { e.preventDefault(); setSelectedCountry(null) }}
+      >
+        {/* Transformable world */}
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', transformOrigin: '50% 50%', transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, willChange: 'transform' }}>
+
+          {/* Grid */}
+          <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: 0.06 }}>
+            {Array.from({ length: 20 }, (_, i) => (
+              <g key={i}>
+                <line x1={`${i * 5}%`} y1="0" x2={`${i * 5}%`} y2="100%" stroke="#00ff00" strokeWidth="1" />
+                <line x1="0" y1={`${i * 5}%`} x2="100%" y2={`${i * 5}%`} stroke="#00ff00" strokeWidth="1" />
+              </g>
+            ))}
+          </svg>
+
+          {/* SVG overlay */}
+          <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}>
+            {gs.missiles.map(m => (
+              <g key={m.id}>
+                <line x1={`${m.startX * 100}%`} y1={`${m.startY * 100}%`} x2={`${m.x * 100}%`} y2={`${m.y * 100}%`}
+                  stroke={m.side === 'nato' ? '#00ff00' : m.side === 'warsaw' ? '#ff0000' : '#ffff00'}
+                  strokeWidth="2" opacity="0.8" />
+                <circle cx={`${m.x * 100}%`} cy={`${m.y * 100}%`} r="4"
+                  fill={m.side === 'nato' ? '#00ff00' : m.side === 'warsaw' ? '#ff0000' : '#ffff00'}
+                  style={{ filter: `drop-shadow(0 0 4px ${m.side === 'nato' ? '#00ff00' : '#ff0000'})` }} />
+              </g>
+            ))}
+            {gs.radiationZones.map(z => (
+              <circle key={z.id} cx={`${z.x * 100}%`} cy={`${z.y * 100}%`} r={`${z.radius * 100}%`}
+                fill={`rgba(255,255,0,${z.intensity * 0.12})`} stroke={`rgba(255,255,0,${z.intensity * 0.4})`} strokeWidth="1" />
+            ))}
+            {gs.refugees.map(r => (
+              <g key={r.id}>
+                <line x1={`${r.x * 100}%`} y1={`${r.y * 100}%`} x2={`${r.targetX * 100}%`} y2={`${r.targetY * 100}%`}
+                  stroke="rgba(255,170,0,0.25)" strokeWidth="1" strokeDasharray="3,3" />
+                <circle cx={`${r.x * 100}%`} cy={`${r.y * 100}%`} r="2.5" fill="rgba(255,170,0,0.8)" />
+              </g>
+            ))}
+          </svg>
+
+          {/* Explosions */}
+          {gs.explosions.map(e => {
+            const age = (Date.now() - e.createdAt) / e.duration
+            const scale = Math.min(1, age * 2.5)
+            const alpha = Math.max(0, 1 - age)
+            const size = e.power * 0.065
+            return (
+              <div key={e.id} style={{
+                position: 'absolute', left: `${e.x * 100}%`, top: `${e.y * 100}%`,
+                width: size + '%', height: size + '%',
+                transform: `translate(-50%,-50%) scale(${scale})`,
+                borderRadius: '50%',
+                background: `radial-gradient(circle, rgba(255,255,255,${alpha}) 0%, rgba(255,200,0,${alpha * 0.8}) 25%, rgba(255,100,0,${alpha * 0.6}) 55%, rgba(255,0,0,${alpha * 0.3}) 100%)`,
+                pointerEvents: 'none', zIndex: 10,
+                boxShadow: `0 0 ${size * 0.5}vw rgba(255,150,0,${alpha * 0.5})`,
+              }} />
+            )
+          })}
+
+          {/* Countries */}
+          {Object.values(gs.countries).map(country => {
+            const colors = SIDE_COLORS[country.side] || SIDE_COLORS.neutral
+            const isSelected = selectedCountry === country.id
+            const myNation = myCountryId === country.id
+            const isBot = country.isBot
+            const tensionPct = country.tension / 100
+            const tensionBg = tensionPct > 0.8 ? `rgba(255,0,0,${0.15 + tensionPct * 0.2})` :
+              tensionPct > 0.5 ? `rgba(255,100,0,${0.1 + tensionPct * 0.15})` : colors.fill
+
+            return (
+              <div
+                key={country.id}
+                data-country={country.id}
+                onClick={() => { SFX.click(); setSelectedCountry(isSelected ? null : country.id) }}
+                style={{
+                  position: 'absolute',
+                  left: `${country.x * 100}%`, top: `${country.y * 100}%`,
+                  width: `${country.w * 100}%`, height: `${country.h * 100}%`,
+                  background: country.destroyed ? 'rgba(80,0,0,0.85)' : tensionBg,
+                  border: `${isSelected ? 3 : myNation ? 2.5 : 1.5}px solid ${isSelected ? '#ffff00' : myNation ? '#ffffff' : country.destroyed ? '#800000' : colors.border}`,
+                  boxShadow: isSelected ? `0 0 20px ${colors.border}, inset 0 0 10px rgba(255,255,0,0.1)` :
+                    myNation ? '0 0 12px rgba(255,255,255,0.4)' :
+                    country.tension > 70 ? `0 0 8px rgba(255,0,0,0.4)` : 'none',
+                  cursor: 'pointer', transition: 'background 0.4s, box-shadow 0.3s',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden', zIndex: isSelected ? 20 : 5,
+                  animation: country.tension > 85 ? 'tensionPulse 1s ease-in-out infinite' : 'none',
+                }}
+              >
+                <div style={{ fontSize: `clamp(6px, ${country.w * 70}px, 12px)`, fontWeight: 'bold', color: country.destroyed ? '#800000' : colors.label, textAlign: 'center', lineHeight: 1.2, padding: '0 2px', textShadow: '0 0 4px rgba(0,0,0,0.9)' }}>
+                  {country.name}
+                </div>
+                {isBot && !country.destroyed && (
+                  <div style={{ fontSize: '7px', color: '#888', marginTop: 1 }}>🤖 BOT</div>
+                )}
+                {myNation && (
+                  <div style={{ fontSize: '7px', color: '#fff', marginTop: 1 }}>YOU</div>
+                )}
+                {country.evacuationStatus > 0 && (
+                  <div style={{ fontSize: '7px', color: '#ffaa00', marginTop: 1 }}>EVAC</div>
+                )}
+                {country.tension > 60 && !country.destroyed && (
+                  <div style={{ fontSize: '7px', color: country.tension > 80 ? '#ff4444' : '#ff8800', marginTop: 1 }}>
+                    T:{Math.round(country.tension)}
                   </div>
-                  <div style={{ fontSize: 11, color: country.eliminated ? '#fca5a5' : gameState.phase === 'lobby' ? (country.ready ? '#4ade80' : '#94a3b8') : '#cbd5e1' }}>
-                    {country.eliminated ? 'Out' : gameState.phase === 'lobby' ? (country.ready ? 'Ready' : 'Idle') : country.sanctions > 0 ? `SAN ${country.sanctions}` : `A${country.armed}`}
+                )}
+              </div>
+            )
+          })}
+
+          {/* Cities */}
+          {Object.values(gs.cities).map(city => {
+            const country = gs.countries[city.country]
+            const colors = SIDE_COLORS[country?.side] || SIDE_COLORS.neutral
+            const size = city.isCapital ? 9 : 5
+            return (
+              <div key={city.id} style={{
+                position: 'absolute', left: `${city.x * 100}%`, top: `${city.y * 100}%`,
+                width: size, height: size,
+                transform: city.isCapital ? 'translate(-50%,-50%) rotate(45deg)' : 'translate(-50%,-50%)',
+                background: city.destroyed ? '#ff0000' : city.evacuated ? '#888' : colors.border,
+                borderRadius: city.isCapital ? '0' : '50%',
+                border: city.isCapital ? `1.5px solid ${colors.label}` : 'none',
+                boxShadow: city.destroyed ? '0 0 6px #ff0000' : city.isCapital ? `0 0 4px ${colors.border}` : 'none',
+                pointerEvents: 'none', zIndex: 8,
+              }} />
+            )
+          })}
+
+          {/* Military bases */}
+          {Object.values(gs.militaryBases).map(base => {
+            const color = base.type === 'command' ? '#ff00ff' : base.type === 'missile' ? '#ff6600' : '#00ff00'
+            return (
+              <div key={base.id} style={{
+                position: 'absolute', left: `${base.x * 100}%`, top: `${base.y * 100}%`,
+                width: 0, height: 0, transform: 'translate(-50%,-50%)',
+                borderLeft: '3px solid transparent', borderRight: '3px solid transparent',
+                borderBottom: `6px solid ${base.operational ? color : '#333'}`,
+                pointerEvents: 'none', zIndex: 7,
+              }} />
+            )
+          })}
+
+          {/* Evacuation centers */}
+          {Object.values(gs.evacuationCenters).map(ec => (
+            <div key={ec.id} style={{
+              position: 'absolute', left: `${ec.x * 100}%`, top: `${ec.y * 100}%`,
+              width: 9, height: 9, transform: 'translate(-50%,-50%)',
+              borderRadius: '50%', border: `1.5px solid ${ec.operational ? '#ffaa00' : '#333'}`,
+              background: 'transparent', pointerEvents: 'none', zIndex: 7,
+            }}>
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 5, height: 1, background: '#ffaa00' }} />
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 1, height: 5, background: '#ffaa00' }} />
+            </div>
+          ))}
+        </div>
+
+        {/* HUD overlays */}
+        {isPlaying && (
+          <>
+            {/* Terminal */}
+            <div style={{ position: 'absolute', top: 10, left: 10, width: 400, height: 280, background: 'rgba(0,0,0,0.95)', border: '2px solid #00ff00', borderRadius: 4, padding: 8, fontSize: 10, overflowY: 'auto', color: '#00ff00', zIndex: 100, pointerEvents: 'auto' }}>
+              <div style={{ borderBottom: '1px solid #00ff00', paddingBottom: 4, marginBottom: 6, fontSize: 11, fontWeight: 'bold' }}>⚡ COMMAND TERMINAL ⚡</div>
+              {(gs.terminalLines || []).map((line, i) => (
+                <div key={i} style={{ marginBottom: 1, lineHeight: 1.4, color: line.includes('[IMPACT]') || line.includes('[DEADMAN]') ? '#ff4444' : line.includes('[DIPLOMACY]') || line.includes('[EVACUATION]') ? '#ffaa00' : '#00ff00' }}>{line}</div>
+              ))}
+            </div>
+
+            {/* Status panel */}
+            <div style={{ position: 'absolute', top: 10, right: 10, width: 280, background: 'rgba(0,0,0,0.95)', border: '2px solid #00ff00', borderRadius: 4, padding: 12, fontSize: 11, color: '#00ff00', zIndex: 100 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 8, fontSize: 12 }}>📊 STRATEGIC STATUS</div>
+              {stats && (
+                <div style={{ color: '#fff', lineHeight: 1.9 }}>
+                  <div style={{ color: '#00ff00', fontWeight: 'bold', marginBottom: 4 }}>
+                    {String(stats.gh).padStart(2,'0')}:{String(stats.gm).padStart(2,'0')}:{String(stats.gs).padStart(2,'0')}
                   </div>
+                  NATO: <span style={{ color: '#3b82f6' }}>{stats.natoAlive}</span> &nbsp;
+                  Warsaw: <span style={{ color: '#ef4444' }}>{stats.warsawAlive}</span> &nbsp;
+                  Neutral: <span style={{ color: '#eab308' }}>{stats.neutralAlive}</span><br />
+                  Cities Destroyed: <span style={{ color: '#ef4444' }}>{stats.citiesDestroyed}</span><br />
+                  Missiles Active: <span style={{ color: '#f97316' }}>{gs.missiles.length}</span><br />
+                  Radiation Zones: <span style={{ color: '#eab308' }}>{gs.radiationZones.length}</span><br />
+                  Casualties: <span style={{ color: '#ef4444' }}>{(stats.casualties / 1e6).toFixed(1)}M</span><br />
+                  Econ Collapse: <span style={{ color: '#f97316' }}>{(gs.economicCollapse || 0).toFixed(0)}%</span><br />
+                  <br />
+                  {/* Global tension bar */}
+                  <div style={{ marginBottom: 4 }}>
+                    GLOBAL TENSION: <span style={{ color: tensionColor, fontWeight: 'bold' }}>{Math.round(gs.globalTension)}%</span>
+                  </div>
+                  <div style={{ height: 8, background: '#111', borderRadius: 4, overflow: 'hidden', border: '1px solid #333' }}>
+                    <div style={{ height: '100%', width: `${gs.globalTension}%`, background: `linear-gradient(90deg, #00ff00, ${tensionColor})`, transition: 'width 0.5s' }} />
+                  </div>
+                  {gs.globalTension >= 80 && (
+                    <div style={{ color: '#ff4444', fontSize: 10, marginTop: 4, animation: 'alertFlash 1s infinite' }}>
+                      ⚠ DEADMAN: {Math.round(deadmanPct)}% — DE-ESCALATE NOW!
+                    </div>
+                  )}
+                  {gs.ceaseFireActive && (
+                    <div style={{ color: '#22c55e', fontSize: 10, marginTop: 4 }}>🕊 CEASE-FIRE ACTIVE</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Evacuation panel */}
+            <div style={{ position: 'absolute', bottom: 50, left: 10, width: 360, background: 'rgba(0,0,0,0.95)', border: '2px solid #ffaa00', borderRadius: 4, padding: 12, fontSize: 11, color: '#ffaa00', zIndex: 100 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 6, fontSize: 12 }}>🚁 EVACUATION COMMAND</div>
+              {stats && (
+                <div style={{ lineHeight: 1.8 }}>
+                  Cities Evacuated: <span style={{ color: '#00ff00' }}>{stats.evacuatedCities}</span><br />
+                  Refugees Moving: <span style={{ color: '#fff' }}>{gs.refugees.length}</span><br />
+                  Efficiency: <span style={{ color: gs.evacuationEfficiency > 70 ? '#00ff00' : '#ff8800' }}>{(gs.evacuationEfficiency || 80).toFixed(0)}%</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                <button onClick={handleGlobalEvacuation} style={{ padding: '4px 10px', background: '#ffaa00', border: 'none', color: '#000', fontFamily: 'Courier New', cursor: 'pointer', borderRadius: 3, fontSize: 10, fontWeight: 'bold' }}>GLOBAL EVAC</button>
+                <button onClick={handleCeaseFire} style={{ padding: '4px 10px', background: 'rgba(34,197,94,0.8)', border: 'none', color: '#000', fontFamily: 'Courier New', cursor: 'pointer', borderRadius: 3, fontSize: 10, fontWeight: 'bold' }}>🕊 CEASE-FIRE</button>
+                {myCountryId && (
+                  <button onClick={() => handleDeescalate(myCountryId)} style={{ padding: '4px 10px', background: 'rgba(59,130,246,0.8)', border: 'none', color: '#fff', fontFamily: 'Courier New', cursor: 'pointer', borderRadius: 3, fontSize: 10, fontWeight: 'bold' }}>DE-ESCALATE</button>
+                )}
+              </div>
+            </div>
+
+            {/* Red Phone panel */}
+            {redPhoneOpen && (
+              <div style={{ position: 'absolute', bottom: 50, left: 380, width: 320, height: 280, background: 'rgba(0,0,0,0.95)', border: '2px solid #ff0000', borderRadius: 4, padding: 8, fontSize: 10, color: '#ff4444', zIndex: 100 }}>
+                <div style={{ borderBottom: '1px solid #ff0000', paddingBottom: 4, marginBottom: 6, fontSize: 11, fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>🔴 RED PHONE — SECURE LINE</span>
+                  <button onClick={() => setRedPhoneOpen(false)} style={{ background: 'none', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                </div>
+                <div style={{ height: 180, overflowY: 'auto', marginBottom: 8, border: '1px solid #333', borderRadius: 3, padding: 4 }}>
+                  {redPhoneHistory.map(msg => (
+                    <div key={msg.id} style={{ marginBottom: 4, color: msg.senderColor }}>
+                      <span style={{ fontWeight: 'bold' }}>{msg.sender}:</span> {msg.message}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <input
+                    type="text"
+                    value={redPhoneMessage}
+                    onChange={(e) => setRedPhoneMessage(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleRedPhoneMessage(redPhoneMessage)}
+                    placeholder="Type message to all nations..."
+                    style={{ flex: 1, padding: '4px 6px', background: '#111', border: '1px solid #ff0000', borderRadius: 3, color: '#ff4444', fontSize: 10 }}
+                  />
+                  <button
+                    onClick={() => handleRedPhoneMessage(redPhoneMessage)}
+                    style={{ padding: '4px 8px', background: '#ff0000', border: 'none', color: '#fff', borderRadius: 3, fontSize: 10, fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    SEND
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Mini-map */}
+            {showMiniMap && (
+              <canvas ref={miniMapRef} width={240} height={170}
+                style={{ position: 'absolute', bottom: 50, right: 10, border: '2px solid #00ff00', background: 'rgba(0,0,20,0.9)', zIndex: 100 }} />
+            )}
+
+            {/* Zoom indicator */}
+            <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)', border: '1px solid #334155', borderRadius: 4, padding: '3px 10px', color: '#555', fontSize: 10, fontFamily: 'monospace', pointerEvents: 'none', zIndex: 100 }}>
+              Zoom: {Math.round(zoom * 100)}% · Click nation to interact · Scroll=zoom · Drag=pan
+            </div>
+          </>
+        )}
+
+        {/* Country popup */}
+        {selCountry && isPlaying && (
+          <div data-popup="1" style={{
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            width: 660, maxHeight: '82vh', overflowY: 'auto',
+            background: 'rgba(0,0,0,0.97)', border: '3px solid #ffff00',
+            borderRadius: 6, padding: 20, zIndex: 500,
+            boxShadow: '0 0 30px rgba(255,255,0,0.3)',
+            color: '#fff', fontFamily: 'Courier New, monospace',
+            animation: 'popupIn 0.2s ease-out',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ color: '#ffff00', margin: 0, fontSize: 18 }}>
+                {selCountry.name}
+                {selCountry.isBot && <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>🤖 BOT-CONTROLLED</span>}
+              </h2>
+              <button onClick={() => setSelectedCountry(null)} style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 4, color: '#fca5a5', padding: '4px 10px', cursor: 'pointer', fontSize: 11 }}>✕</button>
+            </div>
+
+            {/* Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 14, fontSize: 11 }}>
+              {[
+                ['Alliance', selCountry.side.toUpperCase()],
+                ['Population', `${(selCountry.pop / 1e6).toFixed(1)}M`],
+                ['Military', `${selCountry.mil}%`],
+                ['Economy', `${selCountry.eco}%`],
+                ['Damage', `${selCountry.damageLevel}%`],
+                ['Nukes', `${selCountry.nukes}`],
+                ['Tension', `${Math.round(selCountry.tension)}%`],
+                ['Evacuation', selCountry.evacuationStatus === 0 ? 'None' : 'Active'],
+                ['Status', selCountry.destroyed ? '💀 DESTROYED' : '✓ Active'],
+              ].map(([k, v]) => (
+                <div key={k} style={{ background: 'rgba(30,41,59,0.5)', padding: '5px 8px', borderRadius: 4 }}>
+                  <span style={{ color: '#94a3b8' }}>{k}: </span>
+                  <span style={{ color: k === 'Tension' && selCountry.tension > 70 ? '#ff4444' : '#fff', fontWeight: 'bold' }}>{v}</span>
                 </div>
               ))}
             </div>
-          </div>
 
-          <div style={{ position: 'absolute', top: 72, left: '50%', transform: 'translateX(-50%)', background: 'linear-gradient(90deg, rgba(30,41,59,0.92), rgba(120,53,15,0.92))', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 999, padding: '8px 16px', color: '#f8fafc', fontSize: 12, pointerEvents: 'none', boxShadow: '0 10px 28px rgba(0,0,0,0.25)' }}>
-            {gameState.victory
-              ? `${gameState.victory.title} · ${gameState.victory.summary}`
-              : focusCountry ? `${focusSummary.title} · ${focusSummary.recommendations.join(' • ')}` : gameState.phase === 'lobby' ? 'Lobby ready checks live' : `Command window: ${gameState.phase}`}
-          </div>
-
-          <div style={{ position: 'absolute', left: 12, bottom: 108, width: 260, background: 'rgba(13,17,23,0.9)', border: '1px solid #263244', borderRadius: 10, padding: '10px 12px', color: '#f9fafb', pointerEvents: 'auto' }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{focusCountry ? focusCountry.countryName : myCountry ? myCountry.countryName : 'Awaiting Assignment'}</div>
-            <div style={{ marginTop: 4, fontSize: 11, color: '#9ca3af', lineHeight: 1.45 }}>
-              {focusCountry ? `${focusCountry.archetypeLabel} · Population ${focusCountry.population}% · Infrastructure ${focusCountry.infrastructure}%` : 'Waiting for host snapshot.'}
+            {/* Tension bar */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>TENSION LEVEL</div>
+              <div style={{ height: 10, background: '#111', borderRadius: 5, overflow: 'hidden', border: '1px solid #333' }}>
+                <div style={{ height: '100%', width: `${selCountry.tension}%`, background: selCountry.tension > 70 ? 'linear-gradient(90deg,#ff8800,#ff0000)' : 'linear-gradient(90deg,#00ff00,#ffff00)', transition: 'width 0.5s' }} />
+              </div>
             </div>
-            {focusCountry ? (
-              <div style={{ marginTop: 6, fontSize: 11, color: '#cbd5e1', lineHeight: 1.45 }}>
-                GDP {Math.round(focusCountry.gdp)} · Economy {focusCountry.economy} · Stability {focusCountry.stability}
-                <br />
-                Conventional {focusCountry.conventional} · Nuclear {focusCountry.nuclearTier} · Armed {focusCountry.armed}/{focusCountry.arsenal}
-                <br />
-                Shield {focusCountry.shield} · Intel {focusCountry.intel} · Reputation {focusCountry.reputation}
-                <br />
-                Contamination {Math.round(focusCountry.contamination || 0)} · Casualties {Math.round(focusCountry.casualties || 0)} · Live Cities {(focusCountry.cities || []).filter((city) => !city.destroyed).length}/{(focusCountry.cities || []).length}
-              </div>
-            ) : null}
-            <div style={{ marginTop: 8, fontSize: 11, color: '#cbd5e1' }}>
-              {gameState.logs[0]?.text || 'No new events.'}
-            </div>
-            {focusSummary.recommendations.length ? (
-              <div style={{ marginTop: 8, padding: '8px 10px', background: '#0f172a', borderRadius: 6, border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Suggested Moves</div>
-                <div style={{ marginTop: 5, fontSize: 11, color: '#e2e8f0', lineHeight: 1.5 }}>
-                  {focusSummary.recommendations.map((entry, index) => (
-                    <div key={`${entry}-${index}`}>{index + 1}. {entry}</div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
 
-          <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: 'min(720px, calc(100vw - 24px))', background: 'rgba(13,17,23,0.94)', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 14px', color: '#f9fafb', pointerEvents: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 'bold' }}>{gameState.phase === 'lobby' ? 'Lobby Deck' : 'Command Deck'}</div>
-                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                  {myCountry ? `${myCountry.countryName} · Nuclear ${myCountry.nuclearTier} · Shield ${myCountry.shield} · Sanctions ${myCountry.sanctions} · ${myCountry.committed ? 'Orders committed' : 'Orders pending'}` : 'No country assigned yet.'}
-                </div>
+            {/* Cities */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ color: '#00ff00', fontWeight: 'bold', marginBottom: 6, fontSize: 12 }}>CITIES</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
+                {Object.values(gs.cities).filter(c => c.country === selectedCountry).map(city => (
+                  <div key={city.id} style={{
+                    padding: '5px 7px', borderRadius: 4, fontSize: 10,
+                    background: city.destroyed ? 'rgba(255,0,0,0.2)' : city.evacuated ? 'rgba(0,255,0,0.1)' : 'rgba(255,255,0,0.08)',
+                    border: `1px solid ${city.destroyed ? '#ef4444' : city.evacuated ? '#22c55e' : '#555'}`,
+                  }}>
+                    <div style={{ fontWeight: 'bold', color: city.destroyed ? '#ef4444' : '#fff' }}>{city.name}</div>
+                    <div style={{ color: '#666', fontSize: 9 }}>{(city.population / 1e6).toFixed(1)}M</div>
+                    {city.isCapital && <div style={{ color: '#ffaa00', fontSize: 8 }}>CAPITAL</div>}
+                    {city.destroyed && <div style={{ color: '#ef4444', fontSize: 8, fontWeight: 'bold' }}>DESTROYED</div>}
+                    {city.evacuated && !city.destroyed && <div style={{ color: '#22c55e', fontSize: 8 }}>EVACUATED</div>}
+                  </div>
+                ))}
               </div>
-              {gameState.phase === 'lobby' ? (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={handleReadyToggle} disabled={!myCountry} style={{ padding: '8px 18px', background: myCountry?.ready ? '#14532d' : '#1d4ed8', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, cursor: myCountry ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
-                    {myCountry?.ready ? 'Ready' : 'Mark Ready'}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => handleEvacuateCountry(selectedCountry)} style={{ padding: '7px 14px', background: 'rgba(255,170,0,0.8)', border: 'none', borderRadius: 4, color: '#000', fontFamily: 'Courier New', cursor: 'pointer', fontWeight: 'bold', fontSize: 11 }}>
+                🚁 EVACUATE
+              </button>
+              <button onClick={() => handleDeescalate(selectedCountry)} style={{ padding: '7px 14px', background: 'rgba(59,130,246,0.8)', border: 'none', borderRadius: 4, color: '#fff', fontFamily: 'Courier New', cursor: 'pointer', fontWeight: 'bold', fontSize: 11 }}>
+                🕊 DE-ESCALATE
+              </button>
+              {myCountryId && gs.countries[myCountryId] && selCountry.side !== gs.countries[myCountryId].side && !selCountry.destroyed && (
+                <>
+                  <button onClick={() => handleNuclearStrike(selectedCountry)} style={{ padding: '7px 14px', background: 'rgba(239,68,68,0.8)', border: 'none', borderRadius: 4, color: '#fff', fontFamily: 'Courier New', cursor: 'pointer', fontWeight: 'bold', fontSize: 11 }}>
+                    ☢ NUCLEAR STRIKE
                   </button>
-                  {isHost ? (
-                    <button onClick={handleStart} disabled={!canLaunch} style={{ padding: '8px 18px', background: canLaunch ? '#7c3aed' : '#374151', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, cursor: canLaunch ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
-                      Start Match
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            {myCountry ? (
-              gameState.phase === 'reconstruction' ? (
-                <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
-                  {gameState.rankings.map((entry, index) => (
-                    <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', background: '#111827', padding: '8px 10px', borderRadius: 6, fontSize: 12 }}>
-                      <span>{index + 1}. {entry.label}</span>
-                      <span>{entry.score} · C{entry.contamination} · GDP {entry.gdp}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-                    {isHost ? (
-                      <button onClick={handleResetMatch} style={{ padding: '8px 18px', background: '#1d4ed8', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
-                        New Crisis Table
-                      </button>
-                    ) : (
-                      <div style={{ fontSize: 12, color: '#9ca3af' }}>Waiting for host to reset the table.</div>
-                    )}
-                  </div>
-                </div>
-              ) : gameState.phase !== 'lobby' ? (
-                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                  {availableActions.map((entry) => (
-                    <div key={entry.id} style={{ padding: '8px 10px', background: '#111827', borderRadius: 6 }}>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleAction(entry.id, actionsNeedingTarget.has(entry.id) ? targetOptions[0]?.id || null : null)}
-                          style={{ padding: '7px 12px', background: myCountry.action === entry.id ? myCountry.color : '#374151', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer', fontWeight: 700 }}
-                        >
-                          {entry.label}
+                  <div style={{ width: '100%', marginTop: 6 }}>
+                    <div style={{ color: '#666', fontSize: 10, marginBottom: 4 }}>Target specific city:</div>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      {Object.values(gs.cities).filter(c => c.country === selectedCountry && !c.destroyed).map(city => (
+                        <button key={city.id} onClick={() => handleLaunchMissile(city.id)} style={{ padding: '3px 8px', background: 'rgba(239,68,68,0.35)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 3, color: '#fca5a5', fontFamily: 'Courier New', cursor: 'pointer', fontSize: 9 }}>
+                          🎯 {city.name}
                         </button>
-                        <div style={{ fontSize: 11, color: '#94a3b8', flex: 1, minWidth: 180 }}>{entry.description}</div>
-                      </div>
-                      {actionsNeedingTarget.has(entry.id) ? (
-                        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {targetOptions.map((target) => (
-                            <button
-                              key={`${entry.id}-${target.id}`}
-                              type="button"
-                              onClick={() => handleAction(entry.id, target.id)}
-                              style={{ padding: '5px 10px', background: myCountry.action === entry.id && myCountry.actionTargetId === target.id ? RED_PHONE_COLOR : '#1f2937', color: '#fff', border: 'none', borderRadius: 999, fontSize: 11, cursor: 'pointer' }}
-                            >
-                              {target.countryName}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
+                      ))}
                     </div>
-                  ))}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#0f172a', borderRadius: 6, border: `1px solid ${myCountry.committed ? '#166534' : '#334155'}` }}>
-                    <div style={{ fontSize: 11, color: '#cbd5e1' }}>
-                      {myCountry.action ? `Queued: ${availableActions.find((entry) => entry.id === myCountry.action)?.label || myCountry.action}${myCountry.actionTargetId ? ` -> ${targetOptions.find((target) => target.id === myCountry.actionTargetId)?.countryName || 'Target'}` : ''}` : 'Pick an order, then commit it so the phase can resolve.'}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleCommit}
-                      disabled={!myCountry.action || myCountry.committed}
-                      style={{ padding: '8px 14px', background: myCountry.action && !myCountry.committed ? '#0f766e' : '#334155', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, cursor: myCountry.action && !myCountry.committed ? 'pointer' : 'not-allowed', fontWeight: 700 }}
-                    >
-                      {myCountry.committed ? 'Committed' : 'Commit Orders'}
-                    </button>
                   </div>
-                </div>
-              ) : (
-                <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
-                  {gameState.logs.slice(0, 4).map((entry) => (
-                    <div key={entry.id} style={{ padding: '8px 10px', background: '#111827', borderRadius: 6, fontSize: 12 }}>{entry.text}</div>
-                  ))}
-                </div>
-              )
-            ) : (
-              <div style={{ marginTop: 10, fontSize: 12, color: '#9ca3af' }}>Awaiting country assignment from the host.</div>
-            )}
-          </div>
-        </>
-      ) : null}
-
-      {gameState.phase === 'nullfire' ? (
-        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
-          <div style={{ textAlign: 'center', color: '#fff', textShadow: '0 12px 40px rgba(255,0,0,0.55)' }}>
-            <div style={{ fontSize: 18, letterSpacing: '0.3em', textTransform: 'uppercase', color: '#fecaca' }}>NULLFIRE</div>
-            <div style={{ fontSize: 96, fontWeight: 900, lineHeight: 0.9 }}>{Math.ceil(phaseTimeLeft / 1000)}</div>
-            <div style={{ marginTop: 8, fontSize: 14, color: '#fee2e2' }}>Automatic launch underway. No further commands will be heard.</div>
-          </div>
-        </div>
-      ) : null}
-
-      {gameState.phase === 'reconstruction' && gameState.victory ? (
-        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', background: 'radial-gradient(circle at center, rgba(2,6,23,0.18), rgba(2,6,23,0.84))' }}>
-          <div style={{ width: 'min(560px, calc(100vw - 40px))', background: 'rgba(15,23,42,0.94)', border: `1px solid ${didWin ? '#22c55e66' : '#f9731666'}`, borderRadius: 18, padding: '26px 24px', color: '#f8fafc', textAlign: 'center', boxShadow: '0 25px 90px rgba(0,0,0,0.42)', pointerEvents: 'auto' }}>
-            <div style={{ fontSize: 12, letterSpacing: '0.35em', textTransform: 'uppercase', color: didWin ? '#86efac' : '#fdba74' }}>
-              {didWin ? 'Victory' : 'Outcome'}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 40, fontWeight: 900, lineHeight: 1 }}>
-              {didWin ? gameState.victory.title : `${gameState.victory.title} Recorded`}
-            </div>
-            <div style={{ marginTop: 12, fontSize: 14, color: '#cbd5e1', lineHeight: 1.55 }}>
-              {didWin
-                ? `You carried ${myCountry?.countryName || 'your nation'} to the top of the table. ${gameState.victory.summary}`
-                : gameState.victory.summary}
-            </div>
-            {myCountry ? (
-              <div style={{ marginTop: 14, fontSize: 13, color: didWin ? '#bbf7d0' : '#fed7aa' }}>
-                {myCountry.countryName}: GDP {Math.round(myCountry.gdp)} · Population {myCountry.population}% · Infrastructure {myCountry.infrastructure}% · Contamination {Math.round(myCountry.contamination || 0)}
-              </div>
-            ) : null}
-            <div style={{ marginTop: 18, display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
-              {isHost ? (
-                <button onClick={handleResetMatch} style={{ padding: '10px 18px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 999, fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
-                  Start New Match
-                </button>
-              ) : (
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Host can start a new match from here.</div>
+                </>
               )}
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Bottom bar */}
+      <div style={{ background: 'rgba(0,0,0,0.97)', borderTop: '1px solid #00ff00', padding: '6px 12px', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', zIndex: 200, flexShrink: 0 }}>
+        {/* Players */}
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {Object.values(gs.players).map(p => (
+            <div key={p.id} style={{ padding: '2px 7px', background: 'rgba(30,41,59,0.8)', border: `1px solid ${gs.ready[p.id] ? '#22c55e' : '#334155'}`, borderRadius: 4, fontSize: 9, color: gs.ready[p.id] ? '#22c55e' : '#666' }}>
+              {gs.ready[p.id] ? '✓' : '○'} {p.username}{p.countryId ? ` (${p.countryId})` : ''}
+            </div>
+          ))}
         </div>
-      ) : null}
-    </div>
-  )
+        <div style={{ width: 1, height: 18, background: '#334155' }} />
+        {!joined && <button onClick={handleJoin} style={{ padding: '5px 12px', background: '#00ff00', border: 'none', borderRadius: 4, color: '#000', fontSize: 10, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New' }}>JOIN WAR ROOM</button>}
+        {joined && gs.phase === 'lobby' && (
+          <>
+            <button onClick={handleReady} style={{ padding: '5px 12px', background: ready ? '#22c55e' : '#3b82f6', border: 'none', borderRadius: 4, color: '#fff', fontSize: 10, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New' }}>{ready ? '✓ READY' : 'READY UP'}</button>
+            <button onClick={handleLeave} style={{ padding: '5px 8px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 4, color: '#fca5a5', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>LEAVE</button>
+          </>
+        )}
+        {isPlaying && (
+          <>
+            <button onClick={handleCeaseFire} style={{ padding: '5px 10px', background: 'rgba(34,197,94,0.2)', border: '1px solid #22c55e', borderRadius: 4, color: '#22c55e', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>🕊 CEASE-FIRE</button>
+            {myCountryId && <button onClick={() => handleDeescalate(myCountryId)} style={{ padding: '5px 10px', background: 'rgba(59,130,246,0.2)', border: '1px solid #3b82f6', borderRadius: 4, color: '#60a5fa', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>DE-ESCALATE</button>}
+            <button onClick={handleGlobalEvacuation} style={{ padding: '5px 10px', background: 'rgba(255,170,0,0.2)', border: '1px solid #ffaa00', borderRadius: 4, color: '#ffaa00', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>[E] EVACUATE</button>
+            <button onClick={() => setShowMiniMap(m => !m)} style={{ padding: '5px 8px', background: 'rgba(0,255,0,0.1)', border: '1px solid #00ff00', borderRadius: 4, color: '#00ff00', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>[M] MAP</button>
+            <button onClick={() => setRedPhoneOpen(!redPhoneOpen)} style={{ padding: '5px 8px', background: redPhoneOpen ? 'rgba(255,0,0,0.3)' : 'rgba(255,0,0,0.1)', border: '1px solid #ff0000', borderRadius: 4, color: '#ff4444', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>🔴 RED PHONE</button>
+            <button onClick={resetView} style={{ padding: '5px 8px', background: 'rgba(30,41,59,0.8)', border: '1px solid #334155', borderRadius: 4, color: '#666', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>RESET VIEW</button>
+          </>
+        )}
+        <button onClick={handleReset} style={{ padding: '5px 8px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 4, color: '#fca5a5', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New' }}>RESET</button>
+        <span style={{ color: '#334155', fontSize: 9, fontFamily: 'Courier New' }}>
+          {gs.phase === 'lobby' ? `${Object.keys(gs.players).length} players · ${NATIONS.length} nations (${NATIONS.length - Object.keys(gs.players).length} bots)` : 'Click nations · De-escalate to prevent MAD'}
+        </span>
+      </div>
 
-  return createPortal(hud, containerRef.current)
-}
-
-const Defcon3Activity = ({ sdk, currentUser, session }) => {
-  const audioRef = useRef(null)
-  const hudHostRef = useRef(null)
-  const stateRef = useRef(defaultState())
-  const guestIdRef = useRef(currentUser?.id || `guest-${Math.random().toString(36).slice(2, 9)}`)
-  const hostId = session?.hostId || session?.ownerId || session?.createdBy || currentUser?.id || guestIdRef.current
-  const userId = currentUser?.id || guestIdRef.current
-  const username = currentUser?.username || currentUser?.displayName || 'Commander'
-  const isHost = hostId === userId
-  const [gameState, setGameState] = useState(() => {
-    const initial = defaultState()
-    if (isHost) {
-      initial.countries = withBots([createCountry(userId, username, 0, false)])
-    }
-    return initial
-  })
-  const [now, setNow] = useState(Date.now())
-  const [hoveredCountryId, setHoveredCountryId] = useState(null)
-  const [selectedCountryId, setSelectedCountryId] = useState(null)
-  const [uiHidden, setUiHidden] = useState(false)
-  const [madMode, setMadMode] = useState(false)
-  const [targetedCity, setTargetedCity] = useState(null)
-  const [madCooldownUntil, setMadCooldownUntil] = useState(0)
-  const [interceptCooldownUntil, setInterceptCooldownUntil] = useState(0)
-  const [inboundAlerts, setInboundAlerts] = useState([])
-  const [decoyAlerts, setDecoyAlerts] = useState([])
-  const [terminalLog, setTerminalLog] = useState([
-    { id: 'init', text: '⚡ COMMAND TERMINAL — CLASSIFIED ACCESS', ts: Date.now() },
-    { id: 'init2', text: '[DEFCON] Global watch floor online. Awaiting orders.', ts: Date.now() }
-  ])
-
-  const addTerminalLine = useCallback((text) => {
-    setTerminalLog((prev) => [{ id: toFeedId(), text: `[${new Date().toLocaleTimeString()}] ${text}`, ts: Date.now() }, ...prev].slice(0, 40))
-  }, [])
-
-  if (!audioRef.current) audioRef.current = createDefconAudio()
-
-  const myCountry = gameState.countries.find((country) => country.playerId === userId && !country.ai) || null
-  const defcon = currentDefcon(gameState.threat)
-  const phaseTimeLeft = Math.max(0, gameState.phaseEndsAt - now)
-  const livingCountries = gameState.countries.filter((country) => !country.eliminated)
-  const humanCountries = gameState.countries.filter((country) => !country.ai)
-  const readyCount = humanCountries.filter((country) => country.ready).length
-  const canLaunch = humanCountries.length > 0 && humanCountries.every((country) => country.ready)
-  const hoveredCountry = gameState.countries.find((country) => country.id === hoveredCountryId) || null
-  const selectedCountry = gameState.countries.find((country) => country.id === selectedCountryId) || null
-
-  const sendEvent = useCallback((type, payload = {}) => {
-    sdk?.emitEvent?.(type, payload, { serverRelay: true })
-  }, [sdk])
-
-  const sendSnapshot = useCallback((targetId = null) => {
-    sendEvent('defcon3:snapshot', { targetId, state: stateRef.current })
-  }, [sendEvent])
-
-  useEffect(() => () => {
-    audioRef.current?.dispose?.()
-  }, [])
-
-  useEffect(() => {
-    stateRef.current = gameState
-  }, [gameState])
-
-  useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
-    const mode = gameState.phase === 'nullfire' ? 'nullfire' : 'coldwar'
-    audio.playLoop(mode, gameState.threat / 4)
-  }, [gameState.phase, gameState.threat])
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setNow(Date.now())
-      audioRef.current?.tick?.(defcon)
-    }, 1000)
-    return () => window.clearInterval(interval)
-  }, [defcon])
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      const tag = String(event.target?.tagName || '').toLowerCase()
-      if (tag === 'input' || tag === 'textarea' || event.target?.isContentEditable) return
-      if (event.key.toLowerCase() !== 'h') return
-      event.preventDefault()
-      setUiHidden((current) => !current)
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  useEffect(() => {
-    const handleEvent = (event) => {
-      const type = String(event?.eventType || '')
-      const payload = event?.payload || {}
-      if (!type.startsWith('defcon3:')) return
-      if (payload.targetId && payload.targetId !== userId) return
-
-      if (type === 'defcon3:snapshot') {
-        if (payload.state) setGameState(payload.state)
-        return
-      }
-
-      if (type === 'defcon3:join' && isHost) {
-        setGameState((current) => {
-          if (current.countries.some((country) => country.playerId === payload.playerId && !country.ai)) return current
-          const humans = current.countries.filter((country) => !country.ai)
-          const nextHumans = [...humans, createCountry(payload.playerId, payload.username || 'Commander', humans.length, false)]
-          return { ...current, countries: withBots(nextHumans) }
-        })
-        sendSnapshot(payload.playerId)
-        return
-      }
-
-      if (type === 'defcon3:leave' && isHost) {
-        setGameState((current) => {
-          const nextHumans = current.countries.filter((country) => !country.ai && country.playerId !== payload.playerId)
-          return { ...current, countries: withBots(nextHumans) }
-        })
-        return
-      }
-
-      if (type === 'defcon3:action' && isHost) {
-        setGameState((current) => queueCountryAction(current, payload))
-        audioRef.current?.confirm?.()
-        return
-      }
-
-      if (type === 'defcon3:commit' && isHost) {
-        setGameState((current) => commitCountryOrders(current, payload.countryId))
-        audioRef.current?.confirm?.()
-        return
-      }
-
-      if (type === 'defcon3:ready' && isHost) {
-        setGameState((current) => setLobbyReady(current, payload.playerId, payload.ready))
-        return
-      }
-
-      if (type === 'defcon3:start' && isHost) {
-        setGameState((current) => startMatchFromLobby(current))
-        return
-      }
-
-      if (type === 'defcon3:reset' && isHost) {
-        setGameState((current) => {
-          const reset = defaultState()
-          reset.countries = withBots(current.countries.filter((country) => !country.ai).map((country) => ({ ...country, ready: false })))
-          return reset
-        })
-      }
-    }
-
-    const off = sdk.on?.('event', handleEvent)
-    sendEvent('defcon3:join', { playerId: userId, username })
-    return () => {
-      sendEvent('defcon3:leave', { playerId: userId })
-      off?.()
-    }
-  }, [isHost, sdk, sendEvent, sendSnapshot, userId, username])
-
-  useEffect(() => {
-    if (!isHost) return undefined
-    const interval = window.setInterval(() => {
-      const current = stateRef.current
-      if (current.phase === 'lobby') return
-      if (actionCatalog[current.phase]?.length) {
-        let next = current
-        current.countries.filter((country) => country.ai && !country.eliminated).forEach((country) => {
-          if (!country.action) {
-            next = queueCountryAction(next, {
-              countryId: country.id,
-              countryName: country.countryName,
-              ...selectAutoAction(country, current.phase, current.countries.filter((entry) => !entry.eliminated), current.threat)
-            })
-          }
-        })
-        if (next !== current) {
-          stateRef.current = next
-          setGameState(next)
-          sendSnapshot()
-          return
-        }
-      }
-      if (actionCatalog[current.phase]?.length) {
-        const allCommitted = current.countries
-          .filter((country) => !country.eliminated)
-          .every((country) => country.ai || country.committed)
-        if (allCommitted) {
-          const next = current.phase === 'nullfire' ? resolveNullfire(current) : resolvePhase(current)
-          stateRef.current = next
-          setGameState(next)
-          sendSnapshot()
-          if (next.phase === 'nullfire') audioRef.current?.alarm?.()
-          if (current.phase === 'nullfire') audioRef.current?.launch?.()
-          return
-        }
-      }
-      if (!current.phaseEndsAt || Date.now() < current.phaseEndsAt) return
-      const next = current.phase === 'nullfire' ? resolveNullfire(current) : resolvePhase(current)
-      stateRef.current = next
-      setGameState(next)
-      sendSnapshot()
-      if (next.phase === 'nullfire') audioRef.current?.alarm?.()
-      if (current.phase === 'nullfire') audioRef.current?.launch?.()
-    }, 400)
-    return () => window.clearInterval(interval)
-  }, [isHost, sendSnapshot])
-
-  useEffect(() => {
-    if (!isHost || !actionCatalog[gameState.phase]?.length) return undefined
-    const timeout = window.setTimeout(() => {
-      const current = stateRef.current
-      let next = current
-      current.countries.filter((country) => country.ai && !country.eliminated && !country.committed).forEach((country) => {
-        if (!country.action) {
-          next = queueCountryAction(next, {
-            countryId: country.id,
-            countryName: country.countryName,
-            ...selectAutoAction(country, current.phase, current.countries.filter((entry) => !entry.eliminated), current.threat)
-          })
-        }
-        next = commitCountryOrders(next, country.id)
-      })
-      if (next !== current) {
-        stateRef.current = next
-        setGameState(next)
-        sendSnapshot()
-      }
-    }, AI_COMMIT_DELAY_MS)
-    return () => window.clearTimeout(timeout)
-  }, [gameState.phase, isHost, sendSnapshot])
-
-  useEffect(() => {
-    if (!isHost) return
-    sendSnapshot()
-  }, [gameState, isHost, sendSnapshot])
-
-  const handleAction = useCallback((actionId, targetId = null) => {
-    if (!myCountry || gameState.phase === 'lobby' || gameState.phase === 'resolution' || gameState.phase === 'nullfire' || gameState.phase === 'reconstruction') return
-    if (isHost) {
-      setGameState((current) => queueCountryAction(current, {
-        countryId: myCountry.id,
-        countryName: myCountry.countryName,
-        actionId,
-        targetId
-      }))
-    }
-    sendEvent('defcon3:action', {
-      countryId: myCountry.id,
-      countryName: myCountry.countryName,
-      actionId,
-      targetId
-    })
-    audioRef.current?.confirm?.()
-  }, [gameState.phase, isHost, myCountry, sendEvent])
-
-  const handleCommit = useCallback(() => {
-    if (!myCountry || !myCountry.action || myCountry.committed || gameState.phase === 'lobby' || gameState.phase === 'resolution' || gameState.phase === 'nullfire' || gameState.phase === 'reconstruction') return
-    if (isHost) {
-      setGameState((current) => commitCountryOrders(current, myCountry.id))
-    }
-    sendEvent('defcon3:commit', { countryId: myCountry.id })
-    audioRef.current?.confirm?.()
-  }, [gameState.phase, isHost, myCountry, sendEvent])
-
-  const handleReadyToggle = useCallback(() => {
-    if (!myCountry) return
-    const nextReady = !myCountry.ready
-    if (isHost) {
-      setGameState((current) => setLobbyReady(current, userId, nextReady))
-    }
-    sendEvent('defcon3:ready', { playerId: userId, ready: !myCountry?.ready })
-    audioRef.current?.confirm?.()
-  }, [isHost, myCountry, sendEvent, userId])
-
-  const handleStart = useCallback(() => {
-    if (!isHost || !canLaunch) return
-    setGameState((current) => startMatchFromLobby(current))
-    sendEvent('defcon3:start')
-    audioRef.current?.confirm?.()
-  }, [canLaunch, isHost, sendEvent])
-
-  const handleResetMatch = useCallback(() => {
-    if (!isHost) return
-    const reset = defaultState()
-    reset.countries = withBots(stateRef.current.countries.filter((country) => !country.ai).map((country) => ({ ...country, ready: false })))
-    stateRef.current = reset
-    setGameState(reset)
-    sendEvent('defcon3:reset')
-    audioRef.current?.confirm?.()
-  }, [isHost, sendEvent])
-
-  const availableActions = actionCatalog[gameState.phase] || []
-  const actionsNeedingTarget = new Set(['cyber', 'red-phone', 'trade-pact', 'sanctions', 'strike', 'aid-corridor'])
-  const targetOptions = livingCountries.filter((country) => country.id !== myCountry?.id)
-
-  // MAD mode: toggle targeting mode (military phase only, must have armed weapons)
-  const handleToggleMad = useCallback(() => {
-    if (!myCountry || gameState.phase !== 'military' || myCountry.armed < 1) return
-    setMadMode((prev) => {
-      if (prev) { setTargetedCity(null) }
-      addTerminalLine(prev ? '[MAD] Targeting mode disengaged.' : '[MAD] ⚠ TARGETING MODE ACTIVE — Click a city on the globe to lock on.')
-      return !prev
-    })
-  }, [myCountry, gameState.phase, addTerminalLine])
-
-  // MAD strike: instant city strike, no phase needed, 18s cooldown
-  const handleMadStrike = useCallback(() => {
-    if (!myCountry || !targetedCity || now < madCooldownUntil) return
-    if (myCountry.armed < 1) { addTerminalLine('[MAD] No armed weapons available.'); return }
-    const targetCountry = gameState.countries.find((c) => (c.cities || []).some((city) => city.id === targetedCity.id))
-    if (!targetCountry || targetCountry.id === myCountry.id) return
-    const isDecoy = Math.random() < DECOY_CHANCE
-    if (isDecoy) {
-      addTerminalLine(`[MAD] ⚠ DECOY DETECTED — ${targetedCity.name} contact was a ghost. Strike aborted.`)
-      setDecoyAlerts((prev) => [{ id: toFeedId(), city: targetedCity.name, ts: Date.now() }, ...prev].slice(0, 5))
-      setTargetedCity(null)
-      setMadMode(false)
-      setMadCooldownUntil(now + MAD_STRIKE_COOLDOWN_MS / 2)
-      return
-    }
-    const missileId = `mad-${myCountry.id}-${targetedCity.id}-${Date.now()}`
-    const newMissile = {
-      id: missileId,
-      fromId: myCountry.id,
-      toId: targetCountry.id,
-      fromLat: myCountry.lat,
-      fromLon: myCountry.lon,
-      toLat: targetedCity.lat,
-      toLon: targetedCity.lon,
-      targetCityId: targetedCity.id,
-      targetCityName: targetedCity.name,
-      impactAt: Date.now() + 8000,
-      strategic: myCountry.nuclearTier >= 3,
-      launchedAt: Date.now(),
-      mad: true
-    }
-    setGameState((current) => {
-      const updated = {
-        ...current,
-        missiles: [...(current.missiles || []), newMissile],
-        threat: clamp(current.threat + (myCountry.nuclearTier >= 3 ? 0.55 : 0.28), 0, 4.4),
-        countries: current.countries.map((c) => {
-          if (c.id === myCountry.id) return { ...c, armed: clamp(c.armed - 1, 0, c.arsenal) }
-          if (c.id === targetCountry.id) {
-            const hitCity = (c.cities || []).map((city) => city.id === targetedCity.id
-              ? { ...city, integrity: clamp(city.integrity - 55, 0, 100), contamination: clamp(city.contamination + 28, 0, 100), destroyed: city.integrity - 55 <= 0 }
-              : city)
-            const popHit = myCountry.nuclearTier >= 3 ? 22 : 10
-            const infraHit = myCountry.nuclearTier >= 3 ? 28 : 14
-            return {
-              ...c,
-              cities: hitCity,
-              population: clamp(c.population - popHit, 0, 100),
-              infrastructure: clamp(c.infrastructure - infraHit, 0, 100),
-              contamination: clamp((c.contamination || 0) + (myCountry.nuclearTier >= 3 ? 24 : 12), 0, 100),
-              casualties: clamp((c.casualties || 0) + popHit, 0, 100),
-              stability: clamp(c.stability - 2, 0, 10),
-              hostileTo: Array.from(new Set([...c.hostileTo, myCountry.id]))
-            }
-          }
-          return c
-        }),
-        strikes: [...(current.strikes || []), {
-          id: `mad-strike-${missileId}`,
-          toId: targetCountry.id,
-          lat: targetedCity.lat,
-          lon: targetedCity.lon,
-          cityName: targetedCity.name,
-          contamination: myCountry.nuclearTier >= 3 ? 24 : 12,
-          strategic: myCountry.nuclearTier >= 3
-        }]
-      }
-      return appendLog(updated, `[MAD] ${myCountry.countryName} struck ${targetedCity.name} in ${targetCountry.countryName}. No warning given.`)
-    })
-    addTerminalLine(`[LAUNCH] ⚡ Strike authorized on ${targetedCity.name}. Flight time ~8s. Allies have 60s to respond.`)
-    // Broadcast inbound alert to all players
-    sendEvent('defcon3:mad-inbound', {
-      fromCountry: myCountry.countryName,
-      targetCountry: targetCountry.countryName,
-      targetCity: targetedCity.name,
-      impactAt: newMissile.impactAt,
-      strategic: newMissile.strategic
-    })
-    setInboundAlerts((prev) => [{ id: missileId, from: myCountry.countryName, city: targetedCity.name, impactAt: newMissile.impactAt, intercepted: false }, ...prev].slice(0, 6))
-    setMadCooldownUntil(now + MAD_STRIKE_COOLDOWN_MS)
-    setTargetedCity(null)
-    setMadMode(false)
-    audioRef.current?.launch?.()
-  }, [myCountry, targetedCity, now, madCooldownUntil, gameState.countries, sendEvent, addTerminalLine])
-
-  // Interceptor: 50/50 success, 30s cooldown
-  const handleIntercept = useCallback((alertId) => {
-    if (now < interceptCooldownUntil) {
-      addTerminalLine(`[INTERCEPT] System recharging. ${Math.ceil((interceptCooldownUntil - now) / 1000)}s remaining.`)
-      return
-    }
-    const success = Math.random() < INTERCEPT_SUCCESS_RATE
-    setInterceptCooldownUntil(now + INTERCEPT_COOLDOWN_MS)
-    if (success) {
-      addTerminalLine('[INTERCEPT] ✓ Intercept successful. Inbound neutralized.')
-      setInboundAlerts((prev) => prev.map((a) => a.id === alertId ? { ...a, intercepted: true } : a))
-      setGameState((current) => ({
-        ...current,
-        missiles: (current.missiles || []).filter((m) => m.id !== alertId),
-        threat: clamp(current.threat - 0.12, 0, 4.4)
-      }))
-    } else {
-      addTerminalLine('[INTERCEPT] ✗ Intercept failed. Inbound still active. Retry in 30s.')
-    }
-    audioRef.current?.confirm?.()
-  }, [now, interceptCooldownUntil, addTerminalLine])
-
-  // Decoy/false alarm: random radar ghost events during military phase
-  useEffect(() => {
-    if (gameState.phase !== 'military' && gameState.phase !== 'nullfire') return undefined
-    const interval = window.setInterval(() => {
-      if (Math.random() < 0.12) {
-        const ghostCountry = randomChoice(gameState.countries.filter((c) => !c.eliminated && c.id !== myCountry?.id))
-        if (!ghostCountry) return
-        const ghostCity = randomChoice(ghostCountry.cities || [])
-        if (!ghostCity) return
-        const isReal = Math.random() > DECOY_CHANCE
-        if (!isReal) {
-          addTerminalLine(`[RADAR] ⚠ Unconfirmed contact: possible launch from ${ghostCountry.countryName} toward ${ghostCity.name}. Awaiting confirmation...`)
-          setDecoyAlerts((prev) => [{ id: toFeedId(), city: ghostCity.name, from: ghostCountry.countryName, ts: Date.now(), ghost: true }, ...prev].slice(0, 5))
-          window.setTimeout(() => {
-            addTerminalLine(`[RADAR] Contact from ${ghostCountry.countryName} confirmed as GHOST. No launch detected.`)
-          }, 8000 + Math.random() * 6000)
-        }
-      }
-    }, 14000)
-    return () => window.clearInterval(interval)
-  }, [gameState.phase, gameState.countries, myCountry, addTerminalLine])
-
-  // Listen for inbound MAD alerts from other players
-  useEffect(() => {
-    const handleEvent = (event) => {
-      const type = String(event?.eventType || '')
-      const payload = event?.payload || {}
-      if (type !== 'defcon3:mad-inbound') return
-      addTerminalLine(`[THREAT] ⚠ INBOUND DETECTED — ${payload.fromCountry} launched on ${payload.targetCity} (${payload.targetCountry}). Impact in ~${Math.ceil((payload.impactAt - Date.now()) / 1000)}s.`)
-      setInboundAlerts((prev) => [{
-        id: `inbound-${Date.now()}`,
-        from: payload.fromCountry,
-        city: payload.targetCity,
-        impactAt: payload.impactAt,
-        intercepted: false,
-        strategic: payload.strategic
-      }, ...prev].slice(0, 6))
-      audioRef.current?.alarm?.()
-    }
-    const off = sdk.on?.('event', handleEvent)
-    return () => off?.()
-  }, [sdk, addTerminalLine])
-
-  return (
-    <GameCanvasShell
-      title="DEFCON 3"
-      subtitle="NULLFIRE"
-      status="Shared crisis table with a live globe, compact command cards, and host-controlled lobby flow."
-      skin="strategy"
-      musicEnabled={false}
-      header={false}
-      layout="stretch"
-      contentPointerEvents="none"
-      backgroundNode={<DefconScene countries={gameState.countries} missiles={gameState.missiles} strikes={gameState.strikes || []} threat={gameState.threat} phase={gameState.phase} hoveredCountryId={hoveredCountryId} selectedCountryId={selectedCountryId} onHoverCountry={setHoveredCountryId} onSelectCountry={setSelectedCountryId} madMode={madMode} targetedCityId={targetedCity?.id || null} onTargetCity={setTargetedCity} />}
-      contentStyle={{ fontFamily: 'monospace' }}
-    >
-      <div ref={hudHostRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: gameState.phase === 'nullfire' ? 'rgba(255,255,255,0.08)' : 'transparent' }} />
-
-      {/* MAD Mode + Interceptor HUD */}
-      {!uiHidden && gameState.phase !== 'lobby' && gameState.phase !== 'reconstruction' ? (
-        <div style={{ position: 'absolute', right: 12, bottom: 108, width: 240, pointerEvents: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* MAD Strike Panel */}
-          {myCountry && myCountry.armed > 0 && gameState.phase === 'military' ? (
-            <div style={{ background: madMode ? 'rgba(127,29,29,0.96)' : 'rgba(13,17,23,0.92)', border: `1px solid ${madMode ? '#ef4444' : '#374151'}`, borderRadius: 8, padding: '10px 12px', color: '#f9fafb' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: madMode ? '#fca5a5' : '#f9fafb', marginBottom: 6 }}>⚡ MAD STRIKE MODE</div>
-              <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 8 }}>
-                {madMode ? (targetedCity ? `Target locked: ${targetedCity.name}` : 'Click a city on the globe to target') : `Armed: ${myCountry.armed} warhead${myCountry.armed !== 1 ? 's' : ''} · No negotiation`}
+      {/* Lobby overlay */}
+      {gs.phase === 'lobby' && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.88)', zIndex: 150, pointerEvents: 'none' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 52, fontWeight: 'bold', color: '#ff0000', textShadow: '0 0 30px rgba(255,0,0,0.6)', marginBottom: 8 }}>DEFCON: MAD</div>
+            <div style={{ fontSize: 20, color: '#ffff00', marginBottom: 6 }}>MUTUALLY ASSURED DESTRUCTION</div>
+            <div style={{ fontSize: 13, color: '#00ff00', marginBottom: 20 }}>Strategic Defense Simulation — {NATIONS.length} Nations</div>
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 16, maxWidth: 500, lineHeight: 1.6 }}>
+              ⚠ WARNING: A deadman switch is armed. If global tension reaches critical levels<br />
+              and no player de-escalates within 2 minutes, MAD will be automatically triggered.<br />
+              You MUST act — evacuate, negotiate, or de-escalate.
+            </div>
+            {Object.values(gs.players).map(p => (
+              <div key={p.id} style={{ fontSize: 11, color: gs.ready[p.id] ? '#22c55e' : '#666', marginBottom: 3 }}>
+                {gs.ready[p.id] ? '✓' : '○'} {p.username}{p.countryId ? ` — ${p.countryId}` : ''}
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button
-                  onClick={handleToggleMad}
-                  style={{ padding: '6px 12px', background: madMode ? '#7f1d1d' : '#991b1b', color: '#fff', border: `1px solid ${madMode ? '#ef4444' : '#dc2626'}`, borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 700 }}
-                >
-                  {madMode ? 'Cancel' : 'Arm MAD'}
-                </button>
-                {madMode && targetedCity ? (
-                  <button
-                    onClick={handleMadStrike}
-                    disabled={now < madCooldownUntil}
-                    style={{ padding: '6px 12px', background: now < madCooldownUntil ? '#374151' : '#dc2626', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, cursor: now < madCooldownUntil ? 'not-allowed' : 'pointer', fontWeight: 700 }}
-                  >
-                    {now < madCooldownUntil ? `CD ${Math.ceil((madCooldownUntil - now) / 1000)}s` : '🚀 LAUNCH'}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Interceptor Panel */}
-          {inboundAlerts.filter((a) => !a.intercepted && Date.now() < a.impactAt + 5000).length > 0 ? (
-            <div style={{ background: 'rgba(69,10,10,0.96)', border: '1px solid #ef4444', borderRadius: 8, padding: '10px 12px', color: '#f9fafb' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fca5a5', marginBottom: 6 }}>🛡 INBOUND DETECTED</div>
-              {inboundAlerts.filter((a) => !a.intercepted && Date.now() < a.impactAt + 5000).slice(0, 3).map((alert) => (
-                <div key={alert.id} style={{ marginBottom: 6, padding: '6px 8px', background: 'rgba(0,0,0,0.4)', borderRadius: 4 }}>
-                  <div style={{ fontSize: 10, color: '#fca5a5' }}>{alert.from} → {alert.city}</div>
-                  <div style={{ fontSize: 10, color: '#94a3b8' }}>Impact in ~{Math.max(0, Math.ceil((alert.impactAt - now) / 1000))}s</div>
-                  <button
-                    onClick={() => handleIntercept(alert.id)}
-                    disabled={now < interceptCooldownUntil}
-                    style={{ marginTop: 4, padding: '4px 10px', background: now < interceptCooldownUntil ? '#374151' : '#0f766e', color: '#fff', border: 'none', borderRadius: 4, fontSize: 10, cursor: now < interceptCooldownUntil ? 'not-allowed' : 'pointer', fontWeight: 700 }}
-                  >
-                    {now < interceptCooldownUntil ? `Recharging ${Math.ceil((interceptCooldownUntil - now) / 1000)}s` : 'Intercept (50/50)'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {/* Terminal Log */}
-          <div style={{ background: 'rgba(0,0,0,0.88)', border: '1px solid #00ff0033', borderRadius: 8, padding: '8px 10px', maxHeight: 140, overflow: 'hidden' }}>
-            <div style={{ fontSize: 10, color: '#00ff00', fontFamily: 'Courier New, monospace', marginBottom: 4, borderBottom: '1px solid #00ff0022', paddingBottom: 3 }}>⚡ COMMAND TERMINAL</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {terminalLog.slice(0, 6).map((entry) => (
-                <div key={entry.id} style={{ fontSize: 9, color: entry.text.includes('INBOUND') || entry.text.includes('LAUNCH') ? '#fca5a5' : entry.text.includes('✓') ? '#4ade80' : '#00cc00', fontFamily: 'Courier New, monospace', lineHeight: 1.4 }}>
-                  {entry.text}
-                </div>
-              ))}
-            </div>
+            ))}
+            <div style={{ fontSize: 10, color: '#475569', marginTop: 12 }}>Join and ready up · Unassigned nations controlled by AI bots</div>
           </div>
         </div>
-      ) : null}
+      )}
 
-      <DefconHUD
-        containerRef={hudHostRef}
-        gameState={gameState}
-        defcon={defcon}
-        readyCount={readyCount}
-        humanCountries={humanCountries}
-        phaseTimeLeft={phaseTimeLeft}
-        hoveredCountry={hoveredCountry}
-        selectedCountry={selectedCountry}
-        myCountry={myCountry}
-        userId={userId}
-        isHost={isHost}
-        canLaunch={canLaunch}
-        handleReadyToggle={handleReadyToggle}
-        handleStart={handleStart}
-        availableActions={availableActions}
-        actionsNeedingTarget={actionsNeedingTarget}
-        targetOptions={targetOptions}
-        handleAction={handleAction}
-        handleCommit={handleCommit}
-        handleResetMatch={handleResetMatch}
-        setHoveredCountryId={setHoveredCountryId}
-        setSelectedCountryId={setSelectedCountryId}
-        uiHidden={uiHidden}
-        setUiHidden={setUiHidden}
-      />
-    </GameCanvasShell>
+      <style>{`
+        @keyframes alertFlash {
+          0%, 100% { background: linear-gradient(45deg, #ff0000, #ff6600); color: #ffffff; }
+          50% { background: linear-gradient(45deg, #ff6600, #ffaa00); color: #000000; }
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes tensionPulse {
+          0%, 100% { box-shadow: 0 0 8px rgba(255,0,0,0.4); }
+          50% { box-shadow: 0 0 20px rgba(255,0,0,0.8); }
+        }
+        @keyframes deadmanPulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        @keyframes popupIn {
+          from { opacity: 0; transform: translate(-50%,-50%) scale(0.93); }
+          to { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        }
+      `}</style>
+    </div>
   )
 }
 

@@ -168,6 +168,8 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(null) // null = not uploading, 0-100 = progress
+  const [isUploading, setIsUploading] = useState(false)
 
   // Search state
   const [showSearch, setShowSearch] = useState(false)
@@ -247,6 +249,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
   const isTypingRef = useRef(false)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const uploadXhrRef = useRef(null)
   const isSendingRef = useRef(false)
   const isAtBottomRef = useRef(true)
   const prevMessageCountRef = useRef(0)
@@ -697,11 +700,20 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
           setEncryptionRequestMessage(requestData)
       }
 
+      const handleDmReactionUpdated = (payload) => {
+        if (payload.conversationId !== conversation?.id) return
+        setMessages(prev => prev.map(m => {
+          if (m.id !== payload.messageId) return m
+          return { ...m, reactions: payload.reactions || {} }
+        }))
+      }
+
       socket.on('dm:new', handleNewMessage)
       socket.on('dm:typing', handleTyping)
       socket.on('dm:edited', handleEdited)
       socket.on('dm:deleted', handleDeleted)
       socket.on('dm:error', handleDmError)
+      socket.on('dm:reaction:updated', handleDmReactionUpdated)
       socket.on('e2e:dm-fully-enabled', handleDmFullyEnabled)
       socket.on('e2e:dm-key-rotated', handleDmKeyRotated)
       // Listen for both event names for compatibility
@@ -714,6 +726,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
         socket.off('dm:edited', handleEdited)
         socket.off('dm:deleted', handleDeleted)
         socket.off('dm:error', handleDmError)
+        socket.off('dm:reaction:updated', handleDmReactionUpdated)
         socket.off('e2e:dm-fully-enabled', handleDmFullyEnabled)
         socket.off('e2e:dm-key-rotated', handleDmKeyRotated)
         socket.off('e2e:encryption-request', handleEncryptionRequest)
@@ -1013,31 +1026,55 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
 
   // ─── File upload ──────────────────────────────────────────────────────────
 
+  const cancelUpload = useCallback(() => {
+    if (uploadXhrRef.current) {
+      uploadXhrRef.current.abort()
+      uploadXhrRef.current = null
+    }
+    setIsUploading(false)
+    setUploadProgress(null)
+  }, [])
+
   const processFiles = useCallback(async (files) => {
     if (!files || files.length === 0) return
-      const validFiles = Array.from(files).filter(f =>
+    const validFiles = Array.from(files).filter(f =>
       f.type || f.name.match(/\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|mp3|wav|ogg|pdf|doc|docx|txt|zip|rar)$/i)
-      )
-      if (validFiles.length === 0) return
-        warmupSafetyModels({ text: false, images: true })
-        try {
-          const localNsfwResults = await scanSelectedImageFiles(validFiles)
-          const res = await apiService.uploadFiles(validFiles)
-          const uploaded = res?.data?.attachments || []
-          const uploadedWithFlags = uploaded.map((attachment, index) => {
-            const scan = localNsfwResults[index]
-            if (!scan) return attachment
-              return {
-                ...attachment,
-                contentFlags: buildTransmitContentFlags(scan)
-              }
-          })
-          setAttachments(prev => [...prev, ...uploadedWithFlags])
-          soundService.success()
-        } catch (err) {
-          console.error('[DMChat] Upload failed:', err)
-          setSendError(t('dm.uploadError', 'Failed to upload file(s)'))
+    )
+    if (validFiles.length === 0) return
+    warmupSafetyModels({ text: false, images: true })
+    setIsUploading(true)
+    setUploadProgress(0)
+    setSendError('')
+    try {
+      const localNsfwResults = await scanSelectedImageFiles(validFiles)
+      const uploadHandle = apiService.uploadFiles(validFiles, null, (pct) => {
+        setUploadProgress(Math.round(pct))
+      })
+      uploadXhrRef.current = uploadHandle
+      const res = await uploadHandle.promise
+      uploadXhrRef.current = null
+      const uploaded = res?.attachments || res?.data?.attachments || []
+      const uploadedWithFlags = uploaded.map((attachment, index) => {
+        const scan = localNsfwResults[index]
+        if (!scan) return attachment
+        return {
+          ...attachment,
+          contentFlags: buildTransmitContentFlags(scan)
         }
+      })
+      setAttachments(prev => [...prev, ...uploadedWithFlags])
+      soundService.success()
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        // User cancelled — don't show error
+      } else {
+        console.error('[DMChat] Upload failed:', err)
+        setSendError(t('dm.uploadError', 'Failed to upload file(s)'))
+      }
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(null)
+    }
   }, [t])
 
   const handlePaste = useCallback(async (e) => {
@@ -1138,35 +1175,43 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
     return <span className={className}>{emoji}</span>
   }
 
-  const handleAddReaction = useCallback(async (messageId, emoji) => {
+  const handleAddReaction = useCallback(async (messageId, emojiOrKey) => {
     const msg = messages.find(m => m.id === messageId)
     if (!msg) return
 
-      // Handle custom emoji objects or strings
-      const emojiKey = serializeReactionEmoji(emoji)
+    // Handle custom emoji objects or strings
+    const emojiKey = typeof emojiOrKey === 'string' ? emojiOrKey : serializeReactionEmoji(emojiOrKey)
 
-      const reactions = msg.reactions || {}
-      const users = reactions[emojiKey] || []
-      const alreadyReacted = users.includes(user?.id)
-      socket?.emit(alreadyReacted ? 'dm:reaction:remove' : 'dm:reaction:add', {
-        messageId,
-        conversationId: conversation.id,
-        emoji: emojiKey
-      })
-      // Optimistic update
-      setMessages(prev => prev.map(m => {
-        if (m.id !== messageId) return m
-          const r = { ...(m.reactions || {}) }
-          if (alreadyReacted) {
-            r[emojiKey] = (r[emojiKey] || []).filter(id => id !== user?.id)
-            if (r[emojiKey].length === 0) delete r[emojiKey]
-          } else {
-            r[emojiKey] = [...(r[emojiKey] || []), user?.id]
-          }
-          return { ...m, reactions: r }
-      }))
-      setShowMessageEmojiPicker(null)
-      setEmojiPickerAnchor(null)
+    const reactions = msg.reactions || {}
+    const users = reactions[emojiKey] || []
+    const alreadyReacted = users.includes(user?.id)
+
+    // Enforce 20-reaction limit on frontend
+    const MAX_REACTIONS = 20
+    const isNewEmoji = !reactions[emojiKey]
+    if (!alreadyReacted && isNewEmoji && Object.keys(reactions).length >= MAX_REACTIONS) {
+      return // Silently ignore - at limit
+    }
+
+    socket?.emit(alreadyReacted ? 'dm:reaction:remove' : 'dm:reaction:add', {
+      messageId,
+      conversationId: conversation.id,
+      emoji: emojiKey
+    })
+    // Optimistic update
+    setMessages(prev => prev.map(m => {
+      if (m.id !== messageId) return m
+      const r = { ...(m.reactions || {}) }
+      if (alreadyReacted) {
+        r[emojiKey] = (r[emojiKey] || []).filter(id => id !== user?.id)
+        if (r[emojiKey].length === 0) delete r[emojiKey]
+      } else {
+        r[emojiKey] = [...(r[emojiKey] || []), user?.id]
+      }
+      return { ...m, reactions: r }
+    }))
+    setShowMessageEmojiPicker(null)
+    setEmojiPickerAnchor(null)
   }, [messages, conversation?.id, socket, user?.id])
 
   const renderReactions = (message) => {
@@ -1857,6 +1902,32 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
 
     {/* Input area */}
     <div className="dm-input-container">
+    {/* Upload progress bar */}
+    {isUploading && (
+      <div className="dm-upload-progress-bar-container">
+        <div className="dm-upload-progress-info">
+          <span className="dm-upload-progress-label">
+            {uploadProgress !== null ? `Uploading… ${uploadProgress}%` : 'Preparing upload…'}
+          </span>
+          <button
+            type="button"
+            className="dm-upload-cancel-btn"
+            onClick={cancelUpload}
+            title="Cancel upload"
+          >
+            <XMarkIcon size={14} />
+            Cancel
+          </button>
+        </div>
+        <div className="dm-upload-progress-track">
+          <div
+            className="dm-upload-progress-fill"
+            style={{ width: `${uploadProgress ?? 0}%` }}
+          />
+        </div>
+      </div>
+    )}
+
     {/* Attachment preview */}
     {attachments.length > 0 && (
       <div className="attachment-preview-bar">

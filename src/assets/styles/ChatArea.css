@@ -880,14 +880,43 @@
 /* Attachment Preview Bar */
 /* Upload progress bar */
 .upload-progress-bar-container {
-  padding: 6px 12px 4px;
+  padding: 6px 12px 8px;
   margin-bottom: 4px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+}
+
+.upload-progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
 }
 
 .upload-progress-label {
   font-size: 12px;
   color: var(--volt-text-muted);
-  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.upload-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 5px;
+  color: var(--volt-danger, #ef4444);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.upload-cancel-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .upload-progress-track {
@@ -899,9 +928,10 @@
 
 .upload-progress-fill {
   height: 100%;
-  background: var(--volt-primary);
+  background: linear-gradient(90deg, var(--volt-primary, #1fb6ff), var(--volt-primary-light, #5ccfff));
   border-radius: 2px;
   transition: width 0.15s ease;
+  min-width: 4px;
 }
 
 /* Attachment preview bar */
@@ -1391,4 +1421,417 @@
 .pinned-unpin-btn:hover {
   background: var(--volt-bg-hover);
   color: var(--volt-text-primary);
+}
+
+/* ============================================================
+   ChatPage UI Improvements - Enhanced Visual Polish
+   ============================================================ */
+
+/* Better message hover with smooth transition */
+.message {
+  transition: background 0.12s ease;
+  border-radius: 6px;
+}
+
+/* Improved message actions toolbar - appears on hover */
+.message:hover .message-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: all;
+}
+
+.message-actions {
+  opacity: 0;
+  transform: translateY(2px);
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+/* Better chat header with glassmorphism */
+.chat-header {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Improved channel title with subtle gradient */
+.channel-title {
+  background: linear-gradient(135deg, var(--volt-text-primary) 60%, color-mix(in srgb, var(--volt-primary) 60%, var(--volt-text-primary)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Better message input area */
+.message-input-container {
+  padding: 12px 16px 16px;
+  background: linear-gradient(0deg, var(--volt-bg-primary) 85%, transparent);
+}
+
+.message-input-wrapper {
+  border: 1px solid var(--volt-border);
+  border-radius: 12px;
+  background: var(--volt-bg-secondary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.message-input-wrapper:focus-within {
+  border-color: color-mix(in srgb, var(--volt-primary) 60%, var(--volt-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--volt-primary) 15%, transparent), 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Better message avatar with ring on hover */
+.message-avatar {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+
+.message:hover .message-avatar {
+  transform: scale(1.05);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--volt-primary) 50%, transparent);
+}
+
+/* Improved reply reference */
+.message-reply-ref {
+  border-radius: 6px;
+  border-left: 3px solid var(--volt-primary);
+  background: color-mix(in srgb, var(--volt-bg-tertiary) 80%, var(--volt-primary) 5%);
+  transition: background 0.12s ease;
+}
+
+/* Better date divider */
+.date-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  color: var(--volt-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+}
+
+.date-divider::before,
+.date-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--volt-border), transparent);
+}
+
+/* Better typing indicator */
+.typing-indicator {
+  padding: 4px 16px 8px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--volt-text-muted);
+  min-height: 28px;
+}
+
+.typing-dots span {
+  background: var(--volt-primary);
+  opacity: 0.7;
+}
+
+/* Improved message content readability */
+.message-content {
+  line-height: 1.6;
+}
+
+/* Better code blocks in messages */
+.message-content code {
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+.message-content pre {
+  background: var(--volt-bg-tertiary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.message-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+}
+
+/* Better reaction pills */
+.reaction-pill {
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+
+.reaction-pill:hover {
+  transform: scale(1.08);
+}
+
+.reaction-pill:active {
+  transform: scale(0.96);
+}
+
+/* Improved scroll-to-bottom button */
+.scroll-to-bottom-btn {
+  border-radius: 50%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.scroll-to-bottom-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Better message list scrollbar */
+.message-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.message-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-list::-webkit-scrollbar-thumb {
+  background: var(--volt-border);
+  border-radius: 3px;
+}
+
+.message-list::-webkit-scrollbar-thumb:hover {
+  background: var(--volt-text-muted);
+}
+
+/* Better empty state for channels */
+.no-messages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 12px;
+  text-align: center;
+}
+
+.no-messages-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--volt-primary) 15%, var(--volt-bg-tertiary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--volt-primary);
+  margin-bottom: 8px;
+}
+
+.no-messages h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+}
+
+.no-messages p {
+  font-size: 14px;
+  color: var(--volt-text-muted);
+  max-width: 320px;
+}
+
+/* Improved attachment previews */
+.attachment-image {
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.15s ease;
+  cursor: pointer;
+}
+
+.attachment-image:hover {
+  transform: scale(1.01);
+}
+
+/* Better link embeds */
+.link-embed {
+  border-left: 3px solid var(--volt-primary);
+  border-radius: 0 8px 8px 0;
+  background: var(--volt-bg-secondary);
+  transition: background 0.12s ease;
+}
+
+.link-embed:hover {
+  background: var(--volt-bg-tertiary);
+}
+
+/* Improved mention highlight */
+.mention {
+  background: color-mix(in srgb, var(--volt-primary) 20%, transparent);
+  color: var(--volt-primary);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.mention:hover {
+  background: color-mix(in srgb, var(--volt-primary) 35%, transparent);
+}
+
+/* Better channel header actions */
+.chat-actions button {
+  transition: color 0.12s ease, background 0.12s ease, transform 0.1s ease;
+}
+
+.chat-actions button:hover {
+  transform: scale(1.1);
+}
+
+.chat-actions button:active {
+  transform: scale(0.95);
+}
+
+/* Improved message send button */
+.send-btn,
+.input-action-btn[title*="Send"],
+.input-action-btn[aria-label*="Send"] {
+  background: var(--volt-primary) !important;
+  color: white !important;
+  border-radius: 8px !important;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease !important;
+}
+
+.send-btn:hover,
+.input-action-btn[title*="Send"]:hover,
+.input-action-btn[aria-label*="Send"]:hover {
+  background: color-mix(in srgb, var(--volt-primary) 85%, white) !important;
+  transform: scale(1.05) !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--volt-primary) 40%, transparent) !important;
+}
+
+/* Better new message notification badge */
+.unread-badge {
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--volt-primary) 40%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--volt-primary) 0%, transparent); }
+}
+
+/* Smooth message fade-in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Better image/GIF embeds - clean display */
+.gif-embed,
+.image-embed {
+  border-radius: 8px;
+  overflow: hidden;
+  max-width: 400px;
+  display: block;
+  margin-top: 4px;
+}
+
+.gif-embed img,
+.image-embed img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+/* Hide any extra text/path shown alongside GIF embeds */
+.gif-embed-wrapper .embed-url-text,
+.gif-embed-wrapper .embed-path-text {
+  display: none !important;
+}
+
+/* Better channel topic/description in header */
+.channel-topic {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
+  padding-left: 8px;
+  border-left: 1px solid var(--volt-border);
+  margin-left: 4px;
+}
+
+/* Improved pinned message banner */
+.pinned-message-banner {
+  background: color-mix(in srgb, var(--volt-primary) 10%, var(--volt-bg-secondary));
+  border-bottom: 1px solid color-mix(in srgb, var(--volt-primary) 20%, var(--volt-border));
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.pinned-message-banner:hover {
+  background: color-mix(in srgb, var(--volt-primary) 15%, var(--volt-bg-secondary));
+}
+
+/* Better slow mode indicator */
+.slow-mode-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--volt-warning) 15%, var(--volt-bg-tertiary));
+  color: var(--volt-warning);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Improved message list padding for better readability */
+.message-list {
+  padding: 16px 0 8px;
+}
+
+/* Better first message in channel welcome */
+.channel-welcome {
+  padding: 24px 16px 16px;
+  border-bottom: 1px solid var(--volt-border);
+  margin-bottom: 16px;
+}
+
+.channel-welcome-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--volt-primary) 20%, var(--volt-bg-tertiary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.channel-welcome h2 {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--volt-text-primary);
+  margin-bottom: 4px;
+}
+
+.channel-welcome p {
+  font-size: 14px;
+  color: var(--volt-text-muted);
 }

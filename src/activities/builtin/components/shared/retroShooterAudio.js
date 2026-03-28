@@ -774,6 +774,8 @@ export class RetroShooterAudio {
     this.musicVolume = 0.42
     this.currentTrack = null
     this.musicTimer = null
+    this.secretTimer = null
+    this.secretActive = false
   }
 
   ensure() {
@@ -831,6 +833,8 @@ export class RetroShooterAudio {
   }
 
   startMusic(trackName = 'lobby') {
+    if (this.currentTrack === trackName) return
+    this.stopMusic()
     this.currentTrack = trackName
     this._playTrack(trackName)
   }
@@ -838,6 +842,31 @@ export class RetroShooterAudio {
   stopMusic() {
     this.currentTrack = null
     if (this.musicTimer) { clearTimeout(this.musicTimer); this.musicTimer = null }
+  }
+
+  _playSecretLayer() {
+    if (!this.secretActive || !this.ensure() || !this.ctx || !this.musicGain) return
+    this._resume()
+    const out = this.musicGain
+    padNote(this.ctx, out, { freq: MIDI_TO_HZ(33), duration: 3.6, delay: 0, volume: 0.05, pan: -0.4 })
+    padNote(this.ctx, out, { freq: MIDI_TO_HZ(34), duration: 3.4, delay: 0.08, volume: 0.045, pan: 0.3 })
+    leadNote(this.ctx, out, { freq: MIDI_TO_HZ(57), duration: 0.24, delay: 0.7, volume: 0.04, pan: 0.25 })
+    leadNote(this.ctx, out, { freq: MIDI_TO_HZ(56), duration: 0.32, delay: 1.55, volume: 0.038, pan: -0.2 })
+    fmPulse(this.ctx, out, { freq: 92, duration: 0.16, waveId: 6, volume: 0.03, sweep: -8, modIndex: 24, modMult: 1, delay: 2.2, pan: 0 })
+    fmPulse(this.ctx, out, { freq: 146, duration: 0.12, waveId: 2, volume: 0.028, sweep: -5, modIndex: 18, modMult: 1, delay: 2.95, pan: 0.12 })
+    if (this.secretTimer) clearTimeout(this.secretTimer)
+    this.secretTimer = setTimeout(() => this._playSecretLayer(), 3600)
+  }
+
+  setSecretMode(active = false) {
+    const next = !!active
+    if (this.secretActive === next) return
+    this.secretActive = next
+    if (!next) {
+      if (this.secretTimer) { clearTimeout(this.secretTimer); this.secretTimer = null }
+      return
+    }
+    this._playSecretLayer()
   }
 
   setMusicVolume(v) {
@@ -870,6 +899,16 @@ export class RetroShooterAudio {
     this.pulse({ freq: 720, duration: 0.09, waveId: 0, volume: 0.1, sweep: 40, modIndex: 20, modMult: 2, delay: 0.05 })
   }
 
+  footstep() {
+    this.pulse({ freq: 120, duration: 0.045, waveId: 6, volume: 0.08, sweep: -14, modIndex: 18, modMult: 1 })
+    this.pulse({ freq: 74, duration: 0.06, waveId: 2, volume: 0.05, sweep: -8, modIndex: 10, modMult: 1, delay: 0.008 })
+  }
+
+  door(open = true) {
+    this.pulse({ freq: open ? 210 : 170, duration: 0.09, waveId: 6, volume: 0.1, sweep: open ? 30 : -30, modIndex: 26, modMult: 1 })
+    this.pulse({ freq: open ? 310 : 120, duration: 0.12, waveId: 2, volume: 0.07, sweep: open ? 12 : -18, modIndex: 18, modMult: 1, delay: 0.03 })
+  }
+
   countdown(step = 0) {
     this.pulse({ freq: 360 + Number(step || 0) * 70, duration: 0.07, waveId: 6, volume: 0.12, sweep: 16, modIndex: 15, modMult: 1 })
   }
@@ -889,10 +928,44 @@ export class RetroShooterAudio {
 
   dispose() {
     this.stopMusic()
+    this.setSecretMode(false)
     try { this.master?.disconnect?.() } catch {}
     if (this.ctx?.close) void this.ctx.close().catch(() => {})
     this.ctx = null; this.master = null; this.sfxGain = null; this.musicGain = null
   }
 }
+
+TRACKS.lobby.notes.push(
+  ...[...Array(16)].flatMap((_, i) => ([
+    { voice: 'hat', delay: 0.5 + i * 0.75, vol: 0.05 },
+    { voice: 'bass', freq: MIDI_TO_HZ(i % 4 === 0 ? 29 : i % 3 === 0 ? 27 : 28), delay: 0.24 + i * 0.75, dur: 0.24, vol: 0.08 },
+    { voice: 'lead', freq: MIDI_TO_HZ(i % 2 === 0 ? 52 : 53), delay: 0.37 + i * 0.75, dur: 0.1, vol: 0.05, pan: i % 2 === 0 ? -0.22 : 0.22 }
+  ]))
+)
+
+TRACKS.combat.notes.push(
+  ...[...Array(20)].flatMap((_, i) => ([
+    { voice: 'kick', delay: 0.081 + i * 0.649, vol: 0.12 },
+    { voice: 'hat', delay: 0.04 + i * 0.324, vol: 0.08 },
+    { voice: 'hat', delay: 0.202 + i * 0.324, vol: 0.08 },
+    { voice: 'power', freq: i % 5 === 0 ? 58.3 : i % 3 === 0 ? 73.4 : 82.4, delay: 0.11 + i * 0.324, dur: 0.1, vol: 0.08 },
+    { voice: 'bass', freq: i % 4 === 0 ? 29.14 : 41.2, delay: 0.162 + i * 0.324, dur: 0.1, vol: 0.08 }
+  ])),
+  ...[...Array(12)].map((_, i) => ({
+    voice: 'lead',
+    freq: MIDI_TO_HZ([64, 65, 67, 70][i % 4] + (i > 7 ? 12 : 0)),
+    delay: 0.54 + i * 0.486,
+    dur: 0.09,
+    vol: 0.06,
+    pan: i % 2 === 0 ? -0.18 : 0.18
+  }))
+)
+
+TRACKS.victory.notes.push(
+  ...[...Array(10)].flatMap((_, i) => ([
+    { voice: 'hatOpen', delay: 0.25 + i, vol: 0.06 },
+    { voice: 'lead', freq: MIDI_TO_HZ(76 + (i % 3) * 2), delay: 0.18 + i, dur: 0.12, vol: 0.05, pan: i % 2 === 0 ? -0.2 : 0.2 }
+  ]))
+)
 
 export const createRetroShooterAudio = () => new RetroShooterAudio()

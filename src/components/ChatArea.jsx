@@ -100,6 +100,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
   const mentionPanelRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const uploadXhrRef = useRef(null)
   const chatAreaRef = useRef(null)
   const safeChannels = Array.isArray(channels) ? channels : channels && typeof channels === 'object' ? Object.values(channels) : []
   const currentChannel = safeChannels.find(c => c.id === channelId)
@@ -653,10 +654,13 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
 
     try {
       const localNsfwResults = await scanSelectedImageFiles(validFiles)
-      const result = await apiService.uploadFiles(validFiles, serverId, (pct) => {
+      const uploadHandle = apiService.uploadFiles(validFiles, serverId, (pct) => {
         setUploadProgress(Math.round(pct))
       })
-      // uploadFiles with onProgress returns raw JSON; without returns axios response
+      uploadXhrRef.current = uploadHandle
+      const result = await uploadHandle.promise
+      uploadXhrRef.current = null
+      // uploadFiles returns raw JSON (attachments at top level)
       const uploaded = result?.attachments ?? result?.data?.attachments ?? []
       const uploadedWithFlags = uploaded.map((attachment, index) => {
         const scan = localNsfwResults[index]
@@ -673,13 +677,25 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
       setUploadProgress(null)
       soundService.success()
     } catch (err) {
-      console.error('Upload failed:', err)
-      // Revoke and remove previews on failure
+      if (err?.name === 'AbortError') {
+        // User cancelled — silently clean up
+      } else {
+        console.error('Upload failed:', err)
+        setSendError(t('dm.uploadError', 'Failed to upload file(s)'))
+      }
+      // Revoke and remove previews on failure/cancel
       previews.forEach(p => { if (p.localUrl) URL.revokeObjectURL(p.localUrl) })
       setPendingPreviews(prev => prev.filter(p => !previews.includes(p)))
       setUploadProgress(null)
-      setSendError(t('dm.uploadError', 'Failed to upload file(s)'))
     }
+  }
+
+  const cancelUpload = () => {
+    if (uploadXhrRef.current) {
+      uploadXhrRef.current.abort()
+      uploadXhrRef.current = null
+    }
+    setUploadProgress(null)
   }
 
   const handleFileSelect = async (e) => {
@@ -1115,8 +1131,19 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
         {/* Upload progress bar */}
         {uploadProgress !== null && (
           <div className="upload-progress-bar-container">
-            <div className="upload-progress-label">
-              Uploading... {uploadProgress}%
+            <div className="upload-progress-info">
+              <div className="upload-progress-label">
+                Uploading… {uploadProgress}%
+              </div>
+              <button
+                type="button"
+                className="upload-cancel-btn"
+                onClick={cancelUpload}
+                title="Cancel upload"
+              >
+                <XMarkIcon size={14} />
+                Cancel
+              </button>
             </div>
             <div className="upload-progress-track">
               <div

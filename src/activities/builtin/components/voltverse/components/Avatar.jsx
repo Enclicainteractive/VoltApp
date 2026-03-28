@@ -13,13 +13,22 @@ const defaultAvatars = {
   }
 }
 
+// Guard: ensure all scale values are finite numbers > 0
+const safeScale = (base, multiplier) => {
+  const m = (typeof multiplier === 'number' && isFinite(multiplier) && multiplier > 0) ? multiplier : 1
+  return base.map(v => {
+    const result = v * m
+    return (isFinite(result) && result > 0) ? result : v
+  })
+}
+
 const normalizeProceduralAvatar = (avatarData, playerColor) => {
   const procedural = avatarData?.procedural || avatarData || {}
   return {
-    head: procedural.head ? { color: procedural.head.color || playerColor, scale: [0.25, 0.3, 0.25].map((value) => value * (procedural.head.scale || 1)) } : null,
-    body: procedural.body ? { color: procedural.body.color || playerColor, scale: [0.4, 0.5, 0.25].map((value) => value * (procedural.body.scale || 1)) } : null,
-    arms: procedural.arms ? { color: procedural.arms.color || playerColor, scale: [0.1, 0.4, 0.1].map((value) => value * (procedural.arms.scale || 1)) } : null,
-    legs: procedural.legs ? { color: procedural.legs.color || '#2d3748', scale: [0.12, 0.5, 0.12].map((value) => value * (procedural.legs.scale || 1)) } : null
+    head: procedural.head ? { color: procedural.head.color || playerColor, scale: safeScale([0.25, 0.3, 0.25], procedural.head.scale) } : null,
+    body: procedural.body ? { color: procedural.body.color || playerColor, scale: safeScale([0.4, 0.5, 0.25], procedural.body.scale) } : null,
+    arms: procedural.arms ? { color: procedural.arms.color || playerColor, scale: safeScale([0.1, 0.4, 0.1], procedural.arms.scale) } : null,
+    legs: procedural.legs ? { color: procedural.legs.color || '#2d3748', scale: safeScale([0.12, 0.5, 0.12], procedural.legs.scale) } : null
   }
 }
 

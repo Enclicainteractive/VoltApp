@@ -145,11 +145,25 @@ const ChannelSidebar = ({
 
     const handleUserLeft = (data) => {
       const userId = data?.userId || data?.id
+      if (!userId) return
       const cid = data?.channelId
-      if (!userId || !cid) return
       setSidebarParticipants(prev => {
-        const list = prev[cid] || []
-        return { ...prev, [cid]: list.filter(p => p.id !== userId) }
+        if (cid) {
+          // Fast path: channelId provided
+          const list = prev[cid] || []
+          return { ...prev, [cid]: list.filter(p => p.id !== userId) }
+        }
+        // Slow path: no channelId — remove user from every channel they appear in
+        const next = { ...prev }
+        let changed = false
+        Object.keys(next).forEach(channelId => {
+          const list = next[channelId]
+          if (list.some(p => p.id === userId)) {
+            next[channelId] = list.filter(p => p.id !== userId)
+            changed = true
+          }
+        })
+        return changed ? next : prev
       })
     }
 

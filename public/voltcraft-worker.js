@@ -33,6 +33,11 @@ function initPerlin(s) {
 const fade = t => t * t * t * (t * (t * 6 - 15) + 10)
 const lerp = (a, b, t) => a + t * (b - a)
 const grad = (h, x, y) => { const u = h < 2 ? x : y, v = h < 2 ? y : x; return ((h & 1) ? -u : u) + ((h & 2) ? -v : v) }
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+const smoothstep = (edge0, edge1, value) => {
+  const t = clamp((value - edge0) / Math.max(edge1 - edge0, 1e-6), 0, 1)
+  return t * t * (3 - 2 * t)
+}
 
 function noise(x, y) {
   const X = Math.floor(x) & 255, Y = Math.floor(y) & 255
@@ -86,17 +91,28 @@ function getClimate(x, z) {
 
 function getTerrainHeight(x, z) {
   const climate = getClimate(x, z)
-  const continental = fbm(x * 0.22, z * 0.22, 4)
-  const hills = fbm(x * 0.95, z * 0.95, 5)
-  const ridges = ridge(x * 0.42, z * 0.42, 4)
-  const valleys = Math.abs(noise(x * 0.0045 - 500, z * 0.0045 + 500))
+  const warpX = fbm(x * 0.11 - 240, z * 0.11 + 180, 3) * 16
+  const warpZ = fbm(x * 0.11 + 320, z * 0.11 - 260, 3) * 16
+  const nx = x + warpX
+  const nz = z + warpZ
+  const continental = fbm(nx * 0.22, nz * 0.22, 4)
+  const hills = fbm(nx * 0.95, nz * 0.95, 5)
+  const ridges = ridge(nx * 0.42, nz * 0.42, 4)
+  const valleys = Math.abs(noise(nx * 0.0045 - 500, nz * 0.0045 + 500))
   const erosion = fbm(x * 0.38 + 1200, z * 0.38 - 1200, 3)
+  const basin = fbm(nx * 0.12 + 860, nz * 0.12 - 860, 3)
+  const river = Math.abs(noise(nx * 0.0036 + 1400, nz * 0.0036 - 1400))
+  const riverCut = smoothstep(0.0, 0.18 + climate.lushness * 0.07, river)
+  const plateau = smoothstep(0.52, 0.82, ridge(nx * 0.18 - 910, nz * 0.18 + 910, 3))
 
   let height = 18
   height += continental * 18
   height += hills * (8 + climate.lushness * 3 + climate.mountainness * 4)
   height += ridges * (6 + climate.mountainness * 18 + climate.coldness * 4)
   height -= valleys * (4.5 + climate.aridity * 2.5)
+  height -= riverCut * (5.5 + climate.lushness * 3.2)
+  height -= smoothstep(0.55, 0.9, basin) * (2.5 + climate.aridity * 1.6)
+  height += plateau * (2 + climate.mountainness * 7)
   height -= Math.max(0, erosion) * (2.5 + climate.aridity * 1.5)
   height += climate.mountainness * 10
   height += climate.coldness * 3
@@ -312,6 +328,21 @@ function isTransparent(id) {
   return TRANSPARENT_BLOCK[id] === 1
 }
 
+function isPassableForSpawn(id) {
+  return id === BLOCK.air
+    || id === BLOCK.water
+    || id === BLOCK.water_source
+    || id === BLOCK.lava
+    || id === BLOCK.lava_source
+    || id === BLOCK.leaves
+    || id === BLOCK.glass
+    || id === BLOCK.flower_red
+    || id === BLOCK.flower_yellow
+    || id === BLOCK.mushroom
+    || id === BLOCK.tall_grass
+    || id === BLOCK.dead_bush
+}
+
 // ─── World state ──────────────────────────────────────────────────────────────
 let worldChanges = {}
 const POWER_RADIUS = 12
@@ -469,15 +500,24 @@ function getBaseBlock(x, y, z) {
   const th = getTerrainHeight(x, z)
   const biome = getBiome(x, z)
   const beach = th <= WATER_LEVEL + 2
+  const forestCluster = fbm(x * 0.12 + 80, z * 0.12 - 80, 3)
+  const groveMask = ridge(x * 0.055 - 430, z * 0.055 + 430, 3)
+  const treeBias = biome === 'forest'
+    ? 0.14
+    : biome === 'lush'
+      ? 0.1
+      : biome === 'plains'
+        ? -0.03
+        : -0.08
 
   if (y > th) {
-    if (y <= WATER_LEVEL) return BLOCK.water
-    const treeNoise = noise(x * 0.3 + 7, z * 0.3 + 7)
+    if (y <= WATER_LEVEL) return beach ? BLOCK.water : BLOCK.air
+    const treeNoise = noise(x * 0.3 + 7, z * 0.3 + 7) + forestCluster * 0.32 + groveMask * 0.18 + treeBias
     const floraNoise = noise(x * 0.22 - 140, z * 0.22 + 140)
-    if (y === th + 1 && treeNoise > (biome === 'forest' ? 0.35 : 0.55) && !beach && biome !== 'desert' && biome !== 'badlands') {
+    if (y === th + 1 && treeNoise > (biome === 'forest' ? 0.3 : 0.5) && !beach && biome !== 'desert' && biome !== 'badlands') {
       if (noise(x * 1.1, z * 1.1) > 0.3) return BLOCK.oak_log
     }
-    if (y >= th + 2 && y <= th + (biome === 'forest' ? 5 : 4) && treeNoise > (biome === 'forest' ? 0.35 : 0.55) && !beach && biome !== 'desert' && biome !== 'badlands') {
+    if (y >= th + 2 && y <= th + (biome === 'forest' ? 5 : 4) && treeNoise > (biome === 'forest' ? 0.3 : 0.5) && !beach && biome !== 'desert' && biome !== 'badlands') {
       if (noise(x * 0.8 + y, z * 0.8 + y) > -0.2) return BLOCK.leaves
     }
     if (y === th + 1 && (biome === 'desert' || biome === 'badlands') && noise(x * 0.5, z * 0.5) > 0.6) return BLOCK.cactus
@@ -730,6 +770,40 @@ function getChunkGeometry(cx, cz) {
   return geom
 }
 
+function getSurfaceAnchor(x, z) {
+  const th = getTerrainHeight(x, z)
+  const biome = getBiome(x, z)
+  const scanTop = Math.min(96, th + 8)
+  for (let y = scanTop; y >= 0; y--) {
+    const block = getBlock(x, y, z)
+    if (isPassableForSpawn(block)) continue
+    const above1 = getBlock(x, y + 1, z)
+    const above2 = getBlock(x, y + 2, z)
+    if (isPassableForSpawn(above1) && isPassableForSpawn(above2)) {
+      return {
+        x,
+        z,
+        groundY: y,
+        terrainHeight: th,
+        block,
+        blockName: BLOCK_NAME_BY_ID[block] || 'air',
+        biome,
+        submerged: above1 === BLOCK.water || above1 === BLOCK.water_source,
+      }
+    }
+  }
+  return {
+    x,
+    z,
+    groundY: th,
+    terrainHeight: th,
+    block: getBlock(x, th, z),
+    blockName: BLOCK_NAME_BY_ID[getBlock(x, th, z)] || 'air',
+    biome,
+    submerged: false,
+  }
+}
+
 function invalidateExplosion(x, y, z, radius) {
   const minCx = Math.floor((x - radius - 1) / CHUNK_SIZE)
   const maxCx = Math.floor((x + radius + 1) / CHUNK_SIZE)
@@ -869,6 +943,7 @@ self.onmessage = function(e) {
     switch (type) {
       case 'init': {
         initPerlin(e.data.seed ?? 42)
+        worldChanges = {}
         geomCache.clear()
         self.postMessage({ type: 'init:done', id, seed: e.data.seed })
         break
@@ -940,6 +1015,12 @@ self.onmessage = function(e) {
 
       case 'getTerrainHeight': {
         self.postMessage({ type: 'terrainHeight', id, height: getTerrainHeight(e.data.x, e.data.z) })
+        break
+      }
+
+      case 'getSurfaceAnchor': {
+        const { x, z } = e.data
+        self.postMessage({ type: 'surfaceAnchor', id, ...getSurfaceAnchor(x, z) })
         break
       }
 

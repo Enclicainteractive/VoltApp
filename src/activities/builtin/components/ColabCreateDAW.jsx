@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { shouldIgnoreActivityHotkey } from './shared/hotkeys'
 
 const COLORS = {
   bg: '#120f1f',
@@ -1089,6 +1090,7 @@ const ColabCreateDAW = ({ sdk, currentUser }) => {
     if (!element) return undefined
 
     const onKeyDown = (event) => {
+      if (shouldIgnoreActivityHotkey(event)) return
       if (event.key === 'Escape') {
         closeContextMenu()
         return

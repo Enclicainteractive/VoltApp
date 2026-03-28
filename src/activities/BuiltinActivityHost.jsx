@@ -63,16 +63,18 @@ const BuiltinActivityHost = ({ session, socket, contextType, contextId, onClose,
   const normalizedActivityId = normalizeBuiltinActivityId(rawActivityId) || rawActivityId || 'unknown'
   const activityDefinition = getBuiltinActivityDefinition(rawActivityId)
 
+  const securityWarningRef = useRef('')
   const reportWarning = useCallback((key, message, cooldown = WARN_COOLDOWN_MS) => {
     const now = Date.now()
     const lastTs = warningHistoryRef.current.get(key) || 0
     if (now - lastTs < cooldown) return
     warningHistoryRef.current.set(key, now)
 
-    if (message && message !== securityWarning) {
+    if (message && message !== securityWarningRef.current) {
+      securityWarningRef.current = message
       setSecurityWarning(message)
     }
-  }, [securityWarning])
+  }, [])
 
   const isValidSession = useMemo(() => {
     return !!(socket && safeSessionId)

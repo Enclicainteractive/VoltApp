@@ -138,9 +138,9 @@ const WorldObject = ({ data, isEditor }) => {
       {(hovered || isSelected) && !isModel && (
         <mesh>
           <boxGeometry args={[
-            (scale[0] || 1) + 0.1,
-            (scale[1] || 1) + 0.1,
-            (scale[2] || 1) + 0.1
+            (isFinite(scale[0]) && scale[0] > 0 ? scale[0] : 1) + 0.1,
+            (isFinite(scale[1]) && scale[1] > 0 ? scale[1] : 1) + 0.1,
+            (isFinite(scale[2]) && scale[2] > 0 ? scale[2] : 1) + 0.1
           ]} />
           <meshBasicMaterial
             color={isSelected ? '#ec4899' : '#6366f1'}

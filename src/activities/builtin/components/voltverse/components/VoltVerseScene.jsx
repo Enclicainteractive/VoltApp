@@ -8,6 +8,7 @@ import TeleportPoint from './TeleportPoint'
 import Portal from './Portal'
 import TriggerZone from './TriggerZone'
 import { resolveSkyboxConfig } from '../utils/shaders'
+import { shouldIgnoreActivityHotkey } from '../../shared/hotkeys'
 
 const defaultEnvironment = {
   name: 'Default World',
@@ -16,12 +17,12 @@ const defaultEnvironment = {
   gravity: -9.81,
   timeOfDay: 'evening',
   ambientLight: { color: '#404060', intensity: 0.4 },
-  directionalLight: { 
-    color: '#ffd4a3', 
-    intensity: 1, 
+  directionalLight: {
+    color: '#ffd4a3',
+    intensity: 1,
     position: [10, 20, 10],
-    castShadow: true,
-    shadowMapSize: [2048, 2048]
+    castShadow: false,
+    shadowMapSize: [1024, 1024]
   },
   spawnPoints: [
     { id: 'spawn-1', position: [0, 0, 5], rotation: [0, 0, 0], name: 'Main Spawn' }
@@ -39,11 +40,11 @@ const defaultEnvironment = {
 
 const VoltVerseScene = ({ mode }) => {
   const { camera } = useThree()
-  
-  const { 
-    roomData, 
-    players, 
-    avatars, 
+
+  const {
+    roomData,
+    players,
+    avatars,
     localPlayerId,
     worldState,
     editorMode,
@@ -61,9 +62,7 @@ const VoltVerseScene = ({ mode }) => {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      const targetTag = e.target?.tagName
-      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || e.target?.isContentEditable) return
-
+      if (shouldIgnoreActivityHotkey(e)) return
       const isMod = e.ctrlKey || e.metaKey
       const store = useStore.getState()
 
@@ -110,57 +109,59 @@ const VoltVerseScene = ({ mode }) => {
   const floorMaterial = useMemo(() => {
     return new THREE.MeshStandardMaterial({
       color: envConfig.floor?.material?.color || '#2d2d44',
-      roughness: envConfig.floor?.material?.roughness || 0.8,
-      metalness: envConfig.floor?.material?.metalness || 0.2
+      roughness: envConfig.floor?.material?.roughness ?? 0.8,
+      metalness: envConfig.floor?.material?.metalness ?? 0.2
     })
+  }, [envConfig.floor])
+
+  // Safe floor size – guard against undefined/NaN
+  const floorSize = useMemo(() => {
+    const s = envConfig.floor?.size
+    if (Array.isArray(s) && s.length >= 2 && isFinite(s[0]) && isFinite(s[1])) {
+      return [s[0], s[1]]
+    }
+    return [100, 100]
   }, [envConfig.floor])
 
   return (
     <>
-      <ambientLight 
-        color={envConfig.ambientLight?.color || '#404060'} 
-        intensity={envConfig.ambientLight?.intensity || 0.4} 
+      <ambientLight
+        color={envConfig.ambientLight?.color || '#404060'}
+        intensity={envConfig.ambientLight?.intensity ?? 0.4}
       />
       <directionalLight
         color={envConfig.directionalLight?.color || '#ffd4a3'}
-        intensity={envConfig.directionalLight?.intensity || 1}
+        intensity={envConfig.directionalLight?.intensity ?? 1}
         position={envConfig.directionalLight?.position || [10, 20, 10]}
-        castShadow={settings.shadowQuality !== 'off'}
-        shadow-mapSize-width={settings.shadowQuality === 'high' ? 2048 : 1024}
-        shadow-mapSize-height={settings.shadowQuality === 'high' ? 2048 : 1024}
-        shadow-camera-far={50}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
+        castShadow={false}
       />
-      
+
       {envConfig.fog && (
-        <fog 
-          attach="fog" 
-          color={envConfig.fog.color} 
-          near={envConfig.fog.near} 
-          far={envConfig.fog.far} 
+        <fog
+          attach="fog"
+          color={envConfig.fog.color}
+          near={envConfig.fog.near}
+          far={envConfig.fog.far}
         />
       )}
 
       <SkyBox environment={envConfig} />
-      
+
       {envConfig.floor?.grid !== false && <GridHelper size={100} divisions={100} />}
-      
+
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.01, 0]}
-        receiveShadow={settings.shadowQuality !== 'off'}
+        receiveShadow={false}
       >
-        <planeGeometry args={envConfig.floor?.size || [100, 100]} />
+        <planeGeometry args={floorSize} />
         <primitive object={floorMaterial} attach="material" />
       </mesh>
 
       {(worldState?.objects || envConfig.objects || []).map((obj) => (
-        <WorldObject 
-          key={obj.id} 
-          data={obj} 
+        <WorldObject
+          key={obj.id}
+          data={obj}
           isEditor={editorMode === 'level'}
         />
       ))}
@@ -186,75 +187,112 @@ const VoltVerseScene = ({ mode }) => {
         />
       ))}
 
-      <Sparkles count={100} scale={20} size={2} speed={0.3} opacity={0.5} color="#ffd700" />
+      {/* Sparkles – single Points geometry, no per-star mesh → no NaN risk */}
+      <SparklePoints count={100} scale={20} size={2} speed={0.3} opacity={0.5} color="#ffd700" />
 
       {mode === 'desktop' && <DesktopControls editorMode={editorMode} />}
-      {mode === 'vr' && <VRControls />}
     </>
   )
 }
 
+// ─── SkyBox – uses a single Points cloud for stars (no per-star mesh) ─────────
 const SkyBox = ({ environment }) => {
-  const skybox = useMemo(() => resolveSkyboxConfig(environment?.skybox || environment?.skyboxPreset || environment?.skyboxTint), [environment])
-  const stars = useMemo(() => Array.from({ length: skybox.stars === false ? 0 : 180 }).map((_, i) => {
-    const theta = ((i * 53) % 360) * (Math.PI / 180)
-    const phi = (((i * 97) % 180) + 1) * (Math.PI / 180)
-    const radius = 400
-    return [
-      radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.cos(phi),
-      radius * Math.sin(phi) * Math.sin(theta)
-    ]
-  }), [skybox.stars])
+  const skybox = useMemo(
+    () => resolveSkyboxConfig(environment?.skybox || environment?.skyboxPreset || environment?.skyboxTint),
+    [environment]
+  )
+
+  // Build star positions as a single BufferGeometry (no per-star mesh → no NaN)
+  const starPositions = useMemo(() => {
+    if (skybox.stars === false) return null
+    const count = 180
+    const pos = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) {
+      const theta = ((i * 53) % 360) * (Math.PI / 180)
+      const phi = (((i * 97) % 180) + 1) * (Math.PI / 180)
+      const radius = 400
+      pos[i * 3]     = radius * Math.sin(phi) * Math.cos(theta)
+      pos[i * 3 + 1] = radius * Math.cos(phi)
+      pos[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta)
+    }
+    return pos
+  }, [skybox.stars])
+
+  const starGeo = useMemo(() => {
+    if (!starPositions) return null
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
+    return geo
+  }, [starPositions])
+
+  const starMat = useMemo(() => new THREE.PointsMaterial({
+    color: skybox.accent || '#ffffff',
+    size: 2,
+    sizeAttenuation: false,
+    transparent: true,
+    opacity: 0.7
+  }), [skybox.accent])
 
   return (
     <>
+      {/* Sky sphere */}
       <mesh>
-        <sphereGeometry args={[500, 32, 32]} />
+        <sphereGeometry args={[500, 16, 16]} />
         <meshBasicMaterial color={skybox.backgroundBottom || '#0a0a15'} side={THREE.BackSide} />
       </mesh>
 
+      {/* Horizon gradient plane */}
       <mesh position={[0, 160, -120]} rotation={[Math.PI / 3, 0, 0]}>
         <planeGeometry args={[900, 480]} />
-        <meshBasicMaterial color={skybox.backgroundTop || skybox.backgroundBottom || '#111827'} side={THREE.DoubleSide} transparent opacity={0.92} />
+        <meshBasicMaterial
+          color={skybox.backgroundTop || skybox.backgroundBottom || '#111827'}
+          side={THREE.DoubleSide}
+          transparent
+          opacity={0.92}
+        />
       </mesh>
 
-      {stars.map((position, i) => (
-          <mesh
-            key={i}
-            position={position}
-          >
-            <sphereGeometry args={[1, 8, 8]} />
-            <meshBasicMaterial color={skybox.accent || '#ffffff'} transparent opacity={0.35 + ((i % 7) * 0.08)} />
-          </mesh>
-      ))}
+      {/* Stars as a single Points object – no per-star mesh, no NaN risk */}
+      {starGeo && <points geometry={starGeo} material={starMat} />}
     </>
   )
 }
 
+// ─── GridHelper ───────────────────────────────────────────────────────────────
 const GridHelper = ({ size, divisions }) => {
   const gridRef = useRef()
-  
   return (
-    <gridHelper 
+    <gridHelper
       ref={gridRef}
-      args={[size, divisions, '#4a4a6a', '#2a2a4a']} 
+      args={[size, divisions, '#4a4a6a', '#2a2a4a']}
       position={[0, 0.01, 0]}
     />
   )
 }
 
-const Sparkles = ({ count, scale, size, speed, opacity, color }) => {
+// ─── SparklePoints – single Points geometry, no per-particle mesh ─────────────
+const SparklePoints = ({ count, scale, size, speed, opacity, color }) => {
   const pointsRef = useRef()
-  const positions = useMemo(() => {
-    const pos = new Float32Array(count * 3)
+
+  const geo = useMemo(() => {
+    const positions = new Float32Array(count * 3)
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * scale
-      pos[i * 3 + 1] = Math.random() * scale * 0.5
-      pos[i * 3 + 2] = (Math.random() - 0.5) * scale
+      positions[i * 3]     = (Math.random() - 0.5) * scale
+      positions[i * 3 + 1] = Math.random() * scale * 0.5
+      positions[i * 3 + 2] = (Math.random() - 0.5) * scale
     }
-    return pos
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    return g
   }, [count, scale])
+
+  const mat = useMemo(() => new THREE.PointsMaterial({
+    size,
+    color,
+    transparent: true,
+    opacity,
+    sizeAttenuation: true
+  }), [size, color, opacity])
 
   useFrame((state) => {
     if (pointsRef.current) {
@@ -262,76 +300,56 @@ const Sparkles = ({ count, scale, size, speed, opacity, color }) => {
     }
   })
 
-  return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={count}
-          array={positions}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={size}
-        color={color}
-        transparent
-        opacity={opacity}
-        sizeAttenuation
-      />
-    </points>
-  )
+  return <points ref={pointsRef} geometry={geo} material={mat} />
 }
 
+// ─── DesktopControls ──────────────────────────────────────────────────────────
 const DesktopControls = ({ editorMode }) => {
   const { camera, gl } = useThree()
-  const isLocked = useRef(false)
   const moveState = useRef({ forward: false, backward: false, left: false, right: false })
   const euler = useRef(new THREE.Euler(0, 0, 0, 'YXZ'))
   const lastSentPosition = useRef(new THREE.Vector3())
-  
+
   useEffect(() => {
     const onKeyDown = (e) => {
-      const targetTag = e.target?.tagName
-      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || e.target?.isContentEditable) return
+      if (shouldIgnoreActivityHotkey(e)) return
       if (useStore.getState().editorMode !== 'none') return
       switch (e.code) {
-        case 'KeyW': case 'ArrowUp': moveState.current.forward = true; break
-        case 'KeyS': case 'ArrowDown': moveState.current.backward = true; break
-        case 'KeyA': case 'ArrowLeft': moveState.current.left = true; break
-        case 'KeyD': case 'ArrowRight': moveState.current.right = true; break
+        case 'KeyW': case 'ArrowUp':    moveState.current.forward  = true; break
+        case 'KeyS': case 'ArrowDown':  moveState.current.backward = true; break
+        case 'KeyA': case 'ArrowLeft':  moveState.current.left     = true; break
+        case 'KeyD': case 'ArrowRight': moveState.current.right    = true; break
       }
     }
-    
+
     const onKeyUp = (e) => {
       switch (e.code) {
-        case 'KeyW': case 'ArrowUp': moveState.current.forward = false; break
-        case 'KeyS': case 'ArrowDown': moveState.current.backward = false; break
-        case 'KeyA': case 'ArrowLeft': moveState.current.left = false; break
-        case 'KeyD': case 'ArrowRight': moveState.current.right = false; break
+        case 'KeyW': case 'ArrowUp':    moveState.current.forward  = false; break
+        case 'KeyS': case 'ArrowDown':  moveState.current.backward = false; break
+        case 'KeyA': case 'ArrowLeft':  moveState.current.left     = false; break
+        case 'KeyD': case 'ArrowRight': moveState.current.right    = false; break
       }
     }
-    
+
     const onClick = () => {
       if (useStore.getState().editorMode !== 'none') return
       gl.domElement.requestPointerLock?.()
     }
-    
+
     const onMouseMove = (e) => {
       if (document.pointerLockElement !== gl.domElement) return
-      
       euler.current.setFromQuaternion(camera.quaternion)
       euler.current.y -= e.movementX * 0.002
       euler.current.x -= e.movementY * 0.002
       euler.current.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.current.x))
       camera.quaternion.setFromEuler(euler.current)
     }
-    
+
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     gl.domElement.addEventListener('click', onClick)
     document.addEventListener('mousemove', onMouseMove)
-    
+
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
@@ -340,21 +358,21 @@ const DesktopControls = ({ editorMode }) => {
     }
   }, [camera, gl, editorMode])
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     if (editorMode !== 'none') return
     const speed = 5
     const direction = new THREE.Vector3()
-    
-    if (moveState.current.forward) direction.z -= 1
+
+    if (moveState.current.forward)  direction.z -= 1
     if (moveState.current.backward) direction.z += 1
-    if (moveState.current.left) direction.x -= 1
-    if (moveState.current.right) direction.x += 1
-    
+    if (moveState.current.left)     direction.x -= 1
+    if (moveState.current.right)    direction.x += 1
+
     direction.normalize()
     direction.applyQuaternion(camera.quaternion)
     direction.y = 0
     direction.normalize()
-    
+
     camera.position.addScaledVector(direction, speed * delta)
     camera.position.y = 1.6
 
@@ -368,10 +386,6 @@ const DesktopControls = ({ editorMode }) => {
     }
   })
 
-  return null
-}
-
-const VRControls = () => {
   return null
 }
 

@@ -721,6 +721,49 @@ const ChatPage = () => {
     }
   }, [socket, loadUpcomingEvents])
 
+  // Track voice channel participants for sidebar display
+  useEffect(() => {
+    if (!socket || !connected) return undefined
+
+    const handleVoiceParticipants = (data) => {
+      if (!data?.channelId) return
+      setVoiceParticipantsByChannel(prev => ({
+        ...prev,
+        [data.channelId]: data.participants || []
+      }))
+    }
+
+    const handleVoiceUserJoined = (userInfo) => {
+      const cid = userInfo?.channelId
+      if (!cid || !userInfo?.id) return
+      setVoiceParticipantsByChannel(prev => {
+        const existing = prev[cid] || []
+        if (existing.find(p => p.id === userInfo.id)) return prev
+        return { ...prev, [cid]: [...existing, userInfo] }
+      })
+    }
+
+    const handleVoiceUserLeft = (data) => {
+      const userId = data?.userId || data?.id
+      const cid = data?.channelId
+      if (!userId || !cid) return
+      setVoiceParticipantsByChannel(prev => {
+        const existing = prev[cid] || []
+        return { ...prev, [cid]: existing.filter(p => p.id !== userId) }
+      })
+    }
+
+    socket.on('voice:participants', handleVoiceParticipants)
+    socket.on('voice:user-joined', handleVoiceUserJoined)
+    socket.on('voice:user-left', handleVoiceUserLeft)
+
+    return () => {
+      socket.off('voice:participants', handleVoiceParticipants)
+      socket.off('voice:user-joined', handleVoiceUserJoined)
+      socket.off('voice:user-left', handleVoiceUserLeft)
+    }
+  }, [socket, connected])
+
   // Track @mention counts per server for sidebar glow
   useEffect(() => {
     if (!socket || !connected) return undefined
@@ -3054,7 +3097,7 @@ const ChatPage = () => {
       )}
 
       {showAdminPanel && (
-        <AdminPanel onClose={() => setShowAdminPanel(false)} />
+        <AdminPanel onClose={() => setShowAdminPanel(false)} onServersChanged={loadServers} />
       )}
 
       {/* Notification Toast Container */}

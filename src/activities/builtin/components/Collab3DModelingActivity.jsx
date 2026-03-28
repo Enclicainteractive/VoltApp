@@ -66,6 +66,7 @@ import {
   useHelper
 } from '@react-three/drei'
 import * as THREE from 'three'
+import { shouldIgnoreActivityHotkey } from './shared/hotkeys'
 import '../Collab3DModelingActivity.css'
 
 // ─── Utility: generate unique IDs ────────────────────────────────────────────
@@ -686,8 +687,7 @@ export default function Collab3DModelingActivity({ vas }) {
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
-      const tag = e.target.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+      if (shouldIgnoreActivityHotkey(e)) return
 
       // Undo/Redo
       if (e.ctrlKey && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }

@@ -597,7 +597,7 @@ export const SocketProvider = ({ children }) => {
     
     const newSocket = io(socketUrl, {
       auth: { token: currentAuthToken },
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'], // ✅ Prefer WebSocket first!
       upgrade: true,
       rememberUpgrade: true,
       // More stable reconnection settings
@@ -605,11 +605,14 @@ export const SocketProvider = ({ children }) => {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      randomizationFactor: 0.2,
-      timeout: 30000,
+      randomizationFactor: 0.5,
+      timeout: 20000, // Reduced from 30s for faster failure detection
       // Faster ping/pong for quicker disconnect detection
       pingTimeout: 60000,
-      pingInterval: 20000
+      pingInterval: 25000,
+      // Reuse existing connection if possible (helps with session persistence)
+      autoConnect: true,
+      forceNew: false
     })
 
     newSocket.on('connect', () => {

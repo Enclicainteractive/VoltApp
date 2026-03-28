@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import YouTube from 'react-youtube'
 import { PlayIcon, PauseIcon, ForwardIcon, TrashIcon, PlusIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, QueueListIcon, XMarkIcon, ArrowPathIcon, SpeakerWaveIcon, SpeakerXMarkIcon, BackwardIcon, PhotoIcon, XCircleIcon } from '@heroicons/react/24/outline'
+import { shouldIgnoreActivityHotkey } from './shared/hotkeys'
 
 const SYNC_SUPPRESS_MS = 900
 const SEEK_DELTA_THRESHOLD = 1.25
+const RESYNC_SEEK_TOLERANCE_SECONDS = 3
 
 const parseYouTubeUrl = (url) => {
   if (!url) return null
@@ -154,23 +156,42 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
     }
   }, [serverState.currentVideo?.type, localState.position, localState.duration, localState.playing])
 
+  const getCurrentPlaybackPosition = useCallback(() => {
+    if (serverState.currentVideo?.type === 'youtube' && playerRef.current) {
+      return Number(playerRef.current.getCurrentTime?.() || 0)
+    }
+
+    if (serverState.currentVideo?.type === 'file' && videoRef.current) {
+      return Number(videoRef.current.currentTime || 0)
+    }
+
+    return Number(localState.position || 0)
+  }, [serverState.currentVideo?.type, localState.position])
+
   const emitHostEvent = useCallback((eventType, payload = {}) => {
     if (!isHost || isSuppressed()) return
     sdk.emitEvent(eventType, { ...payload, actorId: currentUser?.id || null }, { serverRelay: true })
   }, [isHost, isSuppressed, sdk, currentUser?.id])
 
-  const applyPlaybackFromPayload = useCallback((payload = {}, { applyPlayState = false } = {}) => {
+  const applyPlaybackFromPayload = useCallback((payload = {}, { applyPlayState = false, seekToleranceSeconds = 0 } = {}) => {
     const targetPosition = Number(payload.position)
     const hasPosition = Number.isFinite(targetPosition)
     const shouldPlay = payload.playing === true
     const shouldPause = payload.playing === false
 
     if (hasPosition) {
-      setLocalState(prev => ({ ...prev, position: targetPosition }))
-      setSeekValue(targetPosition)
-      lastObservedTimeRef.current = targetPosition
-      if (playerRef.current?.seekTo) playerRef.current.seekTo(targetPosition, true)
-      if (videoRef.current) videoRef.current.currentTime = targetPosition
+      const currentPosition = getCurrentPlaybackPosition()
+      const shouldSeek = !Number.isFinite(currentPosition) || seekToleranceSeconds <= 0 || Math.abs(targetPosition - currentPosition) > seekToleranceSeconds
+      const nextPosition = shouldSeek ? targetPosition : currentPosition
+
+      setLocalState(prev => ({ ...prev, position: nextPosition }))
+      setSeekValue(nextPosition)
+      lastObservedTimeRef.current = nextPosition
+
+      if (shouldSeek) {
+        if (playerRef.current?.seekTo) playerRef.current.seekTo(targetPosition, true)
+        if (videoRef.current) videoRef.current.currentTime = targetPosition
+      }
     }
 
     if (applyPlayState) {
@@ -184,7 +205,7 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
         videoRef.current?.pause?.()
       }
     }
-  }, [])
+  }, [getCurrentPlaybackPosition])
 
   const emitHostSeek = useCallback((position) => {
     if (!isHost || isSuppressed()) return
@@ -344,8 +365,14 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
           setLocalState(prev => ({ ...prev, ...nextLocal }))
           setSeekValue(nextLocal.position)
 
-          pendingSyncRef.current = { ...payload }
-          applyPlaybackFromPayload(payload, { applyPlayState: true })
+          pendingSyncRef.current = {
+            payload: { ...payload },
+            seekToleranceSeconds: RESYNC_SEEK_TOLERANCE_SECONDS
+          }
+          applyPlaybackFromPayload(payload, {
+            applyPlayState: true,
+            seekToleranceSeconds: RESYNC_SEEK_TOLERANCE_SECONDS
+          })
           break
         }
 
@@ -361,7 +388,10 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
     if (!pendingSyncRef.current) return
     const pending = pendingSyncRef.current
     pendingSyncRef.current = null
-    applyPlaybackFromPayload(pending, { applyPlayState: true })
+    applyPlaybackFromPayload(pending.payload, {
+      applyPlayState: true,
+      seekToleranceSeconds: pending.seekToleranceSeconds || 0
+    })
   }, [applyPlaybackFromPayload])
 
   const handleYouTubeReady = useCallback((event) => {
@@ -542,8 +572,7 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!isHost) return
-      // Ignore if typing in input
-      if (e.target.tagName === 'INPUT') return
+      if (shouldIgnoreActivityHotkey(e)) return
       
       switch (e.key) {
         case ' ':

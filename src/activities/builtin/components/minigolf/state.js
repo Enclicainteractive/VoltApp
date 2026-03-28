@@ -1,5 +1,5 @@
 import { getMiniGolfCourse, getMiniGolfHole } from './courses'
-import { BALL_COLOR_OPTIONS, COURSE_ORDER, MAX_PLAYERS, MINIGOLF_EVENT_TYPES, MINIGOLF_PHASES, PLAYER_COLORS } from './constants'
+import { BALL_COLOR_OPTIONS, COURSE_ORDER, MAX_PLAYERS, MINIGOLF_EVENT_TYPES, MINIGOLF_PHASES, MINIGOLF_POWERUP_INVENTORY_LIMIT, PLAYER_COLORS } from './constants'
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
@@ -34,12 +34,15 @@ export const rememberMiniGolfEvent = (ref, eventId, max = 300) => {
   return true
 }
 
-const emptyRoundState = (tee) => ({
+const emptyRoundState = (tee, previousState = null) => ({
   position: { ...tee },
   strokesThisHole: 0,
   finishedHole: false,
   lastCheckpoint: { ...tee },
-  lastResultType: null
+  lastResultType: null,
+  powerupInventory: [],
+  selectedPowerupIndex: 0,
+  ballDestroyed: false
 })
 
 const createScorecard = () => ({
@@ -64,6 +67,11 @@ const getPlayingPlayerIds = (state) => state.players.map((player) => player.id)
 const getHoleStartState = (courseId, holeIndex, players) => {
   const hole = getMiniGolfHole(courseId, holeIndex)
   return Object.fromEntries(players.map((player) => [player.id, emptyRoundState(hole.tee)]))
+}
+
+const getHoleCollectedPowerups = (courseId, holeIndex) => {
+  const hole = getMiniGolfHole(courseId, holeIndex)
+  return Object.fromEntries((hole.powerups || []).map((powerup) => [powerup.id, false]))
 }
 
 const getNextTurn = (state, fromPlayerId = null) => {
@@ -114,13 +122,19 @@ const computeWinnerId = (state) => {
 export const getMiniGolfLeaderboard = (state) => {
   return [...(state.players || [])].map((player) => {
     const scorecard = state.scorecards[player.id] || createScorecard()
+    const playerState = state.playerStates[player.id] || {}
+    const inventory = playerState.powerupInventory || []
+    const selectedIndex = playerState.selectedPowerupIndex || 0
     return {
       ...player,
       color: ensurePlayerColor(state.players, player.id),
       totalStrokes: scorecard.totalStrokes,
       relativeToPar: scorecard.relativeToPar,
-      strokesThisHole: state.playerStates[player.id]?.strokesThisHole || 0,
-      finishedHole: !!state.playerStates[player.id]?.finishedHole
+      strokesThisHole: playerState.strokesThisHole || 0,
+      finishedHole: !!playerState.finishedHole,
+      powerupInventory: inventory,
+      selectedPowerupIndex: selectedIndex,
+      selectedPowerup: inventory[selectedIndex] || null
     }
   }).sort((a, b) => {
     if (a.relativeToPar !== b.relativeToPar) return a.relativeToPar - b.relativeToPar
@@ -144,6 +158,9 @@ export const createInitialMiniGolfState = () => ({
   winnerId: null,
   lastShot: null,
   holeSequenceStartedAt: null,
+  collectedPowerups: {},
+  dynamicObstacles: [],
+  dynamicHazards: [],
   appliedActionIds: []
 })
 
@@ -242,7 +259,10 @@ export const applyMiniGolfEvent = (state, evt) => {
       scorecards: nextScorecards,
       winnerId: null,
       lastShot: null,
-      holeSequenceStartedAt: Date.now()
+      holeSequenceStartedAt: Date.now(),
+      collectedPowerups: getHoleCollectedPowerups(courseId, 0),
+      dynamicObstacles: [],
+      dynamicHazards: []
     }
     return markActionApplied(nextState, actionId)
   }
@@ -257,6 +277,7 @@ export const applyMiniGolfEvent = (state, evt) => {
       ...state,
       playerStates: { ...state.playerStates },
       scorecards: clone(state.scorecards),
+      collectedPowerups: { ...(state.collectedPowerups || {}) },
       lastShot: { playerId, shot: payload.shot || null, result }
     }
     const playerRound = {
@@ -264,15 +285,34 @@ export const applyMiniGolfEvent = (state, evt) => {
       position: { ...result.finalPosition },
       strokesThisHole: (nextState.playerStates[playerId]?.strokesThisHole || 0) + 1,
       lastCheckpoint: result.checkpoint ? { ...result.checkpoint } : nextState.playerStates[playerId].lastCheckpoint,
-      lastResultType: result.resultType || null
+      lastResultType: result.resultType || null,
+      ballDestroyed: !!result.ballDestroyed
     }
+    const currentInventory = [...(nextState.playerStates[playerId]?.powerupInventory || [])]
+    const selectedIndex = nextState.playerStates[playerId]?.selectedPowerupIndex || 0
+    // Remove the selected powerup if it was consumed
+    const afterConsume = result.consumedPowerup && currentInventory[selectedIndex]
+      ? currentInventory.filter((_, i) => i !== selectedIndex)
+      : currentInventory
+    const awarded = result.awardedPowerup ? [result.awardedPowerup] : []
+    const powerupInventory = [...afterConsume, ...awarded].slice(0, MINIGOLF_POWERUP_INVENTORY_LIMIT)
+    playerRound.powerupInventory = powerupInventory
+    // Adjust selected index if needed
+    playerRound.selectedPowerupIndex = Math.min(selectedIndex, Math.max(0, powerupInventory.length - 1))
     if (result.inHole) playerRound.finishedHole = true
+    for (const powerupId of result.collectedPowerupIds || []) {
+      nextState.collectedPowerups[powerupId] = true
+    }
     nextState.playerStates[playerId] = playerRound
 
     const scorecard = ensureScorecard(nextState.scorecards, playerId)
     const holeId = getMiniGolfHole(nextState.courseId, nextState.holeIndex).id
-    scorecard.totalStrokes += 1
+    const extraStrokes = Math.max(0, Number(result.extraStrokes || 0))
+    scorecard.totalStrokes += 1 + extraStrokes
+    playerRound.strokesThisHole += extraStrokes
     scorecard.holes[holeId] = playerRound.strokesThisHole
+    nextState.dynamicObstacles = [...(state.dynamicObstacles || []), ...(Array.isArray(result.spawnedObstacles) ? result.spawnedObstacles : [])].slice(-20)
+    nextState.dynamicHazards = [...(state.dynamicHazards || []), ...(Array.isArray(result.spawnedHazards) ? result.spawnedHazards : [])].slice(-20)
     scorecard.relativeToPar = Object.entries(scorecard.holes).reduce((sum, [id, strokes]) => {
       const course = getMiniGolfCourse(nextState.courseId)
       const hole = course.holes.find((entry) => entry.id === id) || course.holes[0]
@@ -302,7 +342,10 @@ export const applyMiniGolfEvent = (state, evt) => {
     const nextHoleIndex = state.holeIndex + 1
     const course = getMiniGolfCourse(state.courseId)
     if (nextHoleIndex >= course.holes.length) return markActionApplied(state, actionId)
-    const nextPlayerStates = getHoleStartState(state.courseId, nextHoleIndex, state.players)
+    const nextPlayerStates = Object.fromEntries(state.players.map((player) => {
+      const prevState = state.playerStates[player.id]
+      return [player.id, emptyRoundState(getMiniGolfHole(state.courseId, nextHoleIndex).tee, prevState)]
+    }))
     const nextState = {
       ...state,
       phase: MINIGOLF_PHASES.PLAYING,
@@ -310,7 +353,39 @@ export const applyMiniGolfEvent = (state, evt) => {
       playerStates: nextPlayerStates,
       currentTurnPlayerId: state.players[0]?.id || null,
       lastShot: null,
-      holeSequenceStartedAt: Date.now()
+      holeSequenceStartedAt: Date.now(),
+      collectedPowerups: getHoleCollectedPowerups(state.courseId, nextHoleIndex),
+      dynamicObstacles: [],
+      dynamicHazards: []
+    }
+    return markActionApplied(nextState, actionId)
+  }
+
+  if (evt?.eventType === MINIGOLF_EVENT_TYPES.COLOR_CHANGE) {
+    const playerId = String(payload.playerId || '')
+    const color = String(payload.color || '')
+    if (!playerId || !color || !BALL_COLOR_OPTIONS.includes(color)) return state
+    const nextPlayers = state.players.map((player) =>
+      player.id === playerId ? { ...player, color } : player
+    )
+    return markActionApplied({ ...state, players: nextPlayers }, actionId)
+  }
+
+  if (evt?.eventType === MINIGOLF_EVENT_TYPES.SELECT_POWERUP) {
+    const playerId = String(payload.playerId || '')
+    const index = Number(payload.index)
+    if (!playerId || isNaN(index) || !state.playerStates[playerId]) return state
+    const inventory = state.playerStates[playerId].powerupInventory || []
+    if (index < 0 || index >= inventory.length) return state
+    const nextState = {
+      ...state,
+      playerStates: {
+        ...state.playerStates,
+        [playerId]: {
+          ...state.playerStates[playerId],
+          selectedPowerupIndex: index
+        }
+      }
     }
     return markActionApplied(nextState, actionId)
   }

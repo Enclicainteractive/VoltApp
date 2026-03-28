@@ -125,6 +125,15 @@ export const MiniGolfIcon = (props) => (
   </svg>
 )
 
+export const SkyRaidIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M2 14l8-2 2-5 2 5 8 2-8 1.5L12 21l-2-5.5L2 14z" />
+    <path d="M12 3v4" />
+    <path d="M5 7l3 2" />
+    <path d="M19 7l-3 2" />
+  </svg>
+)
+
 // ChessArena - chess king piece
 export const ChessArenaIcon = (props) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -133,6 +142,25 @@ export const ChessArenaIcon = (props) => (
     <path d="M7 15h10"/>
     <ellipse cx="12" cy="19" rx="5" ry="2"/>
     <rect x="7" y="17" width="10" height="2"/>
+  </svg>
+)
+
+// TimeDilationChess - 5D chess with multiverse/time travel
+export const TimeDilationChessIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    {/* Chess king */}
+    <path d="M12 3v2M11 4h2"/>
+    <path d="M10 6h4l1 5H9l1-5z"/>
+    <ellipse cx="12" cy="13" rx="3" ry="1"/>
+    {/* Time/multiverse spirals */}
+    <path d="M4 8c0-2 1-3 2-3" opacity="0.6" strokeWidth="1.5"/>
+    <path d="M20 8c0-2-1-3-2-3" opacity="0.6" strokeWidth="1.5"/>
+    <path d="M4 16c0 2 1 3 2 3" opacity="0.6" strokeWidth="1.5"/>
+    <path d="M20 16c0 2-1 3-2 3" opacity="0.6" strokeWidth="1.5"/>
+    {/* Timeline indicators */}
+    <circle cx="6" cy="12" r="1" fill="currentColor" stroke="none" opacity="0.5"/>
+    <circle cx="18" cy="12" r="1" fill="currentColor" stroke="none" opacity="0.5"/>
+    <circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" opacity="0.4"/>
   </svg>
 )
 
@@ -407,6 +435,18 @@ export const ActivityIconMap = {
   'poker-night': PokerNightIcon,
   'minigolf': MiniGolfIcon,
   'chess-arena': ChessArenaIcon,
+  'timedilationchess': TimeDilationChessIcon,
+  'checkers': ChessArenaIcon,
+  'reversi': ConnectFourIcon,
+  'gomoku': TicTacToeIcon,
+  'dots-and-boxes': SequencerIcon,
+  'memory-match': PixelArtIcon,
+  'minesweeper-party': ReadyCheckIcon,
+  'party-2048': SharedCounterIcon,
+  'mancala': PokerNightIcon,
+  'sky-derby-3d': VoltVerseIcon,
+  'sky-raid': SkyRaidIcon,
+  'tower-stack-3d': Collab3DModelingIcon,
   'tic-tac-toe': TicTacToeIcon,
   'connect-four': ConnectFourIcon,
   '8ball-pool': EightBallPoolIcon,

@@ -17,6 +17,7 @@ import {
   TrashIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline'
+import { shouldIgnoreActivityHotkey } from './shared/hotkeys'
 
 const WORLD_LIMIT = 6400
 const MIN_ZOOM = 0.2
@@ -37,6 +38,7 @@ const ZOOM_IDLE_MS = 120
 const BOARD_CHUNK_SIZE = 32 * 1024
 const STROKE_CHUNK_POINTS = 25
 const STROKE_CHUNK_THRESHOLD = 512
+const DRAWING_TUTORIAL_STORAGE_KEY = 'voltapp:drawing-tutorial-dismissed:v1'
 
 const TOOL_IDS = {
   SELECT: 'select',
@@ -619,6 +621,7 @@ const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
   const [stageSize, setStageSize] = useState(DEFAULT_STAGE_SIZE)
   const [notice, setNotice] = useState('')
   const [imageVersion, setImageVersion] = useState(0)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   const paperTheme = PAPER_TONES[board.settings.paperTone] || PAPER_TONES.white
   const isHost = !board.settings.hostId || board.settings.hostId === localUserId
@@ -640,6 +643,27 @@ const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
     const timer = window.setTimeout(() => setNotice(''), 3600)
     return () => window.clearTimeout(timer)
   }, [notice])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const dismissed = window.localStorage.getItem(DRAWING_TUTORIAL_STORAGE_KEY)
+    setShowTutorial(dismissed !== '1')
+    return undefined
+  }, [])
+
+  const dismissTutorial = useCallback(() => {
+    setShowTutorial(false)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DRAWING_TUTORIAL_STORAGE_KEY, '1')
+    }
+  }, [])
+
+  const reopenTutorial = useCallback(() => {
+    setShowTutorial(true)
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(DRAWING_TUTORIAL_STORAGE_KEY)
+    }
+  }, [])
 
   useEffect(() => () => {
     if (wheelFrameRef.current) window.cancelAnimationFrame(wheelFrameRef.current)
@@ -1756,7 +1780,7 @@ const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
 
   useEffect(() => {
     const onKeyDown = (event) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return
+      if (shouldIgnoreActivityHotkey(event)) return
 
       const key = event.key.toLowerCase()
       pressedKeysRef.current.add(key)
@@ -2148,6 +2172,10 @@ const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
         </div>
 
         <div className="drawing-cluster drawing-actions">
+          <button type="button" className="drawing-chip-btn" onClick={reopenTutorial}>
+            <DocumentTextIcon />
+            <span>Tutorial</span>
+          </button>
           <button type="button" className="drawing-chip-btn" onClick={resetView}>
             <ArrowPathIcon />
             <span>Reset View</span>
@@ -2207,6 +2235,41 @@ const CollaborativeDrawingActivity = ({ sdk, currentUser }) => {
         </div>
 
         <div className="drawing-stage-overlay">
+          {showTutorial ? (
+            <div
+              className="drawing-floating-popover"
+              style={{
+                left: 24,
+                top: 24,
+                maxWidth: 360,
+                pointerEvents: 'auto',
+                background: 'rgba(15, 23, 42, 0.96)',
+                color: '#e5eefb',
+                border: '1px solid rgba(148, 163, 184, 0.28)',
+                boxShadow: '0 20px 40px rgba(15, 23, 42, 0.32)'
+              }}
+            >
+              <div className="drawing-popover-title" style={{ color: '#f8fafc' }}>Board Tutorial</div>
+              <div style={{ display: 'grid', gap: 10, fontSize: 13, lineHeight: 1.5 }}>
+                <div><strong>1.</strong> Use <strong>V</strong> to select, <strong>B</strong> to draw, <strong>T</strong> for text, and <strong>I</strong> to add images.</div>
+                <div><strong>2.</strong> Drag on the canvas to sketch. Hold <strong>Space</strong> to pan and use the mouse wheel or zoom buttons to inspect details.</div>
+                <div><strong>3.</strong> Select items to move, duplicate, reorder, or delete them with the floating controls.</div>
+                <div><strong>4.</strong> If you are the host, adjust paper size and tone from the toolbar, then apply the new layout for everyone.</div>
+              </div>
+              <div className="drawing-popup-footnote" style={{ marginTop: 12 }}>You can reopen this tutorial from the toolbar any time.</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                <button type="button" className="drawing-chip-btn active" onClick={dismissTutorial}>
+                  <CheckIcon />
+                  <span>Start Drawing</span>
+                </button>
+                <button type="button" className="drawing-chip-btn" onClick={() => setShowTutorial(false)}>
+                  <XMarkIcon />
+                  <span>Hide</span>
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {(tool === TOOL_IDS.TEXT || textEditor || selectedText) ? (
             <div className="drawing-floating-popover drawing-text-popover">
               <div className="drawing-popover-title">Text</div>

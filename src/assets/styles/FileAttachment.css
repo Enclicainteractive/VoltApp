@@ -1231,3 +1231,68 @@
 .nsfw-reveal-btn:hover {
   background: color-mix(in srgb, var(--volt-primary) 14%, transparent);
 }
+
+/* ── Image error / loading states ─────────────────────────────────── */
+.attachment-image-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  background: var(--volt-bg-tertiary);
+  border: 1px dashed var(--volt-border);
+  border-radius: 8px;
+  color: var(--volt-text-muted);
+  text-align: center;
+}
+
+.attachment-image-error svg {
+  color: var(--volt-text-muted);
+  opacity: 0.5;
+}
+
+.attachment-image-error-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachment-image-error-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--volt-text-secondary);
+}
+
+.attachment-image-error-sub {
+  font-size: 11px;
+  color: var(--volt-text-muted);
+}
+
+.attachment-download-fallback {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 6px;
+  color: var(--volt-text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.attachment-download-fallback:hover {
+  background: var(--volt-hover);
+  color: var(--volt-text-primary);
+  border-color: var(--volt-primary);
+}
+
+.attachment-image-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}

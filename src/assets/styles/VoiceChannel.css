@@ -971,8 +971,8 @@
   position: absolute;
   top: -4px;
   right: -4px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -980,6 +980,8 @@
   font-size: 9px;
   font-weight: 700;
   border: 2px solid var(--volt-bg-secondary);
+  z-index: 5;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
 
 .tile-peer-badge.peer-state-connecting,
@@ -989,10 +991,80 @@
   animation: badge-spin 1.4s linear infinite;
 }
 
-.tile-peer-badge.peer-state-failed,
+.tile-peer-badge.peer-state-failed {
+  background: var(--volt-danger);
+  color: white;
+}
+
 .tile-peer-badge.peer-state-disconnected {
   background: var(--volt-danger);
   color: white;
+  animation: badge-pulse 1.2s ease-in-out infinite;
+}
+
+/* Reconnecting state — user left but is in the grace window */
+.participant-tile.reconnecting .tile-avatar {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+
+.participant-tile.reconnecting {
+  border-color: rgba(251, 191, 36, 0.45);
+  animation: reconnecting-tile-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes reconnecting-tile-pulse {
+  0%, 100% { border-color: rgba(251, 191, 36, 0.3); }
+  50%       { border-color: rgba(251, 191, 36, 0.7); }
+}
+
+.tile-reconnecting-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--volt-warning);
+  color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  border: 2px solid var(--volt-bg-secondary);
+  z-index: 5;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  animation: badge-spin 1.4s linear infinite;
+}
+
+/* Reconnecting state in the grid tiles */
+.participant-grid-tile.reconnecting {
+  opacity: 0.55;
+  border-color: rgba(251, 191, 36, 0.5);
+  animation: reconnecting-tile-pulse 1.6s ease-in-out infinite;
+}
+
+.participant-grid-tile.reconnecting .participant-grid-avatar::after {
+  content: '⟳';
+  position: absolute;
+  font-size: 24px;
+  color: var(--volt-warning);
+  animation: spin 1s linear infinite;
+}
+
+.participant-grid-tile.reconnecting .participant-grid-name {
+  color: var(--volt-warning);
+}
+
+/* Reconnecting label shown below the name in the strip tile */
+.tile-reconnecting-label {
+  font-size: 9px;
+  color: var(--volt-warning);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  animation: badge-pulse 1.2s ease-in-out infinite;
 }
 
 .tile-verification-badge {
@@ -2305,4 +2377,139 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Admin Context Menu Additions ─────────────────────────────────────── */
+.vpm-divider {
+  height: 1px;
+  background: var(--volt-border);
+  margin: 4px 0;
+}
+
+.vpm-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--volt-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px 2px;
+}
+
+.vpm-item.admin {
+  color: var(--volt-warning);
+}
+
+.vpm-item.admin:hover {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.vpm-item.admin.danger {
+  color: var(--volt-danger);
+}
+
+.vpm-item.admin.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* ── Admin Timeout Modal ───────────────────────────────────────────────── */
+.voice-admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.voice-admin-modal {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 14px;
+  padding: 24px;
+  width: min(400px, calc(100vw - 32px));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.voice-admin-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--volt-text-primary);
+  margin-bottom: 12px;
+}
+
+.voice-admin-modal-header svg {
+  color: var(--volt-warning);
+  flex-shrink: 0;
+}
+
+.voice-admin-modal-desc {
+  font-size: 13px;
+  color: var(--volt-text-secondary);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.voice-admin-modal-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.voice-admin-duration-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-tertiary);
+  color: var(--volt-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.voice-admin-duration-btn:hover {
+  border-color: var(--volt-warning);
+  color: var(--volt-warning);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.voice-admin-duration-btn.active {
+  border-color: var(--volt-warning);
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--volt-warning);
+}
+
+.voice-admin-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* Overlay button in controls */
+.voice-control-btn.overlay-btn {
+  position: relative;
+}
+
+.voice-control-btn.overlay-btn.active {
+  background: rgba(31, 182, 255, 0.2);
+  color: #1fb6ff;
+  border: 1px solid rgba(31, 182, 255, 0.4);
 }

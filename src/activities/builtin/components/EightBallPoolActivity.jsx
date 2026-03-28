@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
+import GameCanvasShell from './shared/GameCanvasShell'
 
 const TABLE_WIDTH = 960
 const TABLE_HEIGHT = 540
@@ -15,6 +18,10 @@ const MIN_SPEED = 0.028
 const MAX_POWER = 100
 const MIN_POWER = 18
 const PLAYER_GROUPS = ['solids', 'stripes']
+const TABLE_WORLD_SCALE = 48
+const TABLE_WORLD_WIDTH = TABLE_WIDTH / TABLE_WORLD_SCALE
+const TABLE_WORLD_HEIGHT = TABLE_HEIGHT / TABLE_WORLD_SCALE
+const BALL_WORLD_RADIUS = BALL_RADIUS / TABLE_WORLD_SCALE
 
 const BALL_LAYOUT = [
   { number: 1, group: 'solids', color: '#facc15' },
@@ -42,6 +49,213 @@ const POCKETS = [
   { x: TABLE_WIDTH / 2, y: TABLE_HEIGHT, name: 'bottom-middle' },
   { x: TABLE_WIDTH, y: TABLE_HEIGHT, name: 'bottom-right' },
 ]
+
+const tableToWorld = (x, y) => ([
+  (x - TABLE_WIDTH / 2) / TABLE_WORLD_SCALE,
+  0,
+  (y - TABLE_HEIGHT / 2) / TABLE_WORLD_SCALE,
+])
+
+const createFeltTexture = () => {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 512
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
+  gradient.addColorStop(0, '#0b6b43')
+  gradient.addColorStop(0.55, '#0a814d')
+  gradient.addColorStop(1, '#075934')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  for (let i = 0; i < 1800; i += 1) {
+    const alpha = 0.02 + Math.random() * 0.045
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`
+    ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 1, 1)
+  }
+
+  for (let i = 0; i < 120; i += 1) {
+    ctx.strokeStyle = `rgba(0,0,0,${0.02 + Math.random() * 0.03})`
+    ctx.beginPath()
+    ctx.moveTo(0, i * 4.4)
+    ctx.lineTo(canvas.width, i * 4.4 + 32)
+    ctx.stroke()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(4.5, 2.6)
+  texture.anisotropy = 8
+  return texture
+}
+
+const createWoodTexture = () => {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 512
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
+  gradient.addColorStop(0, '#7c4a22')
+  gradient.addColorStop(0.5, '#4a2d17')
+  gradient.addColorStop(1, '#2c160c')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  for (let i = 0; i < 64; i += 1) {
+    const y = i * 8
+    ctx.strokeStyle = `rgba(255,255,255,${0.02 + Math.random() * 0.02})`
+    ctx.lineWidth = 1 + Math.random() * 2
+    ctx.beginPath()
+    ctx.moveTo(0, y + Math.random() * 5)
+    ctx.bezierCurveTo(
+      canvas.width * 0.25, y + Math.random() * 16,
+      canvas.width * 0.75, y - Math.random() * 16,
+      canvas.width, y + Math.random() * 8
+    )
+    ctx.stroke()
+  }
+
+  for (let i = 0; i < 18; i += 1) {
+    const x = 24 + Math.random() * (canvas.width - 48)
+    const y = 24 + Math.random() * (canvas.height - 48)
+    ctx.fillStyle = 'rgba(55, 28, 11, 0.22)'
+    ctx.beginPath()
+    ctx.ellipse(x, y, 18 + Math.random() * 14, 10 + Math.random() * 8, Math.random() * Math.PI, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(2.8, 2.8)
+  texture.anisotropy = 8
+  return texture
+}
+
+function PoolCameraRig() {
+  useFrame(({ camera, clock }) => {
+    const t = clock.getElapsedTime()
+    camera.position.x = Math.sin(t * 0.12) * 0.55
+    camera.position.y = 8.55 + Math.sin(t * 0.08) * 0.08
+    camera.position.z = 6.95 + Math.cos(t * 0.11) * 0.18
+    camera.lookAt(0, -0.35, 0)
+  })
+  return null
+}
+
+function PoolRoomScene({ balls, activeGroup }) {
+  const feltTexture = useMemo(() => createFeltTexture(), [])
+  const woodTexture = useMemo(() => createWoodTexture(), [])
+  const visibleBalls = useMemo(() => balls.filter((ball) => !ball.pocketed), [balls])
+
+  useEffect(() => {
+    return () => {
+      feltTexture?.dispose?.()
+      woodTexture?.dispose?.()
+    }
+  }, [feltTexture, woodTexture])
+
+  return (
+    <>
+      <color attach="background" args={['#061116']} />
+      <fog attach="fog" args={['#061116', 12, 34]} />
+      <ambientLight intensity={0.9} color="#9dd9ff" />
+      <hemisphereLight args={['#8fe9c8', '#091118', 0.85]} />
+      <spotLight position={[0, 8.5, 0]} angle={0.42} penumbra={0.65} intensity={22} color="#fff2d2" castShadow />
+      <spotLight position={[-4.8, 4.5, 5.5]} angle={0.38} penumbra={0.7} intensity={7} color="#7dd3fc" />
+      <spotLight position={[4.8, 4.2, -5.5]} angle={0.38} penumbra={0.7} intensity={6} color="#86efac" />
+      <PoolCameraRig />
+
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.86, 0]} receiveShadow>
+        <planeGeometry args={[30, 30]} />
+        <meshStandardMaterial color="#14212c" roughness={0.98} metalness={0.04} />
+      </mesh>
+
+      <mesh position={[0, 3.8, -10]} receiveShadow>
+        <boxGeometry args={[24, 10, 0.45]} />
+        <meshStandardMaterial color="#13222d" roughness={0.94} metalness={0.06} />
+      </mesh>
+      <mesh position={[-12, 2.8, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+        <boxGeometry args={[20, 8, 0.45]} />
+        <meshStandardMaterial color="#0e1921" roughness={0.96} metalness={0.04} />
+      </mesh>
+      <mesh position={[12, 2.8, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+        <boxGeometry args={[20, 8, 0.45]} />
+        <meshStandardMaterial color="#10202a" roughness={0.96} metalness={0.04} />
+      </mesh>
+
+      <mesh position={[0, 0, 0]} castShadow receiveShadow>
+        <boxGeometry args={[TABLE_WORLD_WIDTH + 1.48, 0.72, TABLE_WORLD_HEIGHT + 1.48]} />
+        <meshStandardMaterial map={woodTexture} color="#5a3418" roughness={0.72} metalness={0.12} />
+      </mesh>
+
+      <mesh position={[0, 0.26, 0]} receiveShadow>
+        <boxGeometry args={[TABLE_WORLD_WIDTH + 0.56, 0.26, TABLE_WORLD_HEIGHT + 0.56]} />
+        <meshStandardMaterial color="#2f1a0d" roughness={0.8} metalness={0.1} />
+      </mesh>
+
+      <mesh position={[0, 0.34, 0]} receiveShadow>
+        <boxGeometry args={[TABLE_WORLD_WIDTH, 0.12, TABLE_WORLD_HEIGHT]} />
+        <meshStandardMaterial map={feltTexture} color="#0b7f4a" roughness={0.88} metalness={0.05} />
+      </mesh>
+
+      {POCKETS.map((pocket) => {
+        const [x, , z] = tableToWorld(pocket.x, pocket.y)
+        return (
+          <group key={pocket.name} position={[x, 0.33, z]}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[POCKET_RADIUS / TABLE_WORLD_SCALE, 24]} />
+              <meshStandardMaterial color="#020617" roughness={0.62} metalness={0.24} />
+            </mesh>
+            <mesh position={[0, -0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[POCKET_RADIUS / TABLE_WORLD_SCALE, (POCKET_RADIUS + 8) / TABLE_WORLD_SCALE, 24]} />
+              <meshBasicMaterial color="#000000" transparent opacity={0.38} />
+            </mesh>
+          </group>
+        )
+      })}
+
+      {visibleBalls.map((ball) => {
+        const [x, , z] = tableToWorld(ball.x, ball.y)
+        const stripeColor = ball.striped ? new THREE.Color(ball.color) : null
+        return (
+          <group key={ball.id} position={[x, 0.47, z]}>
+            <mesh castShadow receiveShadow>
+              <sphereGeometry args={[BALL_WORLD_RADIUS, 32, 32]} />
+              <meshStandardMaterial
+                color={ball.number === 0 ? '#f8fafc' : ball.color}
+                roughness={0.28}
+                metalness={0.08}
+                emissive={ball.number === 8 ? '#020617' : ball.group === activeGroup ? ball.color : '#000000'}
+                emissiveIntensity={ball.number === 8 ? 0.28 : ball.group === activeGroup ? 0.18 : 0}
+              />
+            </mesh>
+            {ball.striped ? (
+              <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+                <torusGeometry args={[BALL_WORLD_RADIUS * 0.72, BALL_WORLD_RADIUS * 0.18, 18, 48]} />
+                <meshStandardMaterial color={stripeColor || '#ffffff'} roughness={0.35} metalness={0.04} />
+              </mesh>
+            ) : null}
+          </group>
+        )
+      })}
+
+      <mesh position={[0, 5.8, 0]}>
+        <cylinderGeometry args={[0.38, 0.44, 0.42, 24]} />
+        <meshStandardMaterial color="#1e293b" metalness={0.55} roughness={0.38} />
+      </mesh>
+      <mesh position={[0, 5.45, 0]}>
+        <cylinderGeometry args={[2.25, 2.55, 0.32, 48]} />
+        <meshStandardMaterial color="#fff1c7" emissive="#ffe7a3" emissiveIntensity={0.55} transparent opacity={0.92} />
+      </mesh>
+    </>
+  )
+}
 
 const CSS = `
 .pool8 {
@@ -297,38 +511,65 @@ const CSS = `
   aspect-ratio: 16 / 9;
   border-radius: 28px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 30% 35%, rgba(255,255,255,0.08), transparent 18%),
-    radial-gradient(circle at 70% 62%, rgba(255,255,255,0.04), transparent 22%),
-    linear-gradient(135deg, #0a5d39, #0b7348 42%, #0a5937);
-  border: 16px solid #4a2d17;
+  background: linear-gradient(180deg, #071217, #09161d);
+  border: 1px solid rgba(255,255,255,0.08);
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,0.1),
     inset 0 0 80px rgba(0,0,0,0.22),
     0 22px 48px rgba(0,0,0,0.24);
   user-select: none;
 }
-.pool8-table-wrap::before {
+.pool8-table-wrap::after {
   content: '';
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.18;
+    radial-gradient(circle at 50% 18%, rgba(255,242,199,0.16), transparent 24%),
+    linear-gradient(180deg, rgba(255,255,255,0.03), transparent 26%, transparent 74%, rgba(0,0,0,0.2));
   pointer-events: none;
+  z-index: 2;
+}
+.pool8-table-3d {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
 }
 .pool8-table-svg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  z-index: 1;
 }
 .pool8-cue-overlay {
   position: absolute;
   inset: 0;
   cursor: crosshair;
+  z-index: 3;
+}
+.pool8-cue-overlay.charging {
+  cursor: grabbing;
+}
+.pool8-shotlog {
+  display: grid;
+  gap: 8px;
+}
+.pool8-shot-entry {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.42);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.pool8-shot-entry strong {
+  display: block;
+  color: #f8fafc;
+}
+.pool8-shot-entry span {
+  color: var(--muted);
 }
 .pool8-pills {
   display: flex;
@@ -795,41 +1036,6 @@ const buildStateAfterLeave = (state, playerId) => {
   return next
 }
 
-const renderBallFill = (ball) => (ball.number === 0 ? '#f8fafc' : ball.color)
-
-const BallSvg = ({ ball, isCueTarget, isCurrentPlayerGroup }) => {
-  if (ball.pocketed) return null
-  return (
-    <g transform={`translate(${ball.x}, ${ball.y})`}>
-      <circle
-        r={BALL_RADIUS}
-        fill={renderBallFill(ball)}
-        stroke={isCueTarget ? '#f8fafc' : 'rgba(15,23,42,0.62)'}
-        strokeWidth={isCueTarget ? '2.1' : '1.5'}
-      />
-      {ball.striped ? (
-        <>
-          <rect x={-BALL_RADIUS} y={-BALL_RADIUS * 0.45} width={BALL_RADIUS * 2} height={BALL_RADIUS * 0.9} rx={BALL_RADIUS * 0.42} fill="#f8fafc" opacity="0.96" />
-          <rect x={-BALL_RADIUS} y={-BALL_RADIUS * 0.28} width={BALL_RADIUS * 2} height={BALL_RADIUS * 0.56} rx={BALL_RADIUS * 0.3} fill={ball.color} />
-        </>
-      ) : null}
-      {ball.number > 0 ? <circle r={BALL_RADIUS * 0.46} fill="#f8fafc" opacity="0.96" /> : null}
-      {ball.number > 0 ? (
-        <text
-          y="4"
-          textAnchor="middle"
-          fontSize="10"
-          fontWeight="800"
-          fill={ball.number === 8 ? '#f8fafc' : '#0f172a'}
-        >
-          {ball.number}
-        </text>
-      ) : null}
-      {isCurrentPlayerGroup ? <circle r={BALL_RADIUS + 3.2} fill="none" stroke={colorWithAlpha(ball.color, 0.74)} strokeWidth="1.5" /> : null}
-    </g>
-  )
-}
-
 const PoolTable = ({
   balls,
   cueAngle,
@@ -838,15 +1044,24 @@ const PoolTable = ({
   activeGroup,
   onAimAtPoint,
   onShoot,
+  onReleaseShot,
   onNudgePower,
 }) => {
   const tableRef = useRef(null)
   const draggingRef = useRef(false)
+  const [dragVector, setDragVector] = useState(null)
   const cueBall = findBall(balls, 0)
-  const aimRad = cueAngle * (Math.PI / 180)
-  const aimLength = 110 + (shotPower / 100) * 180
+  const liveAngle = dragVector?.angleDeg ?? cueAngle
+  const livePower = dragVector?.powerPct ?? shotPower
+  const aimRad = liveAngle * (Math.PI / 180)
+  const aimLength = 110 + (livePower / 100) * 180
   const aimTargetX = cueBall ? cueBall.x + Math.cos(aimRad) * aimLength : 0
   const aimTargetY = cueBall ? cueBall.y + Math.sin(aimRad) * aimLength : 0
+  const pullback = dragVector ? 54 + (dragVector.powerPct / 100) * 88 : 16
+  const cueStartX = cueBall ? cueBall.x - Math.cos(aimRad) * pullback : 0
+  const cueStartY = cueBall ? cueBall.y - Math.sin(aimRad) * pullback : 0
+  const cueEndX = cueBall ? cueBall.x - Math.cos(aimRad) * (pullback + 164) : 0
+  const cueEndY = cueBall ? cueBall.y - Math.sin(aimRad) * (pullback + 164) : 0
 
   const toWorldPoint = useCallback((event) => {
     const rect = tableRef.current?.getBoundingClientRect()
@@ -859,37 +1074,74 @@ const PoolTable = ({
     }
   }, [])
 
+  const updateCharge = useCallback((point) => {
+    if (!cueBall || !point) return null
+    const dx = cueBall.x - point.x
+    const dy = cueBall.y - point.y
+    const dist = Math.hypot(dx, dy)
+    if (dist < 2) return null
+    const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI)
+    const powerPct = clamp((dist / 240) * 100, MIN_POWER, MAX_POWER)
+    const charge = { angleDeg, powerPct, distance: dist }
+    setDragVector(charge)
+    onAimAtPoint({
+      x: cueBall.x + Math.cos(angleDeg * (Math.PI / 180)) * 140,
+      y: cueBall.y + Math.sin(angleDeg * (Math.PI / 180)) * 140,
+    })
+    return charge
+  }, [cueBall, onAimAtPoint])
+
   const handlePointerDown = useCallback((event) => {
     if (!isInteractive || !cueBall) return
     draggingRef.current = true
     const point = toWorldPoint(event)
-    if (point) onAimAtPoint(point)
-  }, [cueBall, isInteractive, onAimAtPoint, toWorldPoint])
+    if (point) {
+      tableRef.current?.setPointerCapture?.(event.pointerId)
+      updateCharge(point)
+    }
+  }, [cueBall, isInteractive, toWorldPoint, updateCharge])
 
   const handlePointerMove = useCallback((event) => {
     if (!draggingRef.current || !isInteractive || !cueBall) return
     const point = toWorldPoint(event)
-    if (point) onAimAtPoint(point)
-  }, [cueBall, isInteractive, onAimAtPoint, toWorldPoint])
+    if (point) updateCharge(point)
+  }, [cueBall, isInteractive, toWorldPoint, updateCharge])
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((event) => {
     if (!draggingRef.current || !isInteractive) return
     draggingRef.current = false
-  }, [isInteractive])
+    const point = toWorldPoint(event)
+    const charge = point ? updateCharge(point) : dragVector
+    if (charge?.distance >= 18) {
+      onReleaseShot(charge.angleDeg, charge.powerPct)
+    }
+    setDragVector(null)
+  }, [dragVector, isInteractive, onReleaseShot, toWorldPoint, updateCharge])
 
   useEffect(() => {
-    const stopDrag = () => { draggingRef.current = false }
+    const stopDrag = () => {
+      draggingRef.current = false
+      setDragVector(null)
+    }
     window.addEventListener('pointerup', stopDrag)
     return () => window.removeEventListener('pointerup', stopDrag)
   }, [])
 
   return (
     <div className="pool8-table-wrap" ref={tableRef}>
+      <div className="pool8-table-3d" aria-hidden="true">
+        <Canvas
+          shadows
+          dpr={[1, 1.5]}
+          gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+          camera={{ position: [0, 8.55, 6.95], fov: 38, near: 0.1, far: 60 }}
+        >
+          <PoolRoomScene balls={balls} activeGroup={activeGroup} />
+        </Canvas>
+      </div>
+
       <svg className="pool8-table-svg" viewBox={`0 0 ${TABLE_WIDTH} ${TABLE_HEIGHT}`} role="img" aria-label="8 Ball Pool table">
         <defs>
-          <filter id="pool8-shadow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="rgba(0,0,0,0.36)" />
-          </filter>
           <linearGradient id="pool8-cue" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
             <stop offset="52%" stopColor="rgba(255,245,214,0.88)" />
@@ -897,16 +1149,9 @@ const PoolTable = ({
           </linearGradient>
         </defs>
 
-        <rect x="18" y="18" width={TABLE_WIDTH - 36} height={TABLE_HEIGHT - 36} rx="22" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="2" />
-        <line x1={KITCHEN_X} y1="42" x2={KITCHEN_X} y2={TABLE_HEIGHT - 42} stroke="rgba(255,255,255,0.22)" strokeWidth="2" strokeDasharray="10 12" />
-        <circle cx={KITCHEN_X} cy={TABLE_HEIGHT / 2} r="65" fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="2" />
-
-        {POCKETS.map((pocket) => (
-          <g key={pocket.name}>
-            <circle cx={pocket.x} cy={pocket.y} r={POCKET_RADIUS + 7} fill="rgba(0,0,0,0.16)" />
-            <circle cx={pocket.x} cy={pocket.y} r={POCKET_RADIUS} fill="#020617" />
-          </g>
-        ))}
+        <rect x="26" y="26" width={TABLE_WIDTH - 52} height={TABLE_HEIGHT - 52} rx="28" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.08)" strokeWidth="1.6" />
+        <line x1={KITCHEN_X} y1="42" x2={KITCHEN_X} y2={TABLE_HEIGHT - 42} stroke="rgba(255,255,255,0.18)" strokeWidth="2" strokeDasharray="10 12" />
+        <circle cx={KITCHEN_X} cy={TABLE_HEIGHT / 2} r="65" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="2" />
 
         {isInteractive && cueBall && !cueBall.pocketed ? (
           <>
@@ -920,31 +1165,34 @@ const PoolTable = ({
               strokeDasharray="11 9"
             />
             <line
-              x1={cueBall.x - Math.cos(aimRad) * 16}
-              y1={cueBall.y - Math.sin(aimRad) * 16}
-              x2={cueBall.x - Math.cos(aimRad) * (130 + (shotPower / 100) * 110)}
-              y2={cueBall.y - Math.sin(aimRad) * (130 + (shotPower / 100) * 110)}
+              x1={cueStartX}
+              y1={cueStartY}
+              x2={cueEndX}
+              y2={cueEndY}
               stroke="url(#pool8-cue)"
               strokeWidth="7"
               strokeLinecap="round"
               opacity="0.85"
             />
+            {dragVector ? (
+              <circle
+                cx={cueBall.x}
+                cy={cueBall.y}
+                r={BALL_RADIUS + 12 + dragVector.powerPct * 0.08}
+                fill="none"
+                stroke="rgba(251, 191, 36, 0.35)"
+                strokeWidth="3"
+                strokeDasharray="12 9"
+              />
+            ) : null}
             <circle cx={aimTargetX} cy={aimTargetY} r="8" fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.42)" />
           </>
         ) : null}
-
-        <g filter="url(#pool8-shadow)">
-          {balls.map((ball) => {
-            const isCueTarget = activeGroup && !ball.pocketed && ball.group === activeGroup
-            const isCurrentPlayerGroup = activeGroup && !ball.pocketed && ball.group === activeGroup
-            return <BallSvg key={ball.id} ball={ball} isCueTarget={isCueTarget} isCurrentPlayerGroup={isCurrentPlayerGroup} />
-          })}
-        </g>
       </svg>
 
       {isInteractive ? (
         <div
-          className="pool8-cue-overlay"
+          className={`pool8-cue-overlay${dragVector ? ' charging' : ''}`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -1030,6 +1278,7 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
   const [shotPower, setShotPower] = useState(56)
   const [isMuted, setIsMuted] = useState(false)
   const [hudTick, setHudTick] = useState(0)
+  const [shotLog, setShotLog] = useState([])
   const audioRef = useRef(null)
   const animationRunRef = useRef({ id: null })
   const pendingStateRef = useRef(createInitialState())
@@ -1064,6 +1313,19 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
   useEffect(() => {
     setDisplayBalls(gameState.balls)
   }, [gameState.balls, gameState.phase])
+
+  useEffect(() => {
+    if (!gameState.lastShot?.id) return
+    setShotLog((entries) => {
+      const nextEntry = {
+        id: gameState.lastShot.id,
+        shooter: getPlayerName(gameState.players, gameState.lastShot.shooterId),
+        summary: gameState.lastShot.summary,
+        power: Math.round(gameState.lastShot.powerPct || 0),
+      }
+      return [nextEntry, ...entries.filter((entry) => entry.id !== nextEntry.id)].slice(0, 4)
+    })
+  }, [gameState.lastShot, gameState.players])
 
   useEffect(() => {
     if (!gameState.lastShot?.id || !gameState.lastShot.frames?.length) return undefined
@@ -1155,6 +1417,15 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
     pushState(nextState, 'move_valid')
   }, [aimAngle, cueBall, gameState, isMyTurn, me, pushState, shotPower])
 
+  const handleReleaseShot = useCallback((angleDeg, powerPct) => {
+    if (!me || !isMyTurn || !cueBall || cueBall.pocketed) return
+    setAimAngle(angleDeg)
+    setShotPower(powerPct)
+    audioRef.current?.shot(powerPct)
+    const nextState = buildTurnStateAfterShot(gameState, me.id, angleDeg, powerPct)
+    pushState(nextState, 'move_valid')
+  }, [cueBall, gameState, isMyTurn, me, pushState])
+
   const handleReset = useCallback(() => {
     const next = createInitialState()
     next.players = gameState.players
@@ -1183,10 +1454,19 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
         : 'Waiting for players'
 
   return (
-    <div className="pool8">
-      <style>{CSS}</style>
+    <GameCanvasShell
+      title="8Ball Pool"
+      subtitle="Shared Table"
+      status="Interactive felt view with synced shot playback, preserved table SFX, and a lighter shell music bed."
+      skin="sport"
+      musicProfile="sport"
+      layout="stretch"
+      contentStyle={{ padding: 18 }}
+    >
+      <div className="pool8">
+        <style>{CSS}</style>
 
-      <aside className="pool8-panel">
+        <aside className="pool8-panel">
         <div className="pool8-hero">
           <div>
             <div className="pool8-kicker">Built-In Activity</div>
@@ -1257,7 +1537,7 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
 
           <div className="pool8-actions">
             <button className="pool8-btn" onClick={handleShoot} disabled={!isMyTurn || gameState.phase !== 'aiming'}>
-              Shoot
+              Tap Shot
             </button>
             <button className="pool8-btn secondary" onClick={handleReset}>
               New Rack
@@ -1274,12 +1554,27 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
           </div>
         </div>
 
-        <div className="pool8-footer">
-          Drag directly on the table to aim, scroll over the felt to feather power, and double-click the table or use the shoot button to fire. The first seated player acts as the rack host and finalizes shot playback for the room.
+        <div className="pool8-card">
+          <div className="pool8-stat-label">Shot Feed</div>
+          <div className="pool8-shotlog" style={{ marginTop: 10 }}>
+            {shotLog.length ? shotLog.map((entry) => (
+              <div key={entry.id} className="pool8-shot-entry">
+                <div>
+                  <strong>{entry.shooter}</strong>
+                  <span>{entry.summary}</span>
+                </div>
+                <span>{entry.power}%</span>
+              </div>
+            )) : <div className="pool8-spectator">No shots yet</div>}
+          </div>
         </div>
-      </aside>
 
-      <section className="pool8-main">
+        <div className="pool8-footer">
+          Click and drag back from the cue ball, then release to fire. Scroll over the felt to feather power, or use the fallback tap-shot button. The first seated player acts as the rack host and finalizes shot playback for the room.
+        </div>
+        </aside>
+
+        <section className="pool8-main">
         <div className="pool8-main-top">
           <div className="pool8-marquee">
             <div className={`pool8-led${gameState.phase === 'animating' ? ' animating' : gameState.phase === 'finished' ? ' finished' : ''}`} />
@@ -1299,6 +1594,7 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
           activeGroup={myGroup}
           onAimAtPoint={setAimFromPoint}
           onShoot={handleShoot}
+          onReleaseShot={handleReleaseShot}
           onNudgePower={(delta) => setShotPower((current) => clamp(current + delta, MIN_POWER, MAX_POWER))}
         />
 
@@ -1310,8 +1606,9 @@ const EightBallPoolActivity = ({ sdk, currentUser }) => {
           <div className="pool8-pill">Turn: {gameState.turnPlayerId ? getPlayerName(gameState.players, gameState.turnPlayerId) : 'nobody'}</div>
           <div className="pool8-pill">Winner: {gameState.winnerId ? getPlayerName(gameState.players, gameState.winnerId) : 'none'}</div>
         </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </GameCanvasShell>
   )
 }
 

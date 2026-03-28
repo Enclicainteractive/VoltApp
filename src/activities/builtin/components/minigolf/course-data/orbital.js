@@ -184,6 +184,116 @@ export const orbitalCourse = {
         { type: 'billboard', x: 0, z: 10 },
         { type: 'tower', x: 17, z: -10 }
       ]
+    },
+    {
+      id: 'orbital-5',
+      name: 'Debris Carousel',
+      par: 4,
+      bounds: { minX: -20, maxX: 20, minZ: -12, maxZ: 12 },
+      tee: { x: -17, z: -7 },
+      cup: { x: 17, z: 7, radius: DEFAULT_CUP_RADIUS },
+      surfaces: [
+        boxSurface('o5-entry', 'fairway', -13, -7, 8, 4),
+        boxSurface('o5-ramp', 'fairway', -5, -3, 8, 4, { slope: { x: 0.2, z: 0.12 } }),
+        boxSurface('o5-center', 'ice', 4, 1, 10, 4),
+        boxSurface('o5-upper', 'fairway', 11, 5.5, 10, 4),
+        boxSurface('o5-finish', 'boost', 16, 7, 4, 3, { boost: 1.2 }),
+        boxSurface('o5-recovery', 'rough', 1, -9, 20, 3)
+      ],
+      obstacles: [
+        boxObstacle('o5-rail-a', -9, -3.8, 1.2, 5.2, { variant: 'rail', height: 1.5 }),
+        boxObstacle('o5-rail-b', -1, 0.5, 1.2, 5.6, { variant: 'wall', height: 1.85 }),
+        boxObstacle('o5-rail-c', 8, 4.2, 1.2, 5.4, { variant: 'rail', height: 1.5 }),
+        boxObstacle('o5-post-a', 6, -3.8, 1.15, 1.15, { variant: 'bumper-post', height: 1.5 }),
+        boxObstacle('o5-post-b', 13, 2.4, 1.15, 1.15, { variant: 'bumper-post', height: 1.5 })
+      ],
+      hazards: [
+        boxHazard('o5-void-top', 'void', -1, 9, 13, 2.5),
+        boxHazard('o5-void-bottom', 'void', 8, -9, 14, 2.5)
+      ],
+      movingHazards: [
+        movingHazard('o5-drift-a', 'bumper', 2, -1, 2, 2, { axis: 'z', amplitude: 4.4, speed: 1.05 }),
+        movingHazard('o5-drift-b', 'bumper', 10, 2.5, 2, 2, { axis: 'x', amplitude: 3.8, speed: 1.18, phase: Math.PI / 2 })
+      ],
+      scenery: [
+        { type: 'tower', x: -16, z: 10 },
+        { type: 'billboard', x: -2, z: -10 },
+        { type: 'iceberg', x: 16, z: -10 }
+      ]
+    },
+    {
+      id: 'orbital-6',
+      name: 'Transfer Prism',
+      par: 4,
+      bounds: { minX: -20, maxX: 20, minZ: -12, maxZ: 12 },
+      tee: { x: -17, z: 7 },
+      cup: { x: 17, z: -7, radius: DEFAULT_CUP_RADIUS },
+      surfaces: [
+        boxSurface('o6-entry', 'fairway', -13, 7, 8, 4),
+        boxSurface('o6-corner-a', 'fairway', -5, 2.5, 8, 4),
+        boxSurface('o6-middle', 'boost', 2, -1, 7, 3, { boost: 1.24 }),
+        boxSurface('o6-slide', 'ice', 9, -4.5, 10, 4),
+        boxSurface('o6-finish', 'fairway', 16, -7, 6, 4),
+        boxSurface('o6-safe', 'rough', 0, 9, 18, 3)
+      ],
+      obstacles: [
+        boxObstacle('o6-wall-a', -8, 4, 1.2, 5.2, { variant: 'wall', height: 1.8 }),
+        boxObstacle('o6-wall-b', 0, 0, 1.2, 6, { variant: 'wall', height: 1.9 }),
+        boxObstacle('o6-wall-c', 9, -3.2, 1.2, 5.2, { variant: 'rail', height: 1.5 }),
+        boxObstacle('o6-post-a', 5, 3.4, 1.1, 1.1, { variant: 'bumper-post', height: 1.45 })
+      ],
+      hazards: [
+        boxHazard('o6-gap-a', 'void', -2, -9, 12, 2.5),
+        boxHazard('o6-gap-b', 'void', 10, 9, 11, 2.5),
+        boxHazard('o6-gap-c', 'void', 13, -0.5, 5, 3)
+      ],
+      movingHazards: [
+        movingHazard('o6-prism-a', 'bumper', 5, 0, 2.1, 2.1, { axis: 'z', amplitude: 4.6, speed: 1.08 }),
+        movingHazard('o6-prism-b', 'bumper', 12, -1.5, 2.1, 2.1, { axis: 'x', amplitude: 2.8, speed: 1.24, phase: Math.PI / 3 })
+      ],
+      scenery: [
+        { type: 'aurora', x: -14, z: -10 },
+        { type: 'tower', x: 0, z: 10 },
+        { type: 'ice-spire', x: 15, z: 10 }
+      ]
+    },
+    {
+      id: 'orbital-7',
+      name: 'Lagrange Crown',
+      par: 5,
+      bounds: { minX: -21, maxX: 21, minZ: -12, maxZ: 12 },
+      tee: { x: -18, z: 0 },
+      cup: { x: 18, z: 0, radius: DEFAULT_CUP_RADIUS },
+      surfaces: [
+        boxSurface('o7-entry', 'fairway', -14, 0, 8, 6),
+        boxSurface('o7-upper', 'fairway', -5, 5, 9, 4),
+        boxSurface('o7-lower', 'fairway', -5, -5, 9, 4),
+        boxSurface('o7-core', 'ice', 5, 0, 10, 4),
+        boxSurface('o7-launch', 'boost', 13, 0, 5, 3, { boost: 1.28 }),
+        boxSurface('o7-finish', 'fairway', 18, 0, 4, 5)
+      ],
+      obstacles: [
+        boxObstacle('o7-gate-a', -10, 0, 1.2, 6),
+        boxObstacle('o7-core-a', -1, 3.2, 1.2, 5.4, { variant: 'wall', height: 1.9 }),
+        boxObstacle('o7-core-b', -1, -3.2, 1.2, 5.4, { variant: 'wall', height: 1.9 }),
+        boxObstacle('o7-post-a', 9, 4, 1.15, 1.15, { variant: 'bumper-post', height: 1.5 }),
+        boxObstacle('o7-post-b', 9, -4, 1.15, 1.15, { variant: 'bumper-post', height: 1.5 }),
+        boxObstacle('o7-post-c', 14, 0, 1.15, 1.15, { variant: 'bumper-post', height: 1.5 })
+      ],
+      hazards: [
+        boxHazard('o7-void-top', 'void', 3, 9, 13, 2.5),
+        boxHazard('o7-void-bottom', 'void', 3, -9, 13, 2.5),
+        boxHazard('o7-core-gap', 'void', 6, 0, 4, 3)
+      ],
+      movingHazards: [
+        movingHazard('o7-orbit-a', 'bumper', 5, 0, 2.2, 2.2, { axis: 'z', amplitude: 4.8, speed: 1 }),
+        movingHazard('o7-orbit-b', 'bumper', 12, 0, 2.2, 2.2, { axis: 'x', amplitude: 3.4, speed: 1.2, phase: Math.PI / 2 })
+      ],
+      scenery: [
+        { type: 'tower', x: -17, z: -10 },
+        { type: 'billboard', x: 0, z: 10 },
+        { type: 'aurora', x: 17, z: -10 }
+      ]
     }
   ]
 }

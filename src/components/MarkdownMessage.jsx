@@ -532,7 +532,18 @@ const MarkdownMessage = ({ content, currentUserId, mentions, members, onMentionC
       {invites.map(({ code, url }) => (
         <InviteEmbed key={code} inviteCode={code} inviteUrl={url} />
       ))}
-      {extractEmbedUrls(content).map((embed, i) => (
+      {extractEmbedUrls(
+        // Strip [GIF: url] tags AND the bare GIF URLs so they don't get picked up as link embeds
+        content
+          .replace(/\[GIF:\s*(https?:\/\/[^\]\s]+)\]/g, (_, gifUrl) => {
+            // Replace the whole tag with a placeholder so the URL is gone
+            return ''
+          })
+      ).filter(embed => {
+        // Extra safety: skip any URL that was already rendered as a GIF embed
+        const gifUrls = new Set(gifParts.filter(p => p.type === 'gif').map(p => p.url))
+        return !gifUrls.has(embed.url)
+      }).map((embed, i) => (
         <LinkEmbed key={`link-embed-${i}-${embed.url}`} url={embed.url} type={embed.type} match={embed.match} isAgeVerified={isAgeVerified} />
       ))}
     </span>

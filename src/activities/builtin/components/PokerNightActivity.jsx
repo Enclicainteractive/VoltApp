@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { TrophyIcon } from '@heroicons/react/24/outline'
+import GameCanvasShell from './shared/GameCanvasShell'
 
 const PokerTableIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1196,8 +1197,16 @@ const PokerNightActivity = ({ sdk, currentUser }) => {
   }
 
   return (
-    <div className="builtin-activity-body poker-game">
-      <style>{`
+    <GameCanvasShell
+      title="Poker Night"
+      subtitle="Texas Hold'em"
+      status="Interactive canvas shell with table-side ambience. Existing chip, card, and win effects stay intact."
+      skin="noir"
+      musicProfile="noir"
+      contentStyle={{ padding: 18 }}
+    >
+      <div className="builtin-activity-body poker-game">
+        <style>{`
         /* ── Proper playing cards ── */
         .poker-card {
           position: relative;
@@ -1715,22 +1724,23 @@ const PokerNightActivity = ({ sdk, currentUser }) => {
         </div>
       </div>
 
-      <div className="poker-notifications">
-        <AnimatePresence>
-          {notifications.map((notif) => (
-            <motion.div
-              key={notif.id}
-              initial={{ opacity: 0, y: -20, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -20, scale: 0.9 }}
-              className={`poker-notification ${notif.type}`}
-            >
-              {notif.message}
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        <div className="poker-notifications">
+          <AnimatePresence>
+            {notifications.map((notif) => (
+              <motion.div
+                key={notif.id}
+                initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -20, scale: 0.9 }}
+                className={`poker-notification ${notif.type}`}
+              >
+                {notif.message}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
       </div>
-    </div>
+    </GameCanvasShell>
   )
 }
 

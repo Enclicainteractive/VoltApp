@@ -4,7 +4,7 @@ import { Line, OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { CanvasTexture, Color, DoubleSide, MOUSE, Vector3 } from 'three'
 import { getMiniGolfCourse } from './courses'
 import { buildAimLinePoints, getEntityPosition, getHazardColor, getSurfaceColor, toVector3 } from './scene-utils'
-import { sampleMovingHazardPosition } from './physics'
+import { sampleMovingHazardPosition, sampleTerrainHeight } from './physics'
 
 const DEFAULT_CAMERA_OFFSET = new Vector3(9, 10.5, 11)
 const ballTextureCache = new Map()
@@ -238,21 +238,78 @@ const SceneryObjects = ({ scenery = [], palette }) => scenery.map((item, index) 
   return null
 })
 
-const PlayerBalls = ({ players, activePlayerId, playbackPosition }) => {
-  return players.map((player) => {
-    const point = playbackPosition?.playerId === player.id ? playbackPosition.position : player.position
-    const ballTexture = getBallTexture(player.color)
-    return (
-      <group key={player.id} position={[point.x, 0.4, point.z]}>
+/**
+ * Renders a single ball with full 3D Y-axis support.
+ * When airborne (point.y > terrainY + threshold), the ball floats at its
+ * physics height and a shadow blob is projected down to the ground.
+ */
+const PlayerBall = ({ player, isActive, point, hole }) => {
+  const ballTexture = getBallTexture(player.color)
+  const terrainY = sampleTerrainHeight(hole, point)
+  const ballY = (point?.y != null ? point.y : terrainY) + 0.34
+  const isAirborne = point?.airborne || (ballY - 0.34 > terrainY + 0.12)
+  const shadowY = terrainY + 0.04
+  const heightAboveGround = Math.max(0, ballY - 0.34 - terrainY)
+  // Shadow shrinks and fades as ball goes higher
+  const shadowScale = Math.max(0.18, 1 - heightAboveGround * 0.18)
+  const shadowOpacity = Math.max(0.06, 0.45 - heightAboveGround * 0.08)
+
+  return (
+    <group key={player.id}>
+      {/* Ball at physics height */}
+      <group position={[point.x, ballY, point.z]}>
         <mesh castShadow receiveShadow>
           <sphereGeometry args={[0.34, 30, 30]} />
           <meshStandardMaterial map={ballTexture} color="#ffffff" roughness={0.2} metalness={0.24} />
         </mesh>
-        <mesh position={[0, 0.54, 0]}>
+        {/* Active player ring */}
+        <mesh position={[0, 0.38, 0]}>
           <ringGeometry args={[0.4, 0.48, 30]} />
-          <meshBasicMaterial color={player.id === activePlayerId ? '#ffffff' : player.color} />
+          <meshBasicMaterial color={isActive ? '#ffffff' : player.color} />
         </mesh>
+        {/* Airborne glow ring */}
+        {isAirborne && (
+          <mesh position={[0, 0, 0]}>
+            <ringGeometry args={[0.42, 0.56, 30]} />
+            <meshBasicMaterial color={player.color} transparent opacity={0.55} />
+          </mesh>
+        )}
       </group>
+      {/* Drop shadow blob on terrain */}
+      {isAirborne && (
+        <mesh position={[point.x, shadowY, point.z]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[0.34 * shadowScale, 20]} />
+          <meshBasicMaterial color="#000000" transparent opacity={shadowOpacity} />
+        </mesh>
+      )}
+      {/* Vertical dashed line from ball to ground when airborne */}
+      {isAirborne && heightAboveGround > 0.5 && (
+        <Line
+          points={[[point.x, shadowY + 0.05, point.z], [point.x, ballY - 0.34, point.z]]}
+          color={player.color}
+          lineWidth={1.2}
+          transparent
+          opacity={0.3}
+          dashed
+          dashSize={0.18}
+          gapSize={0.12}
+        />
+      )}
+    </group>
+  )
+}
+
+const PlayerBalls = ({ players, activePlayerId, playbackPosition, hole }) => {
+  return players.map((player) => {
+    const point = playbackPosition?.playerId === player.id ? playbackPosition.position : player.position
+    return (
+      <PlayerBall
+        key={player.id}
+        player={player}
+        isActive={player.id === activePlayerId}
+        point={point || { x: 0, z: 0 }}
+        hole={hole}
+      />
     )
   })
 }
@@ -362,18 +419,78 @@ const MiniGolfWorld = ({
         <meshStandardMaterial color={palette.rough} roughness={0.98} />
       </mesh>
 
-      {hole.surfaces.map((surface) => (
-        <group key={surface.id} position={toVector3(surface.position, 0.02)}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[surface.size.x, surface.size.z]} />
-            <meshStandardMaterial color={getSurfaceColor(surface.type, palette)} roughness={surface.type === 'ice' ? 0.16 : 0.82} metalness={surface.type === 'ice' ? 0.18 : 0.05} />
-          </mesh>
-          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[Math.max(surface.size.x, surface.size.z) * 0.3, Math.max(surface.size.x, surface.size.z) * 0.5, 32]} />
-            <meshBasicMaterial color={palette.accent} transparent opacity={surface.type === 'fairway' ? 0.05 : 0.11} />
-          </mesh>
-        </group>
-      ))}
+      {hole.surfaces.map((surface) => {
+        const surfaceColor = getSurfaceColor(surface.type, palette)
+        const isIce = surface.type === 'ice'
+        const elevation = Number(surface.elevation || 0)
+        const hasElevation = elevation > 0.05
+        const isRamp = surface.elevationStart != null && surface.elevationEnd != null
+        const elevStart = Number(surface.elevationStart || 0)
+        const elevEnd = Number(surface.elevationEnd || 0)
+        const avgElev = (elevStart + elevEnd) / 2
+
+        if (isRamp) {
+          // Render ramp as a tilted box
+          const rise = elevEnd - elevStart
+          const run = surface.rampAxis === 'x' ? surface.size.x : surface.size.z
+          const angle = Math.atan2(rise, run)
+          const thickness = 0.22
+          const rampLength = Math.hypot(rise, run)
+          const rotAxis = surface.rampAxis === 'x' ? [0, 0, -angle] : [-angle, 0, 0]
+          return (
+            <group key={surface.id} position={[surface.position.x, avgElev + thickness * 0.5, surface.position.z]}>
+              <mesh castShadow receiveShadow rotation={rotAxis}>
+                <boxGeometry args={[
+                  surface.rampAxis === 'x' ? rampLength : surface.size.x,
+                  thickness,
+                  surface.rampAxis === 'z' ? rampLength : surface.size.z
+                ]} />
+                <meshStandardMaterial color={surfaceColor} roughness={0.72} metalness={0.06} />
+              </mesh>
+              {/* Ramp edge highlight */}
+              <mesh position={[0, thickness * 0.6, 0]} rotation={rotAxis}>
+                <boxGeometry args={[
+                  surface.rampAxis === 'x' ? rampLength * 1.02 : surface.size.x * 1.02,
+                  0.06,
+                  surface.rampAxis === 'z' ? rampLength * 1.02 : surface.size.z * 1.02
+                ]} />
+                <meshBasicMaterial color={palette.accent} transparent opacity={0.28} />
+              </mesh>
+            </group>
+          )
+        }
+
+        if (hasElevation) {
+          // Render elevated platform as a box with sides
+          return (
+            <group key={surface.id} position={[surface.position.x, elevation * 0.5, surface.position.z]}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={[surface.size.x, elevation + 0.12, surface.size.z]} />
+                <meshStandardMaterial color={surfaceColor} roughness={isIce ? 0.16 : 0.78} metalness={isIce ? 0.18 : 0.06} />
+              </mesh>
+              {/* Top surface accent ring */}
+              <mesh position={[0, elevation * 0.5 + 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[Math.max(surface.size.x, surface.size.z) * 0.3, Math.max(surface.size.x, surface.size.z) * 0.5, 32]} />
+                <meshBasicMaterial color={palette.accent} transparent opacity={0.12} />
+              </mesh>
+            </group>
+          )
+        }
+
+        // Flat surface (original rendering)
+        return (
+          <group key={surface.id} position={toVector3(surface.position, 0.02)}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+              <planeGeometry args={[surface.size.x, surface.size.z]} />
+              <meshStandardMaterial color={surfaceColor} roughness={isIce ? 0.16 : 0.82} metalness={isIce ? 0.18 : 0.05} />
+            </mesh>
+            <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[Math.max(surface.size.x, surface.size.z) * 0.3, Math.max(surface.size.x, surface.size.z) * 0.5, 32]} />
+              <meshBasicMaterial color={palette.accent} transparent opacity={surface.type === 'fairway' ? 0.05 : 0.11} />
+            </mesh>
+          </group>
+        )
+      })}
 
       {hole.obstacles.map((obstacle) => (
         <ObstacleMesh key={obstacle.id} obstacle={obstacle} palette={palette} />
@@ -399,7 +516,7 @@ const MiniGolfWorld = ({
         </mesh>
       </group>
 
-      <PlayerBalls players={players} activePlayerId={activePlayerId} playbackPosition={renderPlayback} />
+      <PlayerBalls players={players} activePlayerId={activePlayerId} playbackPosition={renderPlayback} hole={hole} />
 
       {isMyTurn && !shotPlayback ? (
         <mesh

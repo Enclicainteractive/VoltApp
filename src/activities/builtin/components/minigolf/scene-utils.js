@@ -12,6 +12,8 @@ export const getSurfaceColor = (surfaceType, palette = {}) => {
 export const getHazardColor = (hazardType, palette = {}) => {
   if (hazardType === 'lava') return '#ff6b2d'
   if (hazardType === 'void') return '#0e1321'
+  if (hazardType === 'black-hole') return '#7c3aed'
+  if (hazardType === 'ghost') return '#c084fc'
   return palette.hazard || '#42c8ff'
 }
 
@@ -24,6 +26,8 @@ export const boxArgs = (entity) => [
 export const toVector3 = (point, y = 0) => [Number(point?.x || 0), y, Number(point?.z || 0)]
 
 export const getEntityPosition = (entity) => [Number(entity?.position?.x || 0), Number(entity?.y || 0), Number(entity?.position?.z || 0)]
+
+export const getAutoLiftY = (index = 0, base = 0, step = 0.006) => base + (index + 1) * step
 
 export const buildAimLinePoints = (origin, angle, power) => {
   const length = 2.5 + power * 8

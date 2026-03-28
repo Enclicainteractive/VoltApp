@@ -2018,6 +2018,17 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
     }
   }, [sdk, triggerExplosion, userId])
 
+  const persistVoltCraftState = useCallback((next = {}) => {
+    if (!sdk?.updateState) return
+    sdk.updateState({
+      voltCraft: {
+        changes: changesRef.current,
+        players: playersRef.current,
+        ...next
+      }
+    }, { serverRelay: true })
+  }, [sdk])
+
   // Process up to 3 chunks per tick
   useEffect(() => {
     if (!workerReady) return
@@ -2447,18 +2458,7 @@ const VoltCraftActivity = ({ sdk, currentUser }) => {
     setTimeout(() => document.querySelector('canvas')?.requestPointerLock(), 50)
   }, [])
 
-  const persistVoltCraftState = useCallback((next = {}) => {
-    if (!sdk?.updateState) return
-    sdk.updateState({
-      voltCraft: {
-        changes: changesRef.current,
-        players: playersRef.current,
-        ...next
-      }
-    }, { serverRelay: true })
-  }, [sdk])
 
-  // ── SDK ──────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!sdk) return
     const offState = sdk.subscribeServerState?.((state) => {

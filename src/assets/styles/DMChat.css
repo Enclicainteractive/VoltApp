@@ -702,6 +702,68 @@
   flex-shrink: 0;
 }
 
+/* ── Upload progress bar ─────────────────────────────────────────────────── */
+.dm-upload-progress-bar-container {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 8px;
+  animation: fadeIn 0.2s ease;
+}
+
+.dm-upload-progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.dm-upload-progress-label {
+  font-size: 12px;
+  color: var(--volt-text-secondary);
+  font-weight: 500;
+}
+
+.dm-upload-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 5px;
+  color: var(--volt-danger, #ef4444);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.dm-upload-cancel-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.dm-upload-progress-track {
+  height: 4px;
+  background: var(--volt-bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.dm-upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--volt-primary, #1fb6ff), var(--volt-primary-light, #5ccfff));
+  border-radius: 2px;
+  transition: width 0.15s ease;
+  min-width: 4px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .dm-input-wrapper {
   background: var(--volt-bg-tertiary);
   border-radius: var(--border-radius-md, 8px);

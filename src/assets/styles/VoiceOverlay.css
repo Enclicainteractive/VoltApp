@@ -1,0 +1,307 @@
+/* ── Voice Overlay ─────────────────────────────────────────────────────────── */
+.voice-overlay {
+  position: fixed;
+  z-index: 9000;
+  width: 300px;
+  background: rgba(10, 10, 20, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.04);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+  user-select: none;
+  transition: box-shadow 0.15s ease;
+}
+
+.voice-overlay.dragging {
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7), 0 0 0 2px rgba(31, 182, 255, 0.4);
+  cursor: grabbing;
+}
+
+.voice-overlay.collapsed {
+  width: 220px;
+}
+
+/* Header */
+.voice-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: grab;
+}
+
+.voice-overlay.dragging .voice-overlay-header {
+  cursor: grabbing;
+}
+
+.voice-overlay-channel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.voice-overlay-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+  animation: overlayPulse 2s ease-in-out infinite;
+}
+
+@keyframes overlayPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.voice-overlay-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-overlay-count {
+  font-size: 11px;
+  color: #64748b;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.voice-overlay-header-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.voice-overlay-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.voice-overlay-icon-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: #e2e8f0;
+}
+
+/* Participants strip */
+.voice-overlay-participants {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-wrap: wrap;
+}
+
+.voice-overlay-participant {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.voice-overlay-muted-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 1.5px solid rgba(10,10,20,0.9);
+}
+
+.voice-overlay-more {
+  font-size: 11px;
+  color: #64748b;
+  padding: 2px 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+}
+
+/* Messages */
+.overlay-messages {
+  height: 160px;
+  overflow-y: auto;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+.overlay-messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.overlay-messages::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
+
+.overlay-messages-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.overlay-msg {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.overlay-msg.own .overlay-msg-author {
+  color: #60a5fa;
+}
+
+.overlay-msg-author {
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.overlay-msg-content {
+  color: #cbd5e1;
+  word-break: break-word;
+  min-width: 0;
+}
+
+/* Input */
+.overlay-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.overlay-input {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 0;
+}
+
+.overlay-input:focus {
+  border-color: rgba(31, 182, 255, 0.5);
+  background: rgba(255,255,255,0.08);
+}
+
+.overlay-input::placeholder {
+  color: #475569;
+}
+
+.overlay-send-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #1fb6ff;
+  border: none;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.overlay-send-btn:hover:not(:disabled) {
+  background: #0ea5e9;
+}
+
+.overlay-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Voice controls */
+.voice-overlay-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 6px 8px;
+  gap: 4px;
+}
+
+.voice-overlay-ctrl-btn {
+  flex: 1;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.voice-overlay-ctrl-btn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #e2e8f0;
+}
+
+.voice-overlay-ctrl-btn.active {
+  background: rgba(31, 182, 255, 0.2);
+  border-color: rgba(31, 182, 255, 0.4);
+  color: #1fb6ff;
+}
+
+.voice-overlay-ctrl-btn.active.danger,
+.voice-overlay-ctrl-btn.danger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.voice-overlay-ctrl-btn.danger:hover,
+.voice-overlay-ctrl-btn.leave:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .voice-overlay {
+    width: calc(100vw - 32px);
+    max-width: 320px;
+  }
+}

@@ -38,16 +38,9 @@ const FALLBACK_ICE_SERVERS = [
   // Self-hosted STUN (volt.voltagechat.app)
   { urls: 'stun:volt.voltagechat.app:32768' },
   
-  // Google's STUN servers - most reliable public STUN (credential-free)
+  // Google's STUN servers - reduced to 3 total to avoid "five or more" warning
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  
-  // Additional reliable public STUN servers (credential-free)
-  { urls: 'stun:stun.ekiga.net' },
-  { urls: 'stun:stun.xten.com' },
   // NOTE: No TURN servers in fallback - TURN credentials must be consistent
   // across all peers. TURN servers are provided by the Voltage server only.
 ]
@@ -1728,6 +1721,7 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
         sourceProcessor.onaudioprocess = (e) => {
           // Guard against closed context or disconnected node
           if (!sourceProcessor._isActive || audioContext.state === 'closed') {
+            e.outputBuffer.getChannelData(0).fill(0)
             return
           }
           const inputData = e.inputBuffer.getChannelData(0)
@@ -1943,7 +1937,12 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
         let phase = 0
         const twoPi = Math.PI * 2
         
+        processor._isActive = true
         processor.onaudioprocess = (e) => {
+          if (!processor._isActive || audioContext.state === 'closed') {
+            e.outputBuffer.getChannelData(0).fill(0)
+            return
+          }
           const input = e.inputBuffer.getChannelData(0)
           const output = e.outputBuffer.getChannelData(0)
           const phaseInc = twoPi * rate / audioContext.sampleRate
@@ -2003,7 +2002,12 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
         let phase = 0
         const twoPi = Math.PI * 2
         
+        processor._isActive = true
         processor.onaudioprocess = (e) => {
+          if (!processor._isActive || audioContext.state === 'closed') {
+            e.outputBuffer.getChannelData(0).fill(0)
+            return
+          }
           const input = e.inputBuffer.getChannelData(0)
           const output = e.outputBuffer.getChannelData(0)
           const phaseInc = twoPi * freq / audioContext.sampleRate
@@ -2044,7 +2048,12 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
         let phase = 0
         const twoPi = Math.PI * 2
         
+        processor._isActive = true
         processor.onaudioprocess = (e) => {
+          if (!processor._isActive || audioContext.state === 'closed') {
+            e.outputBuffer.getChannelData(0).fill(0)
+            return
+          }
           const input = e.inputBuffer.getChannelData(0)
           const output = e.outputBuffer.getChannelData(0)
           const phaseInc = twoPi * freq / audioContext.sampleRate
@@ -2102,7 +2111,12 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
         compressor.release.value = 0.1
         
         const processor = createProcessor(2048, 1, 1)
+        processor._isActive = true
         processor.onaudioprocess = (e) => {
+          if (!processor._isActive || audioContext.state === 'closed') {
+            e.outputBuffer.getChannelData(0).fill(0)
+            return
+          }
           const input = e.inputBuffer.getChannelData(0)
           const output = e.outputBuffer.getChannelData(0)
           
@@ -4544,10 +4558,10 @@ const SYNC_CORRECTION_STEP = 50 // ms - amount to adjust per correction
       setParticipants(prev => prev.map(p =>
         p?.id === userId ? { ...p, isReconnecting: true } : p
       ))
-      // Schedule actual removal with a longer grace window (5 s).
+      // Schedule actual removal with a shorter grace window (2s) to show disconnections faster.
       // cancelPendingPeerRemoval is called inside schedulePeerRemoval, so any
       // pre-existing timer for this userId is replaced automatically.
-      schedulePeerRemoval(userId, 5000, { playSound: true })
+      schedulePeerRemoval(userId, 2000, { playSound: true })
     })
 
 // Handle force-reconnect command from server (consensus broken)

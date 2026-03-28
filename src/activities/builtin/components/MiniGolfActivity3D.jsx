@@ -521,8 +521,18 @@ const PlayerBall = React.memo(({
   trailResetKey = 'default'
 }) => {
   const groupRef = useRef()
+  const ballMeshRef = useRef()
   const smoothPos = useRef({ x: targetPosition?.x || 0, z: targetPosition?.z || 0 })
+  const prevPos = useRef({ x: targetPosition?.x || 0, z: targetPosition?.z || 0 })
+  const squashRef = useRef(1)       // 1 = normal, <1 = squashed
+  const squashVelRef = useRef(0)    // spring velocity for squash
   const tex = useMemo(() => getBallTexture(player.color || '#ffffff'), [player.color])
+
+  useEffect(() => {
+    if (targetPosition) {
+      smoothPos.current = { x: targetPosition.x, z: targetPosition.z }
+    }
+  }, [targetPosition])
 
   useFrame((_, delta) => {
     if (!groupRef.current) return
@@ -536,12 +546,43 @@ const PlayerBall = React.memo(({
     smoothPos.current.z += (target.z - smoothPos.current.z) * Math.min(1, lerpSpeed * delta)
     // Y position = visual radius so ball sits on the ground
     groupRef.current.position.set(smoothPos.current.x, BALL_VISUAL_R, smoothPos.current.z)
+
+    if (ballMeshRef.current) {
+      // ── Ball spin: rotate around the axis perpendicular to motion ──────────
+      const dx = smoothPos.current.x - prevPos.current.x
+      const dz = smoothPos.current.z - prevPos.current.z
+      const speed = Math.hypot(dx, dz)
+      if (speed > 0.0001) {
+        // Rotation axis is perpendicular to direction of travel (in XZ plane)
+        const rotAxis = new THREE.Vector3(-dz, 0, dx).normalize()
+        // Arc length = speed, radius = BALL_VISUAL_R → angle = arc/radius
+        const angle = speed / BALL_VISUAL_R
+        ballMeshRef.current.rotateOnWorldAxis(rotAxis, angle)
+      }
+      prevPos.current.x = smoothPos.current.x
+      prevPos.current.z = smoothPos.current.z
+
+      // ── Squash-and-stretch spring ─────────────────────────────────────────
+      // When ball is moving fast, trigger a squash; spring back to 1
+      const SPRING_K = 28
+      const SPRING_DAMP = 6
+      const targetSquash = isPlayback && speed > 0.008 ? 0.82 : 1
+      const squashDelta = targetSquash - squashRef.current
+      squashVelRef.current += squashDelta * SPRING_K * delta
+      squashVelRef.current -= squashVelRef.current * SPRING_DAMP * delta
+      squashRef.current += squashVelRef.current * delta
+      squashRef.current = Math.max(0.6, Math.min(1.25, squashRef.current))
+      // Squash: flatten Y, expand XZ to conserve volume
+      const s = squashRef.current
+      const invS = Math.sqrt(1 / s)  // conserve volume
+      ballMeshRef.current.scale.set(BALL_VISUAL_R * invS, BALL_VISUAL_R * s, BALL_VISUAL_R * invS)
+    }
   })
 
   return (
     <group ref={groupRef} position={[targetPosition?.x || 0, BALL_VISUAL_R, targetPosition?.z || 0]}>
       {/* Ball – rendered at BALL_VISUAL_R, physics uses BALL_R */}
-      <mesh castShadow receiveShadow scale={[BALL_VISUAL_R, BALL_VISUAL_R, BALL_VISUAL_R]}>
+      <mesh ref={ballMeshRef} castShadow receiveShadow scale={[BALL_VISUAL_R, BALL_VISUAL_R, BALL_VISUAL_R]}>
         <primitive object={SPHERE_GEO} attach="geometry" />
         <meshStandardMaterial map={tex} color="#ffffff" roughness={0.2} metalness={0.24} />
       </mesh>
@@ -1910,6 +1951,8 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   const [showHolePreview, setShowHolePreview] = useState(false)
   const [hazardTransition, setHazardTransition] = useState(null) // { resultType, playerColor }
   const [blackHoleProximity, setBlackHoleProximityState] = useState(0)
+  const [activeCutscene, setActiveCutscene] = useState(null) // { type, data }
+  const [selectedPowerupIndex, setSelectedPowerupIndex] = useState(0)
 
   // Wrap setBlackHoleProximity so it updates both audio and CSS distortion state
   const handleBlackHoleProximity = useCallback((value) => {
@@ -1958,7 +2001,8 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   const leaderboard    = useMemo(() => getMiniGolfLeaderboard(gameState), [gameState])
   const myPlayerState  = gameState.playerStates?.[userId] || null
   const myPowerupInventory = myPlayerState?.powerupInventory || []
-  const myActivePowerup = myPowerupInventory[0] || null
+  const mySelectedIndex = myPlayerState?.selectedPowerupIndex || 0
+  const mySelectedPowerup = myPowerupInventory[mySelectedIndex] || null
   const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentTurnPlayerId) || null
   const isMyTurn       = gameState.currentTurnPlayerId === userId && phase === MINIGOLF_PHASES.PLAYING
   const winner         = gameState.players.find(p => p.id === gameState.winnerId) || null
@@ -2084,10 +2128,15 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
   // ── Show hole preview when hole changes during PLAYING phase ─────────────────
   const prevHoleIndexRef = useRef(-1)
   useEffect(() => {
-    if (phase !== MINIGOLF_PHASES.PLAYING) return
+    if (phase !== MINIGOLF_PHASES.PLAYING) {
+      setShowHolePreview(false)
+      return
+    }
     if (holeIndex !== prevHoleIndexRef.current) {
       prevHoleIndexRef.current = holeIndex
-      setShowHolePreview(true)
+      // Clear any existing overlays first
+      setHazardTransition(null)
+      // Hole preview disabled - setShowHolePreview(true)
     }
   }, [phase, holeIndex])
 
@@ -2166,12 +2215,19 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
       const myState = gameState.playerStates[userId]
       const start = myState?.position || hole?.tee || { x: 0, z: 0 }
       const lastCheckpoint = myState?.lastCheckpoint || hole?.tee
-      const activePowerup = myState?.powerupInventory?.[0] || null
+      const selectedIndex = myState?.selectedPowerupIndex || 0
+      const activePowerup = myState?.powerupInventory?.[selectedIndex] || null
       const collectedPowerupIds = Object.entries(gameState.collectedPowerups || {})
         .filter(([, collected]) => !!collected)
         .map(([powerupId]) => powerupId)
 
-      runPhysicsAsync({ hole, start, shot: aim, lastCheckpoint, activePowerup, collectedPowerupIds, gameClockSeconds: gameClockRef.current }).then(result => {
+      // Build list of other players' ball positions for ball-to-ball collision
+      const otherBalls = Object.entries(gameState.playerStates || {})
+        .filter(([pid]) => pid !== userId)
+        .map(([pid, ps]) => ps?.position ? { id: pid, position: ps.position } : null)
+        .filter(Boolean)
+
+      runPhysicsAsync({ hole, start, shot: aim, lastCheckpoint, activePowerup, collectedPowerupIds, gameClockSeconds: gameClockRef.current, otherBalls }).then(result => {
         if (result.resultType === 'cup') playEvent('holeComplete')
         else if (['hazard-reset', 'lava-reset', 'black-hole'].includes(result.resultType)) playEvent('hazardReset')
         else if (result.collisionCount > 0) playEvent('wallHit')
@@ -2189,6 +2245,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
           power: aim.power,
           path: result.path || [],
           finalPosition: result.finalPosition,
+          pushedBalls: result.pushedBalls || [],
         })
         const evt = {
           eventType: MINIGOLF_EVENT_TYPES.SHOT,
@@ -2216,16 +2273,30 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
         setGameState((prev) => {
           const existing = prev.playerStates?.[current.playerId]
           if (!existing) return prev
-          return {
-            ...prev,
-            playerStates: {
-              ...prev.playerStates,
-              [current.playerId]: {
-                ...existing,
-                position: { ...current.finalPosition },
-              },
+          // Update the shooter's final position
+          let nextPlayerStates = {
+            ...prev.playerStates,
+            [current.playerId]: {
+              ...existing,
+              position: { ...current.finalPosition },
             },
           }
+          // Update any pushed balls' positions
+          if (Array.isArray(current.pushedBalls)) {
+            for (const pushed of current.pushedBalls) {
+              const pushedState = nextPlayerStates[pushed.id]
+              if (pushedState && pushed.position) {
+                nextPlayerStates = {
+                  ...nextPlayerStates,
+                  [pushed.id]: {
+                    ...pushedState,
+                    position: { x: pushed.position.x, y: pushed.position.y || 0, z: pushed.position.z },
+                  },
+                }
+              }
+            }
+          }
+          return { ...prev, playerStates: nextPlayerStates }
         })
       }
       return null
@@ -2367,7 +2438,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
         />
       )}
 
-      {/* Hole preview overlay – shown for ~3s when a new hole starts */}
+      {/* Hole preview overlay – disabled to prevent flashing
       {showHolePreview && phase === MINIGOLF_PHASES.PLAYING && hole && (
         <HolePreviewOverlay
           hole={hole}
@@ -2375,7 +2446,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
           course={course}
           onDone={() => setShowHolePreview(false)}
         />
-      )}
+      )} */}
 
       {/* HUD is a regular React portal OUTSIDE the Canvas – mirrors VoltCraft exactly */}
       <MiniGolfHUD
@@ -2414,7 +2485,7 @@ const MiniGolfActivity3D = ({ sdk, currentUser }) => {
         onChangeSetting={handleChangeSetting}
         onCloseSettings={() => setShowSettings(false)}
         leaderboard={leaderboard}
-        activePowerup={myActivePowerup}
+        activePowerup={mySelectedPowerup}
         powerupInventory={myPowerupInventory}
         availablePowerupCount={visiblePowerups.length}
         onAdvanceHole={handleAdvanceHole}

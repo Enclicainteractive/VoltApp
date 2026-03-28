@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { LockClosedIcon, StarIcon } from '@heroicons/react/24/solid'
-import { BALL_COLOR_OPTIONS, MINIGOLF_PHASES } from './constants'
+import { BALL_COLOR_OPTIONS, MINIGOLF_PHASES, MINIGOLF_POWERUP_DEFS } from './constants'
 
 const relativeLabel = (relativeToPar) => {
   if (relativeToPar === 0) return 'E'
@@ -227,9 +227,14 @@ const PlayingView = ({
   selectedBallColor,
   onSelectBallColor,
   progression,
-  courseId
+  courseId,
+  activePowerup,
+  holePowerups,
+  collectedPowerups
 }) => {
   const holeStars = progression?.courseStars?.[courseId]?.[hole.id] || 0
+  const activePowerupDef = activePowerup?.type ? (MINIGOLF_POWERUP_DEFS[activePowerup.type] || activePowerup) : null
+  const availablePowerups = (holePowerups || []).filter((powerup) => !collectedPowerups?.[powerup.id])
 
   return (
     <div className="mgx-grid">
@@ -287,6 +292,16 @@ const PlayingView = ({
                 />
               ))}
             </div>
+          </div>
+          <div className="mgx-drag-guide">
+            <strong>Glue and powerups</strong>
+            <p>{activePowerupDef ? `Armed: ${activePowerupDef.label}. It will trigger on your next shot.` : 'Purple glue surfaces sap speed. Grit cancels glue, Magnet widens the cup catch, and Overdrive hits harder.'}</p>
+            {availablePowerups.length ? (
+              <div className="mgx-inline-meta">
+                <span>Pickups live</span>
+                <span>{availablePowerups.map((powerup) => MINIGOLF_POWERUP_DEFS[powerup.type]?.label || powerup.type).join(', ')}</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -399,7 +414,10 @@ const MiniGolfHud = (props) => {
     winner,
     onRematch,
     progression,
-    courseId
+    courseId,
+    activePowerup,
+    holePowerups,
+    collectedPowerups
   } = props
 
   if (phase === MINIGOLF_PHASES.LOBBY) {
@@ -436,6 +454,9 @@ const MiniGolfHud = (props) => {
         onSelectBallColor={onSelectBallColor}
         progression={progression}
         courseId={courseId}
+        activePowerup={activePowerup}
+        holePowerups={holePowerups}
+        collectedPowerups={collectedPowerups}
       />
     )
   }

@@ -96,6 +96,14 @@ export function LobbyPanel3D({
   )
 }
 
+// ─── Power bar color helper ───────────────────────────────────────────────────
+function powerColor(p) {
+  // green → yellow → red
+  const r = p < 0.5 ? Math.round(p * 2 * 255) : 255
+  const g = p < 0.5 ? 200 : Math.round((1 - (p - 0.5) * 2) * 200)
+  return `rgb(${r},${g},0)`
+}
+
 // ─── PLAYING HUD ──────────────────────────────────────────────────────────────
 export function PlayingHUD3D({
   currentPlayer, holeIndex, par, strokeCount, players,
@@ -104,6 +112,8 @@ export function PlayingHUD3D({
   settings, onOpenSettings,
 }) {
   const isMyTurn = true // caller filters
+  const pct = Math.round(power * 100)
+  const barColor = powerColor(power)
 
   return (
     <>
@@ -131,27 +141,45 @@ export function PlayingHUD3D({
 
       {/* ── Bottom: aim controls (only when it's your turn) ── */}
       {isMyTurn && !isAnimating && (
-        <HtmlPanel x={0} y={12} w={360} h={100} anchor="bottom-center" color="#0d1117" opacity={0.92} borderColor="#1f2937">
-          <HtmlText x={12} y={8} text={isAiming ? 'Aiming…' : 'Your Turn'} fontSize={14} color="#38bdf8" fontWeight="bold" />
-          <HtmlText x={12} y={28} text={`Angle: ${Math.round((aimAngle * 180) / Math.PI)}°`} fontSize={12} color="#9ca3af" />
+        <HtmlPanel x={0} y={12} w={400} h={120} anchor="bottom-center" color="#0d1117" opacity={0.94} borderColor="#1f2937">
+          {/* Status row */}
+          <HtmlText x={12} y={8} text={isAiming ? '🎯 Aiming…' : '⛳ Your Turn – drag to aim'} fontSize={14} color="#38bdf8" fontWeight="bold" />
+          <HtmlText x={12} y={28} text={`Direction: ${Math.round(((aimAngle * 180) / Math.PI + 360) % 360)}°`} fontSize={12} color="#9ca3af" />
 
-          {/* Power bar */}
-          <HtmlText x={12} y={48} text="Power:" fontSize={12} color="#9ca3af" />
-          <HtmlBar x={70} y={50} w={200} h={12} value={power} color="#f97316" bgColor="#1f2937" />
-          <HtmlText x={278} y={48} text={`${Math.round(power * 100)}%`} fontSize={11} color="#e5e7eb" />
+          {/* Power bar with color */}
+          <HtmlText x={12} y={50} text="Power:" fontSize={12} color="#9ca3af" />
+          <HtmlBar x={72} y={52} w={220} h={14} value={power} color={barColor} bgColor="#1f2937" />
+          <HtmlText x={300} y={50} text={`${pct}%`} fontSize={12} color={barColor} fontWeight="bold" />
 
-          {/* Aim buttons */}
-          <HtmlButton x={12} y={68} w={50} h={24} label="◀" color="#374151" hoverColor="#4b5563" onClick={onAimLeft} />
-          <HtmlButton x={68} y={68} w={50} h={24} label="▶" color="#374151" hoverColor="#4b5563" onClick={onAimRight} />
-          <HtmlButton x={130} y={68} w={100} h={24} label="🏌️ Shoot!" color="#7c3aed" hoverColor="#6d28d9" onClick={onShoot} />
-          <HtmlButton x={238} y={68} w={60} h={24} label="⚙" color="#374151" hoverColor="#4b5563" onClick={onOpenSettings} />
+          {/* Power quick-set buttons */}
+          {[25, 50, 75, 100].map((pv, i) => (
+            <HtmlButton
+              key={pv}
+              x={72 + i * 56} y={72} w={50} h={20}
+              label={`${pv}%`}
+              color={Math.abs(pct - pv) < 6 ? '#1d4ed8' : '#374151'}
+              hoverColor="#4b5563"
+              fontSize={11}
+              onClick={() => onSetPower?.(pv / 100)}
+            />
+          ))}
+
+          {/* Aim + shoot buttons */}
+          <HtmlButton x={12} y={94} w={44} h={22} label="◀◀" color="#374151" hoverColor="#4b5563" fontSize={12}
+            onClick={() => { onAimLeft?.(); onAimLeft?.(); onAimLeft?.() }} />
+          <HtmlButton x={60} y={94} w={44} h={22} label="◀" color="#374151" hoverColor="#4b5563" fontSize={12} onClick={onAimLeft} />
+          <HtmlButton x={108} y={94} w={44} h={22} label="▶" color="#374151" hoverColor="#4b5563" fontSize={12} onClick={onAimRight} />
+          <HtmlButton x={156} y={94} w={44} h={22} label="▶▶" color="#374151" hoverColor="#4b5563" fontSize={12}
+            onClick={() => { onAimRight?.(); onAimRight?.(); onAimRight?.() }} />
+          <HtmlButton x={210} y={90} w={120} h={28} label="🏌️ Shoot!" color="#7c3aed" hoverColor="#6d28d9" fontSize={14} onClick={onShoot} />
+          <HtmlButton x={338} y={94} w={50} h={22} label="⚙" color="#374151" hoverColor="#4b5563" fontSize={12} onClick={onOpenSettings} />
         </HtmlPanel>
       )}
 
-      {/* Waiting indicator */}
-      {!isMyTurn && !isAnimating && (
-        <HtmlPanel x={0} y={12} w={240} h={40} anchor="bottom-center" color="#0d1117" opacity={0.88} borderColor="#374151">
-          <HtmlText x={0} y={12} text={`Waiting for ${currentPlayer?.username || 'player'}…`} fontSize={13} color="#9ca3af" align="center" maxWidth={220} />
+      {/* Animating indicator */}
+      {isAnimating && (
+        <HtmlPanel x={0} y={12} w={200} h={36} anchor="bottom-center" color="#0d1117" opacity={0.88} borderColor="#374151">
+          <HtmlText x={0} y={10} text="⛳ Ball rolling…" fontSize={13} color="#fbbf24" align="center" maxWidth={180} />
         </HtmlPanel>
       )}
     </>

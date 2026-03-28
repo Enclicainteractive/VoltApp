@@ -25,16 +25,15 @@ import { sampleMovingHazardPosition } from './physics'
 // Power scale – matches existing simulateShot buildShotVector
 const POWER_SCALE = 16
 
-// Gravity – minigolf is top-down so we use a small downward gravity
-// just enough to keep the ball on the ground plane
+// Gravity – realistic golf ball gravity
 const GRAVITY = -9.82
 
-// Friction / restitution defaults
-const DEFAULT_FRICTION    = 0.4
-const DEFAULT_RESTITUTION = 0.3
+// Friction / restitution defaults - more realistic values
+const DEFAULT_FRICTION    = 0.6  // Increased for more realistic rolling
+const DEFAULT_RESTITUTION = 0.25 // Reduced for less bouncy, more realistic behavior
 
-// Stop threshold
-const STOP_SPEED = 0.08
+// Stop threshold - lower for more realistic settling
+const STOP_SPEED = 0.05
 
 /**
  * Build a cannon-es physics world for a single minigolf hole.
@@ -57,10 +56,14 @@ export function createMiniGolfPhysicsWorld(hole) {
   const ballGround = new CANNON.ContactMaterial(ballMat, groundMat, {
     friction: DEFAULT_FRICTION,
     restitution: DEFAULT_RESTITUTION,
+    contactEquationStiffness: 1e8,
+    contactEquationRelaxation: 3,
   })
   const ballWall = new CANNON.ContactMaterial(ballMat, wallMat, {
-    friction: 0.1,
-    restitution: 0.6,
+    friction: 0.15,  // Slightly more friction on walls
+    restitution: 0.4, // Less bouncy walls for realism
+    contactEquationStiffness: 1e8,
+    contactEquationRelaxation: 3,
   })
   world.addContactMaterial(ballGround)
   world.addContactMaterial(ballWall)
@@ -127,11 +130,11 @@ export function createMiniGolfPhysicsWorld(hole) {
     mass: 0.046,  // golf ball mass in kg
     material: ballMat,
     shape: new CANNON.Sphere(DEFAULT_BALL_RADIUS),
-    linearDamping: 0.35,
-    angularDamping: 0.4,
+    linearDamping: 0.15,  // Reduced for more realistic rolling distance
+    angularDamping: 0.25, // Reduced for better spin behavior
     allowSleep: true,
     sleepSpeedLimit: STOP_SPEED,
-    sleepTimeLimit: 0.5,
+    sleepTimeLimit: 0.3,  // Faster sleep for better responsiveness
   })
   ballBody.position.set(0, DEFAULT_BALL_RADIUS, 0)
   world.addBody(ballBody)
@@ -158,12 +161,22 @@ export function createMiniGolfPhysicsWorld(hole) {
       const s = surfaces[i]
       if (s.shape === 'box' && pointInBox(px, pz, s)) {
         const preset = SURFACE_PRESETS[s.type] || SURFACE_PRESETS.fairway
-        // Map friction (0.88–0.994) to cannon linearDamping (0.1–0.8)
+        // Realistic surface physics mapping
         const f = preset.friction
-        return { damping: 1.0 - f, restitution: 1.0 - preset.bounce }
+        // Ice: very low damping (slides far), Sand: high damping (stops quickly)
+        const damping = s.type === 'ice' ? 0.02 : 
+                       s.type === 'sand' ? 0.65 :
+                       s.type === 'sticky' ? 0.85 :
+                       s.type === 'boost' ? 0.05 :
+                       0.15  // fairway/rough default
+        const restitution = s.type === 'ice' ? 0.15 :
+                           s.type === 'sand' ? 0.1 :
+                           s.type === 'sticky' ? 0.05 :
+                           0.25
+        return { damping, restitution }
       }
     }
-    return { damping: 0.35, restitution: 0.7 }
+    return { damping: 0.15, restitution: 0.25 }
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────

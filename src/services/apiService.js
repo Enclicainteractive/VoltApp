@@ -268,54 +268,64 @@ export const apiService = {
   unblockUser: (userId) => api.delete(`/user/block/${userId}`),
   getBlockedUsers: () => api.get('/user/blocked'),
   
-  // File Upload
+  // File Upload - returns { promise, abort } so callers can cancel in-flight uploads
   uploadFiles: (files, serverId = null, onProgress = null) => {
     const formData = new FormData()
     files.forEach(file => formData.append('files', file))
     if (serverId) {
       formData.append('serverId', serverId)
     }
-    
-    if (onProgress) {
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('POST', `${getBaseURL()}/upload`)
-        
-        xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
-        xhr.setRequestHeader('Pragma', 'no-cache')
-        xhr.setRequestHeader('Expires', '0')
-        
-        const token = getStoredAccessToken()
-        if (token) {
-          xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+
+    // Always use XHR so we can abort and track progress
+    let xhrInstance = null
+    const promise = new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhrInstance = xhr
+      xhr.open('POST', `${getBaseURL()}/upload`)
+
+      xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+      xhr.setRequestHeader('Pragma', 'no-cache')
+      xhr.setRequestHeader('Expires', '0')
+
+      const token = getStoredAccessToken()
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      }
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          const percentComplete = (event.loaded / event.total) * 100
+          onProgress(percentComplete)
         }
-        
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const percentComplete = (event.loaded / event.total) * 100
-            onProgress(percentComplete)
-          }
-        })
-        
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(JSON.parse(xhr.response))
-          } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`))
-          }
-        })
-        
-        xhr.addEventListener('error', () => {
-          reject(new Error('Upload failed'))
-        })
-        
-        xhr.send(formData)
       })
-    }
-    
-    return api.post('/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.response))
+          } catch {
+            reject(new Error('Invalid response from server'))
+          }
+        } else {
+          reject(new Error(`Upload failed with status ${xhr.status}`))
+        }
+      })
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed'))
+      })
+
+      xhr.addEventListener('abort', () => {
+        reject(new DOMException('Upload cancelled', 'AbortError'))
+      })
+
+      xhr.send(formData)
     })
+
+    return {
+      promise,
+      abort: () => { if (xhrInstance) xhrInstance.abort() }
+    }
   },
   deleteFile: (filename) => api.delete(`/upload/${filename}`),
 
@@ -386,6 +396,8 @@ export const apiService = {
   removeUserAgeVerification: (userId) => api.delete(`/admin/users/${userId}/age-verification`),
   setUserStatus: (userId, data) => api.put(`/admin/users/${userId}/status`, data),
   getAdminServers: (params) => api.get('/admin/servers', { params }),
+  getAdminServer: (serverId) => api.get(`/admin/servers/${serverId}`),
+  joinAdminServer: (serverId) => api.post(`/admin/servers/${serverId}/join`),
   banServer: (serverId, reason) => api.post(`/admin/servers/${serverId}/ban`, { reason }),
   unbanServer: (serverId) => api.delete(`/admin/servers/${serverId}/ban`),
   getBannedUsers: () => api.get('/admin/banned-users'),

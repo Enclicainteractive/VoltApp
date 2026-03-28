@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { PlayIcon, TrophyIcon, ClockIcon, UsersIcon, TrashIcon, PencilIcon, CheckIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
+import { shouldIgnoreActivityHotkey } from './shared/hotkeys'
+import GameCanvasShell from './shared/GameCanvasShell'
 
 // --- SVG Icon Components ---
 const EraserIcon = ({ width = 16 }) => (
@@ -276,6 +278,19 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
     '#f39c12', '#9b59b6', '#e91e63', '#00bcd4',
     '#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3'
   ], [])
+
+  const renderShell = useCallback((content, subtitle, status, skin = 'arcade') => (
+    <GameCanvasShell
+      title="Sketch Duel"
+      subtitle={subtitle}
+      status={status}
+      skin={skin}
+      musicProfile={skin === 'sport' ? 'sport' : 'arcade'}
+      contentStyle={{ paddingTop: 64 }}
+    >
+      {content}
+    </GameCanvasShell>
+  ), [])
 
   // Keep refs in sync
   useEffect(() => { myDrawingRef.current = myDrawing }, [myDrawing])
@@ -615,6 +630,7 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (shouldIgnoreActivityHotkey(e)) return
       if (phaseRef.current !== PHASES.DRAWING) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault()
@@ -788,12 +804,12 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
   const isHost = gameState.host?.id === currentUser?.id || gameState.players[0]?.id === currentUser?.id
 
   if (!sdk) {
-    return <div className="builtin-activity-loading"><div className="loading-spinner" /><p>Loading Sketch Duel...</p></div>
+    return renderShell(<div className="builtin-activity-loading"><div className="loading-spinner" /><p>Loading Sketch Duel...</p></div>, 'Loading', 'Preparing synced sketch state and shell ambience.', 'arcade')
   }
 
   // ========== LOBBY ==========
   if (gameState.phase === PHASES.LOBBY) {
-    return (
+    return renderShell((
       <div className="builtin-activity-body sketch-duel-lobby">
         <div className="sketch-header">
           <h2>Sketch Duel</h2>
@@ -839,12 +855,12 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
           <p className="waiting-text">Waiting for host to start...</p>
         )}
       </div>
-    )
+    ), 'Lobby', 'Join the room, gather players, and let the shell provide the interactive stage.', 'arcade')
   }
 
   // ========== DRAWING ==========
   if (gameState.phase === PHASES.DRAWING) {
-    return (
+    return renderShell((
       <div className="builtin-activity-body sketch-duel-drawing">
         <div className="sketch-info-bar">
           <div className="prompt-display">
@@ -936,7 +952,7 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
           )}
         </div>
       </div>
-    )
+    ), gameState.prompt || 'Drawing Round', 'The drawing canvas stays primary while the shared shell adds motion and music.', 'arcade')
   }
 
   // ========== VOTING ==========
@@ -946,7 +962,7 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
 
     const myVoteTarget = gameState.votes[currentUser?.id]
 
-    return (
+    return renderShell((
       <div className="builtin-activity-body sketch-duel-voting">
         <div className="sketch-header">
           <h2>Vote for the Best Drawing!</h2>
@@ -996,7 +1012,7 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
           </button>
         )}
       </div>
-    )
+    ), 'Voting', 'Review the submitted drawings and vote over the same shared shell.', 'sport')
   }
 
   // ========== RESULTS ==========
@@ -1005,7 +1021,7 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
     const winnerId = results[0]?.playerId
     const canPlayMore = gameState.round < gameState.maxRounds
 
-    return (
+    return renderShell((
       <div className="builtin-activity-body sketch-duel-results">
         <div className="sketch-header">
           <TrophyIcon width={48} className="trophy-icon" />
@@ -1065,10 +1081,10 @@ const SketchDuelActivity = ({ sdk, currentUser }) => {
           </button>
         )}
       </div>
-    )
+    ), 'Results', 'Round recap, gallery, and replay flow stay on the same shared game canvas shell.', 'sport')
   }
 
-  return <div className="builtin-activity-loading"><div className="loading-spinner" /><p>Loading Sketch Duel...</p></div>
+  return renderShell(<div className="builtin-activity-loading"><div className="loading-spinner" /><p>Loading Sketch Duel...</p></div>, 'Loading', 'Preparing synced sketch state and shell ambience.', 'arcade')
 }
 
 export default SketchDuelActivity

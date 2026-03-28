@@ -22,10 +22,33 @@ const VoiceChannelPreview = ({ channel, onJoin, onClose }) => {
       }
     }
 
+    const handleUserJoined = (userInfo) => {
+      const cid = userInfo?.channelId
+      if (cid && cid !== channel.id) return
+      if (!userInfo?.id) return
+      setParticipants(prev => {
+        if (prev.find(p => p.id === userInfo.id)) return prev
+        return [...prev, userInfo]
+      })
+    }
+
+    const handleUserLeft = (data) => {
+      const userId = data?.userId || data?.id
+      if (!userId) return
+      const cid = data?.channelId
+      // Only remove if the event is for this channel, or if no channelId provided
+      if (cid && cid !== channel.id) return
+      setParticipants(prev => prev.filter(p => p.id !== userId))
+    }
+
     socket.on('voice:participants', handleParticipants)
+    socket.on('voice:user-joined', handleUserJoined)
+    socket.on('voice:user-left', handleUserLeft)
 
     return () => {
       socket.off('voice:participants', handleParticipants)
+      socket.off('voice:user-joined', handleUserJoined)
+      socket.off('voice:user-left', handleUserLeft)
     }
   }, [socket, connected, channel])
 

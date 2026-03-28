@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ArcadeParty3DScene from './arcade/ArcadeParty3DScene'
+import ArcadeCanvas2D from './arcade/ArcadeCanvas2D'
 import GameCanvasShell from './shared/GameCanvasShell'
 
 const createModeMeta = (name, subtitle, seats, engine, theme = {}, kind = '3d') => ({ name, subtitle, seats, engine, theme, kind })
@@ -2042,6 +2043,36 @@ const ArcadePartyActivity = ({ sdk, currentUser, activityDefinition }) => {
 
   const board = useMemo(() => {
     const isDisabled = !!meta.seats && (!mySeat || !isMyTurn)
+    
+    // Use canvas for 2D games
+    const use2DCanvas = ['checkers', 'reversi', 'gomoku', 'dots-and-boxes', 'memory-match', 'minesweeper-party', 'party-2048', 'mancala'].includes(engine)
+    
+    if (use2DCanvas) {
+      return (
+        <ArcadeCanvas2D
+          engine={engine}
+          state={gameState}
+          selected={selected}
+          disabled={isDisabled}
+          onAction={(action) => {
+            if (engine === 'checkers' && 'x' in action && 'y' in action) {
+              if (!mySeat || !isMyTurn) return
+              if (!selected) {
+                setSelected({ x: action.x, y: action.y })
+                return
+              }
+              performAction({ from: selected, to: { x: action.x, y: action.y } })
+              setSelected(null)
+              return
+            }
+            if (selected) setSelected(null)
+            performAction(action)
+          }}
+        />
+      )
+    }
+    
+    // Use 3D scene for 3D games
     return (
       <ArcadeParty3DScene
         meta={{ ...meta, id: key }}

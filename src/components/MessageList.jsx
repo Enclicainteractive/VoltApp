@@ -325,30 +325,38 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
     socket?.emit('message:delete', { messageId, channelId })
   }
 
-  const handleAddReaction = (messageId, emoji) => {
-    socket?.emit('reaction:add', { messageId, emoji, channelId })
+  const handleToggleReaction = useCallback((messageId, emojiKey, currentReactions) => {
+    const users = asArray(currentReactions?.[emojiKey])
+    const hasReacted = users.includes(currentUserId)
+    socket?.emit(hasReacted ? 'reaction:remove' : 'reaction:add', { messageId, emoji: emojiKey, channelId })
     setShowEmojiPicker(null)
     setEmojiPickerAnchor(null)
-  }
+  }, [socket, channelId, currentUserId])
 
-  const handleRemoveReaction = (messageId, emoji) => {
-    socket?.emit('reaction:remove', { messageId, emoji, channelId })
-  }
+  const handleAddReaction = useCallback((messageId, emoji) => {
+    const emojiKey = serializeReactionEmoji(emoji)
+    socket?.emit('reaction:add', { messageId, emoji: emojiKey, channelId })
+    setShowEmojiPicker(null)
+    setEmojiPickerAnchor(null)
+  }, [socket, channelId])
+
+  const handleRemoveReaction = useCallback((messageId, emoji) => {
+    const emojiKey = serializeReactionEmoji(emoji)
+    socket?.emit('reaction:remove', { messageId, emoji: emojiKey, channelId })
+  }, [socket, channelId])
 
   // Helper to render an emoji (unicode or custom)
   const renderEmoji = (emoji, className = '') => {
-    // Check if it's a custom emoji object
     if (emoji && typeof emoji === 'object' && emoji.type === 'custom') {
       return (
-        <img 
-          src={emoji.url} 
-          alt={emoji.name} 
+        <img
+          src={emoji.url}
+          alt={emoji.name}
           className={`reaction-custom-emoji ${className}`}
           title={emoji.name}
         />
       )
     }
-    // Unicode emoji
     return <span className={className}>{emoji}</span>
   }
 
@@ -361,20 +369,28 @@ const MessageList = ({ messages, emptyState = null, currentUserId, channelId, on
           const emoji = deserializeReactionEmoji(emojiKey)
           const reactionUsers = asArray(users)
           const hasReacted = reactionUsers.includes(currentUserId)
+          // Build tooltip: show up to 10 usernames
+          const tooltipNames = reactionUsers.slice(0, 10).join(', ') + (reactionUsers.length > 10 ? ` and ${reactionUsers.length - 10} more` : '')
           return (
             <button
               key={emojiKey}
               className={`reaction-badge ${hasReacted ? 'active' : ''}`}
-              onClick={() => hasReacted 
-                ? handleRemoveReaction(message.id, serializeReactionEmoji(emoji)) 
-                : handleAddReaction(message.id, serializeReactionEmoji(emoji))
-              }
+              onClick={() => handleToggleReaction(message.id, emojiKey, message.reactions)}
+              title={tooltipNames || `${reactionUsers.length} reaction${reactionUsers.length !== 1 ? 's' : ''}`}
             >
               {renderEmoji(emoji, 'reaction-emoji')}
               <span className="reaction-count">{reactionUsers.length}</span>
             </button>
           )
         })}
+        {/* Add reaction button next to existing reactions (Discord-style) */}
+        <button
+          className="reaction-badge reaction-add-btn"
+          onClick={(e) => openEmojiPicker(e, message.id)}
+          title="Add Reaction"
+        >
+          <FaceSmileIcon size={14} />
+        </button>
       </div>
     )
   }

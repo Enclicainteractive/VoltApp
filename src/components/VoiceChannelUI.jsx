@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { MicrophoneIcon, MusicalNoteIcon, SpeakerXMarkIcon, PhoneXMarkIcon, CogIcon, SpeakerWaveIcon, VideoCameraIcon, VideoCameraSlashIcon, ComputerDesktopIcon, ListBulletIcon, XMarkIcon, RocketLaunchIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline'
+import { MicrophoneIcon, MusicalNoteIcon, SpeakerXMarkIcon, PhoneXMarkIcon, CogIcon, SpeakerWaveIcon, VideoCameraIcon, VideoCameraSlashIcon, ComputerDesktopIcon, ListBulletIcon, XMarkIcon, RocketLaunchIcon, ChatBubbleLeftRightIcon, ClockIcon, NoSymbolIcon, ShieldExclamationIcon } from '@heroicons/react/24/outline'
 import { useVoice } from '../contexts/VoiceContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from '../hooks/useTranslation'
@@ -11,6 +11,7 @@ import { CLIENT_BUILTIN_BY_ID } from '../activities/builtin/definitions'
 import { DefaultActivityIcon, getActivityIcon } from '../activities/builtin/ActivityIcons'
 import VoiceChannelTempChat from './VoiceChannelTempChat'
 import { useVoiceTempChat } from '../hooks/useVoiceTempChat'
+import VoiceOverlay from './VoiceOverlay'
 import '../assets/styles/VoiceChannel.css'
 import '../activities/builtin/builtin-activities.css'
 
@@ -43,7 +44,71 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
   const [pinnedParticipant, setPinnedParticipant] = useState(null)
   const [focusedBuiltinSession, setFocusedBuiltinSession] = useState(null)
   const [showActivityPicker, setShowActivityPicker] = useState(false)
-  
+  const [showOverlay, setShowOverlay] = useState(false)
+  const [adminTimeoutModal, setAdminTimeoutModal] = useState(null) // { userId, username }
+  const [timeoutDuration, setTimeoutDuration] = useState(300) // seconds
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  // Check if current user is admin/owner of the server
+  useEffect(() => {
+    if (!channel?.serverId || !user?.id) return
+    // Check via socket or store — look for role in channel/server context
+    const checkAdmin = async () => {
+      try {
+        socket?.emit('server:get-member-role', { serverId: channel.serverId, userId: user.id }, (res) => {
+          const role = res?.role || res?.data?.role
+          setIsAdmin(role === 'owner' || role === 'admin' || role === 'moderator')
+        })
+      } catch { setIsAdmin(false) }
+    }
+    checkAdmin()
+  }, [channel?.serverId, user?.id, socket])
+
+  // Listen for forced disconnect by admin
+  useEffect(() => {
+    if (!socket) return
+    const handleForceDisconnect = (data) => {
+      if (data?.channelId === channel?.id || data?.userId === user?.id) {
+        leaveChannel()
+        onLeave?.()
+      }
+    }
+    const handleVoiceTimeout = (data) => {
+      if (data?.userId === user?.id) {
+        leaveChannel()
+        onLeave?.()
+      }
+    }
+    socket.on('voice:force-disconnect', handleForceDisconnect)
+    socket.on('voice:timeout', handleVoiceTimeout)
+    return () => {
+      socket.off('voice:force-disconnect', handleForceDisconnect)
+      socket.off('voice:timeout', handleVoiceTimeout)
+    }
+  }, [socket, channel?.id, user?.id, leaveChannel, onLeave])
+
+  // Admin: disconnect a user from voice
+  const handleAdminDisconnect = useCallback((targetUserId) => {
+    if (!socket || !channel?.id) return
+    socket.emit('voice:admin-disconnect', { channelId: channel.id, targetUserId })
+    setParticipantMenu(null)
+  }, [socket, channel?.id])
+
+  // Admin: timeout a user (disconnect + prevent rejoin for duration)
+  const handleAdminTimeout = useCallback((targetUserId, durationSeconds) => {
+    if (!socket || !channel?.id) return
+    socket.emit('voice:admin-timeout', { channelId: channel.id, targetUserId, duration: durationSeconds })
+    setAdminTimeoutModal(null)
+    setParticipantMenu(null)
+  }, [socket, channel?.id])
+
+  // Admin: server-mute a user
+  const handleAdminMute = useCallback((targetUserId) => {
+    if (!socket || !channel?.id) return
+    socket.emit('voice:admin-mute', { channelId: channel.id, targetUserId })
+    setParticipantMenu(null)
+  }, [socket, channel?.id])
+
   const tempChat = useVoiceTempChat(
     participants,
     isConnected,
@@ -701,6 +766,14 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
           )}
         </button>
 
+        <button
+          className={`voice-control-btn overlay-btn ${showOverlay ? 'active' : ''}`}
+          onClick={() => setShowOverlay(v => !v)}
+          title={showOverlay ? 'Hide message overlay' : 'Show message overlay'}
+        >
+          <ChatBubbleLeftRightIcon size={22} />
+        </button>
+
         <button 
           className="voice-control-btn leave"
           onClick={handleLeave}
@@ -718,23 +791,32 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
         </button>
       </div>
 
+      {/* Voice Overlay — floating message panel */}
+      {showOverlay && isConnected && (
+        <VoiceOverlay
+          channel={channel}
+          messages={tempChat.messages}
+          onSendMessage={tempChat.sendMessage}
+          onLeave={handleLeave}
+          onExpand={() => {
+            setShowOverlay(false)
+            tempChat.toggleVisibility()
+          }}
+        />
+      )}
+
       {/* Participant right-click context menu */}
       {participantMenu && (() => {
-        const menuW = 220, menuH = 160
+        const menuW = isAdmin ? 260 : 220
+        const menuH = isAdmin ? 240 : 120
         const x = Math.min(participantMenu.x, window.innerWidth  - menuW - 8)
         const y = Math.min(participantMenu.y, window.innerHeight - menuH - 8)
         return (
           <>
             <div
               style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
-              onClick={(e) => {
-                e.stopPropagation()
-                setParticipantMenu(null)
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setParticipantMenu(null)
-              }}
+              onClick={(e) => { e.stopPropagation(); setParticipantMenu(null) }}
+              onContextMenu={(e) => { e.preventDefault(); setParticipantMenu(null) }}
             />
             <div
               className="voice-participant-menu"
@@ -743,14 +825,73 @@ const VoiceChannelUI = ({ channel, viewMode = 'full', onLeave, onOpenSettings, o
               onContextMenu={(e) => e.preventDefault()}
             >
               <div className="vpm-header">{participantMenu.username}</div>
-              <button className="vpm-item">
+              <button className="vpm-item" onClick={() => {
+                // local mute for me
+                setParticipantMenu(null)
+              }}>
                 <SpeakerWaveIcon size={14} />
                 Mute for me
               </button>
+              {isAdmin && (
+                <>
+                  <div className="vpm-divider" />
+                  <div className="vpm-section-label">Admin Actions</div>
+                  <button className="vpm-item admin" onClick={() => handleAdminMute(participantMenu.userId)}>
+                    <MicrophoneIcon size={14} />
+                    Server Mute
+                  </button>
+                  <button className="vpm-item admin" onClick={() => handleAdminDisconnect(participantMenu.userId)}>
+                    <NoSymbolIcon size={14} />
+                    Disconnect from Voice
+                  </button>
+                  <button className="vpm-item admin danger" onClick={() => {
+                    setAdminTimeoutModal({ userId: participantMenu.userId, username: participantMenu.username })
+                    setParticipantMenu(null)
+                  }}>
+                    <ClockIcon size={14} />
+                    Timeout from Voice
+                  </button>
+                </>
+              )}
             </div>
           </>
         )
       })()}
+
+      {/* Admin Timeout Modal */}
+      {adminTimeoutModal && (
+        <div className="voice-admin-modal-overlay" onClick={() => setAdminTimeoutModal(null)}>
+          <div className="voice-admin-modal" onClick={e => e.stopPropagation()}>
+            <div className="voice-admin-modal-header">
+              <ShieldExclamationIcon size={20} />
+              <span>Timeout {adminTimeoutModal.username}</span>
+            </div>
+            <p className="voice-admin-modal-desc">
+              Disconnect this user from voice and prevent them from rejoining for the selected duration.
+            </p>
+            <div className="voice-admin-modal-options">
+              {[60, 300, 600, 1800, 3600].map(secs => (
+                <button
+                  key={secs}
+                  className={`voice-admin-duration-btn ${timeoutDuration === secs ? 'active' : ''}`}
+                  onClick={() => setTimeoutDuration(secs)}
+                >
+                  {secs < 60 ? `${secs}s` : secs < 3600 ? `${secs/60}m` : `${secs/3600}h`}
+                </button>
+              ))}
+            </div>
+            <div className="voice-admin-modal-actions">
+              <button className="btn btn-secondary" onClick={() => setAdminTimeoutModal(null)}>Cancel</button>
+              <button
+                className="btn btn-danger"
+                onClick={() => handleAdminTimeout(adminTimeoutModal.userId, timeoutDuration)}
+              >
+                <ClockIcon size={14} /> Apply Timeout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

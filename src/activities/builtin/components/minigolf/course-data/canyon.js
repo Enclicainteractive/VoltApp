@@ -17,6 +17,19 @@ const boxObstacle = (id, x, z, width, depth, extra = {}) => ({
   ...extra
 })
 
+const rampObstacle = (id, x, z, width, depth, elevStart, elevEnd, axis = 'z', extra = {}) => ({
+  id,
+  type: 'ramp',
+  shape: 'box',
+  position: { x, z },
+  size: { x: width, z: depth },
+  elevationStart: elevStart,
+  elevationEnd: elevEnd,
+  rampAxis: axis,
+  launchAngle: extra.launchAngle || 0.45,
+  ...extra
+})
+
 const boxHazard = (id, type, x, z, width, depth, extra = {}) => ({
   id,
   type,
@@ -59,6 +72,10 @@ export const canyonCourse = {
       cup: { x: 15, z: 1, radius: 0.5 },
       surfaces: [
         boxSurface('c1-main', 'fairway', -2, -1, 20, 5),
+        // Mesa hill — ball must climb and descend
+        boxSurface('c1-hill-up', 'fairway', -2, 0, 5, 5, { elevationStart: 0, elevationEnd: 1.6, rampAxis: 'x' }),
+        boxSurface('c1-hill-peak', 'fairway', 0.5, 0, 3, 5, { elevation: 1.6 }),
+        boxSurface('c1-hill-down', 'fairway', 3, 0, 5, 5, { elevationStart: 1.6, elevationEnd: 0, rampAxis: 'x' }),
         boxSurface('c1-boost', 'boost', 5, 0, 6, 3, { boost: 1.22 }),
         boxSurface('c1-finish', 'fairway', 12, 1, 10, 5),
         boxSurface('c1-rough-top', 'rough', 1, -7, 30, 4),
@@ -121,7 +138,10 @@ export const canyonCourse = {
       cup: { x: 16, z: 7, radius: 0.5 },
       surfaces: [
         boxSurface('c3-start', 'fairway', -12, -7, 8, 4),
-        boxSurface('c3-ramp', 'fairway', -4, -3, 8, 4, { slope: { x: 0.22, z: 0.16 } }),
+        // Slope section
+        boxSurface('c3-slope', 'fairway', -4, -3, 8, 4, { slope: { x: 0.22, z: 0.16 } }),
+        // Launch ramp — sends ball flying over the rough plateau
+        rampObstacle('c3-launch', -8, -7, 4, 4, 0, 2.4, 'x', { launchAngle: 0.52 }),
         boxSurface('c3-plateau', 'rough', 4, 2, 12, 5),
         boxSurface('c3-speedway', 'boost', 12, 6, 8, 3, { boost: 1.28 }),
         boxSurface('c3-finish', 'fairway', 16, 7, 5, 4)
@@ -181,6 +201,85 @@ export const canyonCourse = {
         { type: 'forge', x: -14, z: -10 },
         { type: 'anvil', x: 0, z: 10 },
         { type: 'tower', x: 16, z: -10 }
+      ]
+    },
+    {
+      id: 'canyon-5',
+      name: 'Ridgebreaker Bend',
+      par: 4,
+      bounds: { minX: -20, maxX: 20, minZ: -12, maxZ: 12 },
+      tee: { x: -17, z: 8 },
+      cup: { x: 17, z: -7, radius: 0.5 },
+      surfaces: [
+        boxSurface('c5-entry', 'fairway', -12, 8, 8, 4),
+        boxSurface('c5-shelf', 'fairway', -4, 4, 9, 4, { slope: { x: 0.16, z: -0.12 } }),
+        boxSurface('c5-switchback', 'sand', 2, -0.5, 8, 4),
+        boxSurface('c5-descent', 'fairway', 9, -4.5, 10, 4),
+        boxSurface('c5-sprint', 'boost', 14, -6.8, 5, 3, { boost: 1.24 }),
+        boxSurface('c5-finish', 'fairway', 17, -7, 4, 4),
+        boxSurface('c5-recovery', 'rough', 0, 9, 24, 3)
+      ],
+      obstacles: [
+        boxObstacle('c5-wall-a', -8, 5.1, 1.2, 5.2, { variant: 'rail' }),
+        boxObstacle('c5-wall-b', -1, 1.8, 1.2, 5.4),
+        boxObstacle('c5-wall-c', 6, -2.1, 1.2, 5.4),
+        boxObstacle('c5-post-a', 10, -6.6, 1.2, 1.2, { variant: 'bumper-post', height: 1.5 }),
+        boxObstacle('c5-post-b', 13, -2.4, 1.2, 1.2, { variant: 'bumper-post', height: 1.5 })
+      ],
+      hazards: [
+        boxHazard('c5-ravine-top', 'void', -2, 9.2, 12, 2.3),
+        boxHazard('c5-ravine-mid', 'water', 6, 8.8, 10, 2.4),
+        boxHazard('c5-ravine-bottom', 'void', 8, -9.1, 12, 2.4)
+      ],
+      movingHazards: [
+        movingHazard('c5-sweeper', 'bumper', 4, -1.5, 2.1, 2.1, { axis: 'z', amplitude: 4.6, speed: 0.96 })
+      ],
+      scenery: [
+        { type: 'tower', x: -16, z: -10 },
+        { type: 'billboard', x: -1, z: -10 },
+        { type: 'forge', x: 15, z: 10 }
+      ]
+    },
+    {
+      id: 'canyon-6',
+      name: 'Ember Mesa Marathon',
+      par: 5,
+      bounds: { minX: -21, maxX: 21, minZ: -12, maxZ: 12 },
+      tee: { x: -18, z: 0 },
+      cup: { x: 18, z: 0, radius: 0.5 },
+      surfaces: [
+        boxSurface('c6-entry', 'fairway', -14, 0, 8, 6),
+        boxSurface('c6-upper', 'fairway', -6, 5.4, 8, 4),
+        boxSurface('c6-lower', 'fairway', -6, -5.4, 8, 4),
+        boxSurface('c6-center', 'sand', 1, 0, 8, 5),
+        boxSurface('c6-runway', 'fairway', 9, 0, 8, 4, { slope: { x: 0.18, z: 0 } }),
+        boxSurface('c6-boost', 'boost', 15, 0, 5, 3, { boost: 1.28 }),
+        boxSurface('c6-finish', 'fairway', 18, 0, 4, 5)
+      ],
+      obstacles: [
+        boxObstacle('c6-gate-left', -10, -3.3, 1.2, 4.8),
+        boxObstacle('c6-gate-right', -10, 3.3, 1.2, 4.8),
+        boxObstacle('c6-center-a', -1, 3.5, 1.2, 5.4),
+        boxObstacle('c6-center-b', -1, -3.5, 1.2, 5.4),
+        boxObstacle('c6-center-c', 7, 0, 1.4, 6),
+        boxObstacle('c6-post-a', 12, 4.2, 1.15, 1.15, { variant: 'bumper-post', height: 1.45 }),
+        boxObstacle('c6-post-b', 12, -4.2, 1.15, 1.15, { variant: 'bumper-post', height: 1.45 })
+      ],
+      hazards: [
+        boxHazard('c6-cut-top', 'void', 3, 9, 12, 2.4),
+        boxHazard('c6-cut-bottom', 'void', 3, -9, 12, 2.4),
+        boxHazard('c6-oasis-top', 'water', 12, 8.8, 8, 2.4),
+        boxHazard('c6-oasis-bottom', 'water', 12, -8.8, 8, 2.4)
+      ],
+      movingHazards: [
+        movingHazard('c6-hammer-a', 'bumper', 5, -1.8, 2.2, 2.2, { axis: 'z', amplitude: 3.8, speed: 1.08 }),
+        movingHazard('c6-hammer-b', 'bumper', 5, 1.8, 2.2, 2.2, { axis: 'z', amplitude: 3.8, speed: 1.08, phase: Math.PI }),
+        movingHazard('c6-runner', 'bumper', 13, 0, 2, 2, { axis: 'x', amplitude: 3.2, speed: 1.2 })
+      ],
+      scenery: [
+        { type: 'anvil', x: -16, z: 10 },
+        { type: 'tower', x: 0, z: -10 },
+        { type: 'billboard', x: 16, z: 10 }
       ]
     }
   ]

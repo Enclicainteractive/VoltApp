@@ -8,6 +8,23 @@ import {
 } from '../services/klipyService'
 import '../assets/styles/KlipyPicker.css'
 
+const FAV_STORAGE_KEY = 'volt_gif_favourites'
+
+const loadFavourites = () => {
+  try {
+    const raw = localStorage.getItem(FAV_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+const saveFavourites = (favs) => {
+  try {
+    localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify(favs))
+  } catch {}
+}
+
 const KlipyPicker = ({ onSelect, onClose }) => {
   const [query, setQuery] = useState('')
   const [items, setItems] = useState([])
@@ -19,6 +36,8 @@ const KlipyPicker = ({ onSelect, onClose }) => {
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [trackingEnabled, setTrackingState] = useState(false)
   const [showPrivacySettings, setShowPrivacySettings] = useState(false)
+  const [activeTab, setActiveTab] = useState('trending') // 'trending' | 'favourites'
+  const [favourites, setFavourites] = useState(() => loadFavourites())
   const searchInputRef = useRef(null)
   const scrollContainerRef = useRef(null)
   const scrollTimeoutRef = useRef(null)
@@ -105,6 +124,7 @@ const KlipyPicker = ({ onSelect, onClose }) => {
   const handleSearch = (e) => {
     e.preventDefault()
     setPage(1)
+    setActiveTab('trending')
     if (query.trim()) {
       setSelectedCategory(null)
       loadSearch(query, 1, false)
@@ -117,6 +137,7 @@ const KlipyPicker = ({ onSelect, onClose }) => {
     setSelectedCategory(category)
     setQuery(category.query)
     setPage(1)
+    setActiveTab('trending')
     loadSearch(category.query, 1, false)
   }
 
@@ -131,6 +152,33 @@ const KlipyPicker = ({ onSelect, onClose }) => {
       url,
       slug: item.slug,
       title: item.title
+    })
+  }
+
+  const isFavourited = (item) => {
+    const url = item.url || item.preview
+    return favourites.some(f => f.url === url)
+  }
+
+  const toggleFavourite = (e, item) => {
+    e.stopPropagation()
+    const url = item.url || item.preview
+    if (!url) return
+    setFavourites(prev => {
+      let updated
+      if (prev.some(f => f.url === url)) {
+        updated = prev.filter(f => f.url !== url)
+      } else {
+        updated = [...prev, {
+          url,
+          title: item.title || '',
+          slug: item.slug || '',
+          type: item.type || 'gif',
+          savedAt: Date.now()
+        }]
+      }
+      saveFavourites(updated)
+      return updated
     })
   }
 
@@ -161,7 +209,7 @@ const KlipyPicker = ({ onSelect, onClose }) => {
     scrollTimeoutRef.current = requestAnimationFrame(() => {
       const { scrollTop, clientHeight, scrollHeight } = e.target
       
-      if (scrollHeight - scrollTop - clientHeight < 200) {
+      if (scrollHeight - scrollTop - clientHeight < 200 && activeTab !== 'favourites') {
         loadMore()
       }
     })
@@ -175,24 +223,37 @@ const KlipyPicker = ({ onSelect, onClose }) => {
     }
   }, [])
 
-  const renderItem = (item) => {
+  const renderItem = (item, showFavBtn = true) => {
     const url = item.url || item.preview
     if (!url) return null
+    const faved = isFavourited(item)
 
     return (
       <div 
-        key={item.id || item.slug} 
+        key={item.id || item.slug || url} 
         className="klipy-item"
         onClick={() => handleItemClick(item)}
       >
         <img 
           src={url} 
-          alt={item.title || 'KLIPY content'} 
+          alt={item.title || 'GIF'} 
           loading="lazy"
         />
+        {showFavBtn && (
+          <button
+            className={`klipy-fav-btn${faved ? ' faved' : ''}`}
+            onClick={(e) => toggleFavourite(e, item)}
+            title={faved ? 'Remove from favourites' : 'Add to favourites'}
+            aria-label={faved ? 'Remove from favourites' : 'Add to favourites'}
+          >
+            {faved ? '★' : '☆'}
+          </button>
+        )}
       </div>
     )
   }
+
+  const displayItems = activeTab === 'favourites' ? favourites : items
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -222,7 +283,22 @@ const KlipyPicker = ({ onSelect, onClose }) => {
           </button>
         </form>
 
-        {categories.length > 0 && (
+        <div className="klipy-tabs">
+          <button
+            className={`klipy-tab${activeTab === 'trending' ? ' active' : ''}`}
+            onClick={() => setActiveTab('trending')}
+          >
+            Trending
+          </button>
+          <button
+            className={`klipy-tab${activeTab === 'favourites' ? ' active' : ''}`}
+            onClick={() => setActiveTab('favourites')}
+          >
+            ★ Favourites {favourites.length > 0 && `(${favourites.length})`}
+          </button>
+        </div>
+
+        {activeTab === 'trending' && categories.length > 0 && (
           <div className="klipy-categories">
             <button 
               className={`klipy-category ${!selectedCategory ? 'active' : ''}`}
@@ -243,7 +319,17 @@ const KlipyPicker = ({ onSelect, onClose }) => {
         )}
 
         <div className="klipy-content" ref={scrollContainerRef} onScroll={handleScroll}>
-          {loading ? (
+          {activeTab === 'favourites' ? (
+            favourites.length === 0 ? (
+              <div className="klipy-empty">
+                No favourites yet. Click ☆ on any GIF to save it!
+              </div>
+            ) : (
+              <div className="klipy-grid">
+                {favourites.map(item => renderItem(item, true))}
+              </div>
+            )
+          ) : loading ? (
             <div className="klipy-loading">
               <div className="klipy-spinner"></div>
             </div>
@@ -253,10 +339,10 @@ const KlipyPicker = ({ onSelect, onClose }) => {
             </div>
           ) : (
             <div className="klipy-grid">
-              {items.map(renderItem)}
+              {items.map(item => renderItem(item, true))}
             </div>
           )}
-          {!loading && loadingMore && (
+          {activeTab === 'trending' && !loading && loadingMore && (
             <div className="klipy-loading-more">
               <div className="klipy-spinner"></div>
             </div>

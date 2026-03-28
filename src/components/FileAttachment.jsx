@@ -42,18 +42,36 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
     if (!analyser) return
 
     const buffer = new Uint8Array(analyser.frequencyBinCount)
+    // Number of bars in the visualizer
+    const BAR_COUNT = 32
+    // Map bar index to a frequency bin range using a logarithmic scale
+    // so lower frequencies (bass) get more bars and higher frequencies
+    // are compressed — matching how humans perceive audio.
+    const getFreqRange = (barIndex, totalBars, binCount) => {
+      // Logarithmic mapping: bar 0 → low freq, bar N-1 → high freq
+      const nyquist = binCount
+      const logMin = Math.log2(1)
+      const logMax = Math.log2(nyquist)
+      const start = Math.floor(Math.pow(2, logMin + (barIndex / totalBars) * (logMax - logMin)))
+      const end = Math.max(start + 1, Math.floor(Math.pow(2, logMin + ((barIndex + 1) / totalBars) * (logMax - logMin))))
+      return { start: Math.min(start, binCount - 1), end: Math.min(end, binCount) }
+    }
 
     const tick = () => {
       analyser.getByteFrequencyData(buffer)
 
-      setVisualizerBars((current) => current.map((previous, index, all) => {
-        const start = Math.floor((index / all.length) * buffer.length)
-        const end = Math.max(start + 1, Math.floor(((index + 1) / all.length) * buffer.length))
+      setVisualizerBars((current) => current.map((previous, index) => {
+        const { start, end } = getFreqRange(index, current.length, buffer.length)
         let sum = 0
         for (let i = start; i < end; i += 1) sum += buffer[i]
         const average = sum / (end - start)
-        const normalized = clamp(average / 255, 0.08, 1)
-        return previous * 0.42 + normalized * 0.58
+        // Normalize to 0..1, apply a slight boost to make quiet audio more visible
+        const normalized = clamp(Math.pow(average / 255, 0.75), 0.05, 1)
+        // Fast attack (0.7), slower decay (0.25) for a punchy look
+        const smoothed = normalized > previous
+          ? previous * 0.3 + normalized * 0.7   // fast attack
+          : previous * 0.75 + normalized * 0.25  // slow decay
+        return smoothed
       }))
 
       animationFrameRef.current = requestAnimationFrame(tick)
@@ -78,8 +96,8 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
       const audioContext = audioContextRef.current
       if (!analyserRef.current) {
         const analyser = audioContext.createAnalyser()
-        analyser.fftSize = 256
-        analyser.smoothingTimeConstant = 0.72
+        analyser.fftSize = 2048
+        analyser.smoothingTimeConstant = 0.6
         analyser.connect(audioContext.destination)
         analyserRef.current = analyser
       }
@@ -843,6 +861,68 @@ const VoiceMessagePlayer = ({ src, duration: initialDuration }) => {
   )
 }
 
+// Image with error fallback - shows a proper error message when image fails to load
+const ImageWithFallback = ({ url, name, formattedSize, onOpen }) => {
+  const [imgError, setImgError] = useState(false)
+  const [imgLoading, setImgLoading] = useState(true)
+
+  if (imgError) {
+    return (
+      <div className="attachment-image-error">
+        <PhotoIcon width={32} height={32} />
+        <div className="attachment-image-error-text">
+          <span className="attachment-image-error-title">Image failed to load</span>
+          <span className="attachment-image-error-sub">This format may not be supported by your browser</span>
+        </div>
+        <a href={url} download={name} className="attachment-download-fallback" title="Download file">
+          <ArrowDownTrayIcon width={16} height={16} /> Download
+        </a>
+        <div className="attachment-info">
+          <span className="attachment-name">{name}</span>
+          {formattedSize && <span className="attachment-size">{formattedSize}</span>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div
+        className="image-link"
+        onClick={onOpen}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onOpen()
+          }
+        }}
+        aria-label={`Open image ${name}`}
+      >
+        {imgLoading && <div className="attachment-image-loading">Loading…</div>}
+        <img
+          src={url}
+          alt={name}
+          className="attachment-image"
+          style={imgLoading ? { opacity: 0, position: 'absolute' } : {}}
+          onLoad={() => setImgLoading(false)}
+          onError={() => { setImgLoading(false); setImgError(true) }}
+        />
+        {!imgLoading && (
+          <div className="attachment-image-overlay">
+            <span className="attachment-image-chip">Open viewer</span>
+          </div>
+        )}
+      </div>
+      <div className="attachment-info">
+        <span className="attachment-name">{name}</span>
+        {formattedSize && <span className="attachment-size">{formattedSize}</span>}
+      </div>
+    </>
+  )
+}
+
 const ImageLightbox = ({ isOpen, url, name, sizeLabel, onClose }) => {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
@@ -1201,28 +1281,12 @@ const FileAttachment = ({ attachment }) => {
           </div>
         ) : (
           <div className="attachment-viewer image-viewer">
-            <div 
-              className="image-link"
-              onClick={() => setLightboxOpen(true)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  setLightboxOpen(true)
-                }
-              }}
-              aria-label={`Open image ${name}`}
-            >
-              <img src={url} alt={name} className="attachment-image" />
-              <div className="attachment-image-overlay">
-                <span className="attachment-image-chip">Open viewer</span>
-              </div>
-            </div>
-            <div className="attachment-info">
-              <span className="attachment-name">{name}</span>
-              <span className="attachment-size">{formattedSize}</span>
-            </div>
+            <ImageWithFallback
+              url={url}
+              name={name}
+              formattedSize={formattedSize}
+              onOpen={() => setLightboxOpen(true)}
+            />
           </div>
         )}
         <ImageLightbox

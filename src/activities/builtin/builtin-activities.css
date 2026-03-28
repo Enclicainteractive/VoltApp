@@ -87,6 +87,13 @@
   min-height: 400px;
 }
 
+.builtin-activity-modal[data-activity="builtin:timedilationchess"] {
+  min-width: 1000px;
+  min-height: 700px;
+  width: 95vw;
+  height: 90vh;
+}
+
 .builtin-activity-modal[data-activity="builtin:bytebeat"] {
   min-width: 700px;
   min-height: 600px;

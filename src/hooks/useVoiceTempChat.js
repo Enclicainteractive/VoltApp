@@ -13,10 +13,18 @@ export const useVoiceTempChat = (participants, isConnected, channelId) => {
   const [unreadCount, setUnreadCount] = useState(0)
   
   const messageIdRef = useRef(0)
+  const hasRequestedHistoryRef = useRef(false)
+  const prevParticipantsLengthRef = useRef(participants.length)
 
   const getMessageId = useCallback(() => {
     return `${Date.now()}-${++messageIdRef.current}`
   }, [])
+
+  const requestHistory = useCallback(() => {
+    if (!socket || !channelId) return
+    console.log('[VoiceTempChat] Requesting chat history for channel:', channelId)
+    socket.emit('voice:temp-chat:request-history', { channelId })
+  }, [socket, channelId])
 
   const sendMessage = useCallback((content) => {
     if (!content?.trim() || !user || !socket) return
@@ -39,6 +47,7 @@ export const useVoiceTempChat = (participants, isConnected, channelId) => {
       return updated
     })
 
+    console.log('[VoiceTempChat] Sending message to channel:', channelId, message)
     socket.emit('voice:temp-chat:message', {
       channelId,
       message
@@ -65,6 +74,7 @@ export const useVoiceTempChat = (participants, isConnected, channelId) => {
 
     const handleTempChatHistory = ({ messages: history }) => {
       if (!Array.isArray(history)) return
+      hasRequestedHistoryRef.current = false // reset flag when history received
       setMessages(prev => {
         const existingIds = new Set(prev.map(m => m.id))
         const newMessages = history.filter(m => !existingIds.has(m.id))
@@ -84,22 +94,45 @@ export const useVoiceTempChat = (participants, isConnected, channelId) => {
     socket.on('voice:temp-chat:history', handleTempChatHistory)
     socket.on('voice:temp-chat:clear', handleTempChatClear)
 
+    console.log('[VoiceTempChat] Joining temp chat for channel:', channelId)
     socket.emit('voice:temp-chat:join', { channelId })
+    
+    // Request history after joining (server may send automatically, but we request to be sure)
+    if (!hasRequestedHistoryRef.current) {
+      hasRequestedHistoryRef.current = true
+      // Small delay to allow server to process join
+      setTimeout(() => {
+        requestHistory()
+      }, 500)
+    }
 
     return () => {
       socket.off('voice:temp-chat:message', handleTempChatMessage)
       socket.off('voice:temp-chat:history', handleTempChatHistory)
       socket.off('voice:temp-chat:clear', handleTempChatClear)
+      console.log('[VoiceTempChat] Leaving temp chat for channel:', channelId)
       socket.emit('voice:temp-chat:leave', { channelId })
     }
-  }, [socket, isConnected, channelId, isVisible, notificationsEnabled, user])
+  }, [socket, isConnected, channelId, isVisible, notificationsEnabled, user, requestHistory])
 
   useEffect(() => {
-    if (participants.length <= 1 && messages.length > 0) {
+    const currentLength = participants.length
+    const previousLength = prevParticipantsLengthRef.current
+    prevParticipantsLengthRef.current = currentLength
+
+    // Clear messages when alone (no one else to chat with)
+    if (currentLength <= 1 && messages.length > 0) {
       setMessages([])
       setUnreadCount(0)
+      return
     }
-  }, [participants.length])
+
+    // If participants increased (someone joined) and we have no messages, request history
+    if (currentLength > previousLength && messages.length === 0 && !hasRequestedHistoryRef.current) {
+      hasRequestedHistoryRef.current = true
+      requestHistory()
+    }
+  }, [participants.length, messages.length, requestHistory])
 
   const clearMessages = useCallback(() => {
     setMessages([])

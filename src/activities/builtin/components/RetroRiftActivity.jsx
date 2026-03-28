@@ -9,6 +9,7 @@ const FOV = Math.PI / 3
 const VIEW_DEPTH = 32
 const MOVE_SPEED = 2.8
 const TURN_SPEED = 1.35
+const MOUSE_SENSITIVITY = 0.0008
 const PLAYER_SYNC_MS = 90
 const BOT_SYNC_MS = 180
 const RESPAWN_MS = 2600
@@ -785,6 +786,8 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
   const [countdownNow, setCountdownNow] = useState(Date.now())
   const [matchClockNow, setMatchClockNow] = useState(Date.now())
   const [showMap, setShowMap] = useState(false)
+  const [mouseCapture, setMouseCapture] = useState(false)
+  const mouseLookRef = useRef({ x: 0, y: 0 })
 
   const sendEvent = useCallback((eventType, payload = {}) => {
     sdk?.emitEvent?.(eventType, payload, { serverRelay: true })
@@ -959,6 +962,8 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
           break
         }
         case 'retrorift:state':
+          // Ignore state updates from ourselves - our local game loop owns our position
+          if (payload.playerId === userId) break
           setPlayers((current) => current.map((player) => (
             player.id === payload.playerId ? { ...player, ...payload } : player
           )))
@@ -1057,6 +1062,11 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
           }
           break
         case 'retrorift:respawn':
+          // Ignore our own respawn echo - the game loop handles local player respawn directly
+          if (payload.playerId === userId) {
+            audioRef.current.respawn()
+            break
+          }
           updatePlayer(payload.playerId, (player) => ({
             ...player,
             x: Number(payload.x ?? player.x),
@@ -1068,7 +1078,6 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
             respawnAt: 0,
             flashUntil: Date.now() + RESPAWN_GRACE_MS
           }))
-          if (payload.playerId === userId) audioRef.current.respawn()
           break
         case 'retrorift:door':
           setDoors((current) => current.map((door) => (door.id === payload.doorId ? { ...door, open: !!payload.open } : door)))
@@ -1109,13 +1118,39 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
       }
       keysRef.current.delete(event.key.toLowerCase())
     }
+    const handleMouseMove = (event) => {
+      if (!mouseCapture || phase !== 'live') return
+      const deltaX = event.movementX || 0
+      setPlayers((current) => current.map((player) => {
+        if (player.id !== userId) return player
+        return { ...player, angle: normalizeAngle(player.angle + deltaX * MOUSE_SENSITIVITY) }
+      }))
+    }
+    const handleClick = () => {
+      if (phase === 'live' && canvasRef.current && !mouseCapture) {
+        canvasRef.current.requestPointerLock?.()
+      }
+    }
+    const handlePointerLockChange = () => {
+      setMouseCapture(document.pointerLockElement === canvasRef.current)
+    }
     window.addEventListener('keydown', handleDown)
     window.addEventListener('keyup', handleUp)
+    window.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('pointerlockchange', handlePointerLockChange)
+    if (canvasRef.current) {
+      canvasRef.current.addEventListener('click', handleClick)
+    }
     return () => {
       window.removeEventListener('keydown', handleDown)
       window.removeEventListener('keyup', handleUp)
+      window.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('pointerlockchange', handlePointerLockChange)
+      if (canvasRef.current) {
+        canvasRef.current.removeEventListener('click', handleClick)
+      }
     }
-  }, [])
+  }, [mouseCapture, phase, userId])
 
   useEffect(() => {
     if (phase !== 'countdown') return undefined
@@ -1194,8 +1229,26 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
     if (phase !== 'live') return undefined
     const interval = window.setInterval(() => {
       const now = Date.now()
-      updatePlayer(userId, (player) => {
-        if (!player || (player.respawnAt && now < player.respawnAt)) return player
+      // Single setPlayers call to avoid React batching flip-flop between two competing updaters
+      setPlayers((current) => {
+        const playerIndex = current.findIndex((p) => p.id === userId)
+        if (playerIndex === -1) return current
+
+        const player = current[playerIndex]
+
+        // Handle respawn first - if player is dead and timer expired, respawn them
+        if (player.respawnAt && now >= player.respawnAt) {
+          const spawn = findOpenSpawn(mapConfigRef.current, current.filter((entry) => entry.id !== player.id), playerIndex, SAFE_SPAWN_DISTANCE)
+          sendEvent('retrorift:respawn', { playerId: player.id, x: spawn.x, y: spawn.y, angle: spawn.angle })
+          const respawned = { ...player, x: spawn.x, y: spawn.y, angle: spawn.angle, hp: 100, armor: 0, ammo: Math.max(player.ammo, 16), respawnAt: 0, flashUntil: now + RESPAWN_GRACE_MS }
+          const next = [...current]
+          next[playerIndex] = respawned
+          return next
+        }
+
+        // Skip movement while dead
+        if (player.respawnAt && now < player.respawnAt) return current
+
         let angle = player.angle
         if (keysRef.current.has('arrowleft')) angle -= TURN_SPEED * 0.05
         if (keysRef.current.has('arrowright')) angle += TURN_SPEED * 0.05
@@ -1228,7 +1281,7 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
           audioRef.current.footstep?.()
         }
 
-        const nextPlayer = { ...player, x, y, angle }
+        let nextPlayer = { ...player, x, y, angle }
 
         for (const pickup of pickupsRef.current) {
           if (!pickup.active || pendingPickupClaimsRef.current.has(pickup.id)) continue
@@ -1286,10 +1339,13 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
               winText: outcome.winnerId ? `${username} sealed the rift.` : null,
               feedText: outcome.feedText
             })
-            return outcome.shooter
+            nextPlayer = outcome.shooter
+            const next = [...current]
+            next[playerIndex] = nextPlayer
+            return next
           }
 
-          return { ...nextPlayer, ammo: nextPlayer.ammo - loadout.ammoUse }
+          nextPlayer = { ...nextPlayer, ammo: nextPlayer.ammo - loadout.ammoUse }
         }
 
         if (now - lastSyncRef.current > PLAYER_SYNC_MS) {
@@ -1310,18 +1366,13 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
           })
         }
 
-        return nextPlayer
+        const next = [...current]
+        next[playerIndex] = nextPlayer
+        return next
       })
-
-      setPlayers((current) => current.map((player, index, arr) => {
-        if (player.id !== userId || !player.respawnAt || now < player.respawnAt) return player
-        const spawn = findOpenSpawn(mapConfigRef.current, arr.filter((entry) => entry.id !== player.id), index, SAFE_SPAWN_DISTANCE)
-        sendEvent('retrorift:respawn', { playerId: player.id, x: spawn.x, y: spawn.y, angle: spawn.angle })
-        return { ...player, x: spawn.x, y: spawn.y, angle: spawn.angle, hp: 100, armor: 0, ammo: Math.max(player.ammo, 16), respawnAt: 0, flashUntil: now + RESPAWN_GRACE_MS }
-      }))
     }, 16)
     return () => window.clearInterval(interval)
-  }, [phase, sendEvent, updatePlayer, userId, username])
+  }, [phase, sendEvent, userId, username])
 
   useEffect(() => {
     if (!isHost || phase !== 'live') return undefined
@@ -1491,25 +1542,19 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    const trackName = phase === 'lobby' || phase === 'finished'
-      ? 'lobby'
-      : phase === 'live' || phase === 'countdown'
-        ? 'combat'
-        : 'lobby'
-    audio.startMusic(trackName)
+    if (phase === 'finished' && winnerId === userId) {
+      audio.win()
+      audio.startMusic('victory')
+    } else {
+      const trackName = phase === 'live' || phase === 'countdown' ? 'combat' : 'lobby'
+      audio.startMusic(trackName)
+    }
     return () => audio.stopMusic()
-  }, [phase])
+  }, [phase, userId, winnerId])
 
   useEffect(() => {
     audioRef.current?.setSecretMode?.(phase === 'live' && !!me && isInsideSecretArea(activeMap, me))
   }, [activeMap, me, phase])
-
-  useEffect(() => {
-    if (phase === 'finished' && winnerId === userId) {
-      audioRef.current.win()
-      audioRef.current.startMusic('victory')
-    }
-  }, [phase, userId, winnerId])
 
   const handleLoadoutSelect = useCallback((loadoutId) => {
     setSelectedLoadout(loadoutId)
@@ -1691,8 +1736,8 @@ const RetroRiftActivity = ({ sdk, currentUser, session }) => {
       </div>
 
       {(phase === 'lobby' || phase === 'finished') && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,6,12,0.64)', display: 'grid', placeItems: 'center', padding: 24 }}>
-          <div style={{ width: 'min(980px, 92vw)', borderRadius: 28, background: 'rgba(7,10,18,0.94)', border: '1px solid rgba(35,211,238,0.28)', padding: 24, display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: 22 }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,6,12,0.64)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+          <div style={{ width: '100%', maxWidth: 980, borderRadius: 28, background: 'rgba(7,10,18,0.94)', border: '1px solid rgba(35,211,238,0.28)', padding: 20, display: 'grid', gridTemplateColumns: 'minmax(0, 1.15fr) minmax(0, 0.85fr)', gap: 20, marginTop: 'auto', marginBottom: 'auto' }}>
             <div>
               <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.18em', color: '#23d3ee' }}>Loadout + Arena Setup</div>
               <div style={{ fontSize: 34, fontWeight: 900, lineHeight: 0.95, marginTop: 6 }}>{phase === 'finished' ? 'Run It Again' : "Retro Rift '93"}</div>

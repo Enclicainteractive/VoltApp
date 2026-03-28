@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { ShieldCheckIcon, UsersIcon, ServerStackIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, TrashIcon, KeyIcon, ClockIcon, ChartBarIcon, CogIcon, CheckIcon, UserMinusIcon, UserPlusIcon, LockClosedIcon, LockOpenIcon, ScaleIcon, GlobeAltIcon, CheckCircleIcon, XCircleIcon, ChatBubbleLeftRightIcon, BoltIcon, NoSymbolIcon, BellIcon } from '@heroicons/react/24/outline'
+import { ShieldCheckIcon, UsersIcon, ServerStackIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, ArrowPathIcon, XMarkIcon, TrashIcon, KeyIcon, ClockIcon, ChartBarIcon, CogIcon, CheckIcon, UserPlusIcon, LockClosedIcon, LockOpenIcon, ScaleIcon, GlobeAltIcon, CheckCircleIcon, XCircleIcon, ChatBubbleLeftRightIcon, BoltIcon, NoSymbolIcon, BellIcon, EyeIcon, HashtagIcon } from '@heroicons/react/24/outline'
 import { apiService } from '../services/apiService'
 import Avatar from './Avatar'
 import useTranslation from '../hooks/useTranslation'
 import { useAuth } from '../contexts/AuthContext'
 import '../assets/styles/AdminPanel.css'
 
-const AdminPanel = ({ onClose }) => {
+const AdminPanel = ({ onClose, onServersChanged }) => {
   const { t } = useTranslation()
   const { user: currentUser, refreshUser } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
@@ -26,6 +26,8 @@ const AdminPanel = ({ onClose }) => {
   const [error, setError] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUser, setSelectedUser] = useState(null)
+  const [selectedServer, setSelectedServer] = useState(null)
+  const [serverDetailsLoading, setServerDetailsLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [showOnlineOnly, setShowOnlineOnly] = useState(false)
   const [onlineUsers, setOnlineUsers] = useState([])
@@ -401,6 +403,36 @@ const AdminPanel = ({ onClose }) => {
     }
   }
 
+  const loadServerDetails = async (serverId) => {
+    setServerDetailsLoading(true)
+    try {
+      const res = await apiService.getAdminServer(serverId)
+      setSelectedServer(res.data || null)
+    } catch (err) {
+      console.error('Failed to load server details:', err)
+      alert(err?.response?.data?.error || 'Failed to load server details')
+    } finally {
+      setServerDetailsLoading(false)
+    }
+  }
+
+  const handleJoinServerAsAdmin = async (serverId) => {
+    setActionLoading(true)
+    try {
+      await apiService.joinAdminServer(serverId)
+      await loadData()
+      if (selectedServer?.id === serverId) {
+        await loadServerDetails(serverId)
+      }
+      await onServersChanged?.()
+    } catch (err) {
+      console.error('Failed to join server as admin:', err)
+      alert(err?.response?.data?.error || 'Failed to join server')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const loadOnlineUsers = async () => {
     setLoadingOnlineUsers(true)
     try {
@@ -430,6 +462,13 @@ const AdminPanel = ({ onClose }) => {
   const filteredServers = searchQuery
     ? servers.filter(s => s.name?.toLowerCase().includes(searchQuery.toLowerCase()))
     : servers
+
+  const formatCompactNumber = (value) => new Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 1
+  }).format(Number(value) || 0)
+
+  const formatDateTime = (value) => value ? new Date(value).toLocaleString() : t('admin.adminPanel.na')
 
   const tabs = [
     { id: 'overview', labelKey: 'admin.adminPanel.tabs.overview', icon: ChartBarIcon },
@@ -773,8 +812,8 @@ const AdminPanel = ({ onClose }) => {
                               <span className="server-name">{server.name}</span>
                             </div>
                           </td>
-                          <td>{server.ownerId}</td>
-                          <td>{server.members?.length || 0}</td>
+                          <td>{server.owner?.username || server.ownerId}</td>
+                          <td>{server.memberCount || server.members?.length || 0}</td>
                           <td>
                             {server.isBanned ? (
                               <span className="status-badge banned">{t('admin.adminPanel.status.banned')}</span>
@@ -783,27 +822,50 @@ const AdminPanel = ({ onClose }) => {
                             )}
                           </td>
                           <td>
-                            <div className="action-buttons">
-                              {server.isBanned ? (
-                                <button 
-                                  className="icon-btn success" 
-                                  title={t('admin.adminPanel.actions.unbanServer')}
-                                  onClick={() => handleUnbanServer(server.id)}
+                            <div className="server-admin-actions">
+                              <div className="server-inline-metrics">
+                                <span><HashtagIcon size={12} /> {server.metrics?.channelCount || 0} channels</span>
+                                <span><ChatBubbleLeftRightIcon size={12} /> {formatCompactNumber(server.metrics?.totalMessages || 0)} messages</span>
+                              </div>
+                              <div className="action-buttons">
+                                <button
+                                  className="icon-btn"
+                                  title="Inspect server"
+                                  onClick={() => loadServerDetails(server.id)}
                                 >
-                                  <LockOpenIcon size={16} />
+                                  <EyeIcon size={16} />
                                 </button>
-                              ) : (
-                                <button 
-                                  className="icon-btn danger" 
-                                  title={t('admin.adminPanel.actions.banServer')}
-                                  onClick={() => {
-                                    const reason = prompt(t('admin.adminPanel.prompts.enterBanReason'))
-                                    if (reason) handleBanServer(server.id, reason)
-                                  }}
-                                >
-                                  <LockClosedIcon size={16} />
-                                </button>
-                              )}
+                                {!server.joined && (
+                                  <button
+                                    className="icon-btn success"
+                                    title="Join server"
+                                    onClick={() => handleJoinServerAsAdmin(server.id)}
+                                    disabled={actionLoading}
+                                  >
+                                    <UserPlusIcon size={16} />
+                                  </button>
+                                )}
+                                {server.isBanned ? (
+                                  <button 
+                                    className="icon-btn success" 
+                                    title={t('admin.adminPanel.actions.unbanServer')}
+                                    onClick={() => handleUnbanServer(server.id)}
+                                  >
+                                    <LockOpenIcon size={16} />
+                                  </button>
+                                ) : (
+                                  <button 
+                                    className="icon-btn danger" 
+                                    title={t('admin.adminPanel.actions.banServer')}
+                                    onClick={() => {
+                                      const reason = prompt(t('admin.adminPanel.prompts.enterBanReason'))
+                                      if (reason) handleBanServer(server.id, reason)
+                                    }}
+                                  >
+                                    <LockClosedIcon size={16} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -1327,11 +1389,11 @@ const AdminPanel = ({ onClose }) => {
       {selectedUser && (
         <div className="modal-overlay" onClick={() => setSelectedUser(null)}>
           <div className="modal admin-user-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+            <div className="modal-header admin-modal-header">
               <h2>{t('admin.adminPanel.userActions.title')}</h2>
-              <button onClick={() => setSelectedUser(null)}><XMarkIcon size={20} /></button>
+              <button className="admin-modal-close" onClick={() => setSelectedUser(null)}><XMarkIcon size={20} /></button>
             </div>
-            <div className="modal-content">
+            <div className="modal-content admin-modal-content">
               <div className="user-details">
                 <Avatar src={selectedUser.avatar} fallback={selectedUser.username} size={64} userId={selectedUser.id} />
                 <h3>{selectedUser.username || selectedUser.email}</h3>
@@ -1447,6 +1509,145 @@ const AdminPanel = ({ onClose }) => {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(selectedServer || serverDetailsLoading) && (
+        <div className="modal-overlay" onClick={() => !serverDetailsLoading && setSelectedServer(null)}>
+          <div className="modal admin-server-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header admin-modal-header">
+              <h2>Server Inspection</h2>
+              <button className="admin-modal-close" onClick={() => setSelectedServer(null)}><XMarkIcon size={20} /></button>
+            </div>
+            <div className="modal-content admin-modal-content">
+              {serverDetailsLoading || !selectedServer ? (
+                <div className="admin-loading inline">
+                  <div className="loading-spinner"></div>
+                  <p>Loading server details...</p>
+                </div>
+              ) : (
+                <>
+                  <div className="admin-server-hero">
+                    <div className="server-cell">
+                      <div className="server-icon">
+                        {selectedServer.icon ? (
+                          <img src={selectedServer.icon} alt={selectedServer.name} />
+                        ) : (
+                          <span>{selectedServer.name?.charAt(0)}</span>
+                        )}
+                      </div>
+                      <div>
+                        <h3>{selectedServer.name}</h3>
+                        <p>{selectedServer.description || 'No description set.'}</p>
+                        <div className="admin-server-meta">
+                          <span>Owner: {selectedServer.owner?.username || selectedServer.ownerId}</span>
+                          <span>Created: {formatDateTime(selectedServer.createdAt)}</span>
+                          <span>Last message: {formatDateTime(selectedServer.metrics?.lastMessageAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="admin-server-hero-actions">
+                      {!selectedServer.joined && (
+                        <button className="btn btn-primary" onClick={() => handleJoinServerAsAdmin(selectedServer.id)} disabled={actionLoading}>
+                          <UserPlusIcon size={16} /> Join Server
+                        </button>
+                      )}
+                      <button className="btn btn-secondary" onClick={() => loadServerDetails(selectedServer.id)} disabled={serverDetailsLoading}>
+                        <ArrowPathIcon size={16} /> Refresh
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="admin-server-stats-grid">
+                    <div className="admin-stat-card">
+                      <div className="stat-icon-wrapper">
+                        <UsersIcon size={20} />
+                      </div>
+                      <div className="stat-info">
+                        <span className="stat-value">{selectedServer.members?.length || 0}</span>
+                        <span className="stat-label">Members</span>
+                      </div>
+                    </div>
+                    <div className="admin-stat-card">
+                      <div className="stat-icon-wrapper">
+                        <HashtagIcon size={20} />
+                      </div>
+                      <div className="stat-info">
+                        <span className="stat-value">{selectedServer.channels?.length || 0}</span>
+                        <span className="stat-label">Channels</span>
+                      </div>
+                    </div>
+                    <div className="admin-stat-card">
+                      <div className="stat-icon-wrapper">
+                        <ChatBubbleLeftRightIcon size={20} />
+                      </div>
+                      <div className="stat-info">
+                        <span className="stat-value">{formatCompactNumber(selectedServer.metrics?.totalMessages || 0)}</span>
+                        <span className="stat-label">Messages</span>
+                      </div>
+                    </div>
+                    <div className="admin-stat-card">
+                      <div className="stat-icon-wrapper">
+                        <ChartBarIcon size={20} />
+                      </div>
+                      <div className="stat-info">
+                        <span className="stat-value">{formatCompactNumber(selectedServer.metrics?.recentMessages7d || 0)}</span>
+                        <span className="stat-label">7 Day Messages</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="admin-inspection-grid">
+                    <section className="inspection-section">
+                      <div className="inspection-section-header">
+                        <h4>Channels</h4>
+                        <span>{selectedServer.channels?.length || 0}</span>
+                      </div>
+                      <div className="inspection-list">
+                        {(selectedServer.channels || []).map(channel => (
+                          <div key={channel.id} className="inspection-item">
+                            <div>
+                              <strong>#{channel.name}</strong>
+                              <span>{channel.type || 'text'}{channel.categoryId ? ` | category ${channel.categoryId}` : ''}</span>
+                            </div>
+                            <div className="inspection-item-meta">
+                              <span>{formatCompactNumber(channel.messageCount || 0)} msgs</span>
+                              <span>{formatDateTime(channel.lastMessageAt)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="inspection-section">
+                      <div className="inspection-section-header">
+                        <h4>Members</h4>
+                        <span>{selectedServer.members?.length || 0}</span>
+                      </div>
+                      <div className="inspection-list">
+                        {(selectedServer.members || []).map(member => (
+                          <div key={member.id} className="inspection-item">
+                            <div className="inspection-member-main">
+                              <Avatar src={member.avatar} fallback={member.username} size={28} userId={member.id} />
+                              <div>
+                                <strong>{member.username}</strong>
+                                <span>{member.id}</span>
+                              </div>
+                            </div>
+                            <div className="inspection-item-meta">
+                              <span>{member.roles?.join(', ') || member.role || 'member'}</span>
+                              <span>{formatDateTime(member.joinedAt)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
