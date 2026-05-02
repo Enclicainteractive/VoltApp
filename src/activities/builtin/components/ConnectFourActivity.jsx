@@ -486,36 +486,47 @@ const ConnectFourActivity = ({ sdk, currentUser }) => {
     if (gs.turn !== myColor) return
     if (!canDrop(gs.board, col)) return
 
-    sound.init()
+    try { sound.init() } catch {}
 
     const actionId = `c4m_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
     rememberEvent(seenRef, actionId)
 
     setPending(true)
     setHoverCol(null)
-    const dropped = dropPiece(stateRef.current.board, col, myColor)
-    if (dropped) {
-      const winResult = checkWin(dropped.board)
-      const isDraw = !winResult && isBoardFull(dropped.board)
-      pushState({
-        ...stateRef.current,
-        board: dropped.board,
-        turn: myColor === RED ? YELLOW : RED,
-        winner: winResult?.winner || null,
-        winCells: winResult?.cells || null,
-        isDraw,
-        status: winResult || isDraw ? 'finished' : stateRef.current.redPlayer && stateRef.current.yellowPlayer ? 'playing' : 'waiting',
-        moveCount: (stateRef.current.moveCount || 0) + 1,
-      }, 'move_valid')
-      setLastDrop({ row: dropped.row, col, color: myColor, ts: Date.now() })
+    try {
+      const dropped = dropPiece(stateRef.current.board, col, myColor)
+      if (dropped) {
+        const winResult = checkWin(dropped.board)
+        const isDraw = !winResult && isBoardFull(dropped.board)
+        pushState({
+          ...stateRef.current,
+          board: dropped.board,
+          turn: myColor === RED ? YELLOW : RED,
+          winner: winResult?.winner || null,
+          winCells: winResult?.cells || null,
+          isDraw,
+          status: winResult || isDraw ? 'finished' : stateRef.current.redPlayer && stateRef.current.yellowPlayer ? 'playing' : 'waiting',
+          moveCount: (stateRef.current.moveCount || 0) + 1,
+        }, 'move_valid')
+        setLastDrop({ row: dropped.row, col, color: myColor, ts: Date.now() })
+      }
+    } catch (err) {
+      console.error('ConnectFour: error applying local drop', err)
+      setPending(false)
+      return
     }
 
-    sdk.emitEvent('c4:move', {
-      col,
-      color: myColor,
-      playerId: currentUser?.id,
-      actionId,
-    }, { serverRelay: true, cue: 'piece_drop' })
+    try {
+      sdk.emitEvent('c4:move', {
+        col,
+        color: myColor,
+        playerId: currentUser?.id,
+        actionId,
+      }, { serverRelay: true, cue: 'piece_drop' })
+    } catch (err) {
+      console.error('ConnectFour: error emitting move event', err)
+      setPending(false)
+    }
   }, [sdk, myColor, pending, gs.board, gs.winner, gs.isDraw, gs.turn, currentUser?.id, sound, pushState])
 
   const joinGame = useCallback((color) => {

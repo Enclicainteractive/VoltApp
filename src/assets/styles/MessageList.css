@@ -1,8 +1,16 @@
+.message-list-shell {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
 .message-list {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  height: 100%;
 }
 
 .messages-container {
@@ -410,17 +418,24 @@
   margin-top: 8px;
   margin-left: 56px;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  /* Ensure voice message player and other attachments don't overflow */
-  max-width: calc(100% - 56px);
+  align-items: flex-start;
+  /* Keep attachments stacked in a single column within the message body */
+  max-width: min(720px, calc(100% - 56px));
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.message-attachments > * {
+  width: 100%;
+  max-width: 100%;
+  flex: 0 0 auto;
 }
 
 /* Voice message player inside message attachments */
 .message-attachments .voice-message-player {
-  max-width: min(100%, 320px);
+  max-width: min(100%, 340px);
   width: 100%;
 }
 
@@ -671,6 +686,38 @@
   background: rgba(31, 182, 255, 0.05);
 }
 
+.pin-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  margin-left: 56px;
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.pin-loading .spinning {
+  animation: spin 1s linear infinite;
+}
+
+.pinned-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  margin-left: 56px;
+  font-size: 12px;
+  color: var(--volt-accent);
+  font-weight: 600;
+}
+
+.pinned-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* ── Return-to-latest / Jump-to-bottom button ─────────────────────────────── */
 @keyframes rtl-slide-in {
   from {
@@ -706,8 +753,8 @@
 }
 
 .return-to-latest {
-  position: fixed;
-  bottom: 84px;
+  position: absolute;
+  bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -726,7 +773,7 @@
     0 4px 16px rgba(0, 0, 0, 0.35),
     0 1px 3px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  z-index: 80;
+  z-index: 6;
   pointer-events: auto;
   user-select: none;
   white-space: nowrap;
@@ -1062,4 +1109,236 @@ a.embed-title:hover {
 .selection-btn.danger:hover {
   background: #fef2f2;
   border-color: #fecaca;
+}
+
+/* ============================================================
+   Core Chat Surface Polish (spacing/readability/grouping)
+   ============================================================ */
+
+.message-list-shell {
+  isolation: isolate;
+}
+
+.message-list {
+  scroll-padding-top: 84px;
+  scroll-padding-bottom: 28px;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  position: relative;
+}
+
+.messages-container {
+  padding: clamp(12px, 1.8vw, 20px) clamp(10px, 1.8vw, 18px) clamp(20px, 3vw, 30px);
+}
+
+.message-list .message {
+  margin: 0;
+  padding: 7px 10px 8px;
+  border-radius: 8px;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.message-list .message + .message {
+  margin-top: 2px;
+}
+
+.message-list .message.cluster-start:not(:first-child) {
+  margin-top: clamp(8px, 1.1vh, 12px);
+}
+
+.message-list .message:hover {
+  background: color-mix(in srgb, var(--volt-hover) 85%, var(--volt-bg-secondary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--volt-border) 85%, transparent);
+}
+
+.message-list .message.grouped {
+  margin-top: 1px;
+  padding-top: 4px;
+}
+
+.message-list .message.cluster-end {
+  padding-bottom: 10px;
+}
+
+.message-list .message.cluster-solo {
+  padding-bottom: 8px;
+}
+
+.message-list .message.mentioned {
+  border-radius: 10px;
+  border-left-width: 3px;
+  background: color-mix(in srgb, var(--volt-primary) 14%, transparent);
+}
+
+.message-list .message-header {
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.message-list .message-avatar {
+  width: 38px;
+  height: 38px;
+  font-size: 15px;
+}
+
+.message-list .message-author {
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.message-list .message-timestamp {
+  font-size: 11px;
+}
+
+.message-list .message-content {
+  line-height: 1.62;
+  padding-left: 54px;
+  max-width: min(100%, 88ch);
+}
+
+.message-list .message.grouped .message-content,
+.message-list .message.grouped .message-reply-ref,
+.message-list .message-edit-container,
+.message-list .message-attachments,
+.message-list .message-reactions {
+  margin-left: 54px;
+}
+
+.message-list .message.grouped .message-content,
+.message-list .message.grouped .message-reply-ref {
+  padding-left: 0;
+}
+
+.message-list .message-reply-ref {
+  margin-left: 54px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border-left-width: 3px;
+  background: color-mix(in srgb, var(--volt-bg-tertiary) 88%, var(--volt-primary) 6%);
+}
+
+.message-list .message-reply-ref .reply-content {
+  max-width: min(100%, 60ch);
+}
+
+.message-list .message-attachments {
+  margin-top: 6px;
+}
+
+.message-list .message-reactions {
+  margin-top: 6px;
+}
+
+.message-list .no-messages {
+  min-height: clamp(220px, 44vh, 360px);
+  gap: 10px;
+  margin: clamp(12px, 2vw, 20px);
+  padding: clamp(28px, 4vw, 44px) clamp(20px, 4vw, 36px);
+  border: 1px dashed color-mix(in srgb, var(--volt-border) 80%, transparent);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--volt-primary) 13%, transparent), transparent 58%),
+    color-mix(in srgb, var(--volt-bg-secondary) 92%, transparent);
+}
+
+.message-list .no-messages.loading-state {
+  min-height: clamp(220px, 38vh, 320px);
+  height: auto;
+}
+
+.message-list .no-messages.loading-state .loading-spinner {
+  width: 36px;
+  height: 36px;
+  border-width: 3px;
+  border-color: color-mix(in srgb, var(--volt-border) 72%, transparent);
+  border-top-color: var(--volt-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--volt-primary) 12%, transparent);
+}
+
+.message-list .no-messages h3 {
+  margin: 0;
+}
+
+.message-list .no-messages p {
+  max-width: 52ch;
+  margin: 0;
+  color: var(--volt-text-secondary);
+}
+
+.message-list .loading-more-messages {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--volt-border) 88%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--volt-bg-secondary) 92%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--volt-text-muted) 88%, var(--volt-text-secondary));
+  pointer-events: none;
+  animation: loadingMoreReveal 0.16s ease-out both;
+}
+
+.message-list .selection-toolbar {
+  top: 0;
+  z-index: 24;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--volt-bg-primary) 90%, transparent);
+}
+
+@media (max-width: 768px) {
+  .messages-container {
+    padding: 10px 8px 18px;
+  }
+
+  .message-list .message {
+    padding: 6px 8px 7px;
+  }
+
+  .message-list .message.cluster-start:not(:first-child) {
+    margin-top: 7px;
+  }
+
+  .message-list .message-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+  }
+
+  .message-list .message.grouped .message-content,
+  .message-list .message.grouped .message-reply-ref,
+  .message-list .message-reply-ref,
+  .message-list .message-edit-container,
+  .message-list .message-attachments,
+  .message-list .message-reactions {
+    margin-left: 48px;
+    padding-left: 0;
+  }
+
+  .message-list .message-content {
+    padding-left: 48px;
+    max-width: 100%;
+  }
+}
+
+@keyframes loadingMoreReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 }

@@ -1,12 +1,8 @@
-/* Performance optimizations */
+/* Global baseline */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  /* Enable GPU acceleration globally */
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  perspective: 1000px;
 }
 
 * {
@@ -14,6 +10,13 @@
   -moz-user-select: none;
   -ms-user-select: none;
   user-select: none;
+}
+
+html {
+  width: 100%;
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* Performance: promote frequently animated elements */
@@ -99,12 +102,17 @@ svg {
 
 :root,
 [data-theme="dark"] {
+  color-scheme: dark;
   --volt-primary: #1fb6ff;
   --volt-primary-dark: #0b9edb;
   --volt-primary-light: #5cd6ff;
+  --volt-primary-rgb: 31, 182, 255;
   --volt-success: #2dd4bf;
+  --volt-success-rgb: 45, 212, 191;
   --volt-warning: #f5b400;
+  --volt-warning-rgb: 245, 180, 0;
   --volt-danger: #f57c71;
+  --volt-danger-rgb: 245, 124, 113;
   --volt-bg-primary: #0b1220;
   --volt-bg-secondary: #0f1828;
   --volt-bg-tertiary: #162138;
@@ -116,6 +124,13 @@ svg {
   --volt-hover: rgba(255, 255, 255, 0.05);
   --volt-active: rgba(255, 255, 255, 0.08);
   --volt-shadow: rgba(5, 12, 26, 0.35);
+  --volt-border-subtle: rgba(127, 142, 170, 0.22);
+  --volt-border-strong: rgba(127, 142, 170, 0.42);
+  --volt-scrollbar-track: #111d30;
+  --volt-scrollbar-thumb: #304460;
+  --volt-scrollbar-thumb-hover: #415c82;
+  --volt-focus-outline: rgba(var(--volt-primary-rgb), 0.92);
+  --volt-focus-ring: rgba(var(--volt-primary-rgb), 0.34);
   --server-accent: var(--volt-primary);
   --server-banner: none;
   --server-background: none;
@@ -136,12 +151,17 @@ svg {
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --volt-primary: #1a8cff;
   --volt-primary-dark: #0b6fda;
   --volt-primary-light: #4db1ff;
+  --volt-primary-rgb: 26, 140, 255;
   --volt-success: #19b394;
+  --volt-success-rgb: 25, 179, 148;
   --volt-warning: #e69a00;
+  --volt-warning-rgb: 230, 154, 0;
   --volt-danger: #e35d4a;
+  --volt-danger-rgb: 227, 93, 74;
   --volt-bg-primary: #f5f8fd;
   --volt-bg-secondary: #e7eef9;
   --volt-bg-tertiary: #d6e0f2;
@@ -153,6 +173,13 @@ svg {
   --volt-hover: rgba(0, 0, 0, 0.04);
   --volt-active: rgba(0, 0, 0, 0.07);
   --volt-shadow: rgba(10, 40, 80, 0.12);
+  --volt-border-subtle: rgba(96, 112, 137, 0.3);
+  --volt-border-strong: rgba(96, 112, 137, 0.5);
+  --volt-scrollbar-track: #dfe8f5;
+  --volt-scrollbar-thumb: #a5b6cd;
+  --volt-scrollbar-thumb-hover: #899fbd;
+  --volt-focus-outline: rgba(var(--volt-primary-rgb), 0.88);
+  --volt-focus-ring: rgba(var(--volt-primary-rgb), 0.28);
   --server-accent: #1a8cff;
   --server-banner: none;
   --server-background: none;
@@ -178,6 +205,38 @@ svg {
   --touch-target-size: 44px;
   --mobile-breakpoint: 768px;
   --tablet-breakpoint: 1024px;
+
+  /* Spacing and layout rhythm */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* Shared control sizing */
+  --control-height-sm: 36px;
+  --control-height-md: 40px;
+  --control-height-lg: 44px;
+  --control-padding-x: 12px;
+  --control-padding-y: 10px;
+
+  /* Surface/elevation primitives */
+  --surface-0: var(--volt-bg-primary);
+  --surface-1: var(--volt-bg-secondary);
+  --surface-2: var(--volt-bg-tertiary);
+  --surface-3: var(--volt-bg-quaternary);
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.16), 0 4px 10px var(--volt-shadow);
+  --elevation-2: 0 8px 24px var(--volt-shadow);
+  --elevation-3: 0 16px 40px var(--volt-shadow);
+
+  /* Focus primitives */
+  --focus-outline-width: 2px;
+  --focus-outline-offset: 2px;
+  --focus-ring-size: 3px;
   
   /* Font Variables */
   --volt-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -242,8 +301,12 @@ body {
   color: var(--volt-text-primary);
   font-size: 16px;
   line-height: 1.5;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  accent-color: var(--volt-primary);
+  min-height: 100vh;
+  width: 100%;
   overflow: hidden;
   position: relative;
 }
@@ -361,8 +424,10 @@ body[data-bg-type="pattern"][data-bg-pattern="waves"]::before {
 }
 
 #root {
-  width: 100vw;
+  width: 100%;
+  max-width: 100%;
   height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -395,107 +460,220 @@ body[data-bg-type="pattern"][data-bg-pattern="waves"]::before {
   html {
     height: -webkit-fill-available;
   }
+
+  button,
+  .btn,
+  input,
+  select,
+  .input {
+    min-height: var(--touch-target-size);
+  }
+
+  input,
+  textarea,
+  select,
+  .input {
+    font-size: 16px;
+  }
+
+  .card {
+    padding: var(--space-4);
+    border-radius: var(--border-radius-md);
+  }
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: 14px;
 }
 
 button {
-  font-family: inherit;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  background: transparent;
+  color: inherit;
+  border-radius: var(--border-radius-md);
+  min-height: var(--control-height-md);
+  line-height: 1.2;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
-input, textarea {
-  font-family: inherit;
-  border: none;
+input,
+textarea,
+select {
+  border: 1px solid var(--volt-border);
+  border-radius: var(--border-radius-md);
+  background-color: var(--volt-bg-tertiary);
+  color: var(--volt-text-primary);
+  padding: var(--control-padding-y) var(--control-padding-x);
   outline: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    color var(--transition-fast);
+}
+
+input,
+select {
+  min-height: var(--control-height-md);
+}
+
+textarea {
+  line-height: 1.45;
+  min-height: calc(var(--control-height-md) * 2);
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--volt-text-muted);
 }
 
 a {
   color: var(--volt-primary-light);
   text-decoration: none;
-  transition: color var(--transition-fast);
+  text-underline-offset: 2px;
+  transition: color var(--transition-fast), text-decoration-color var(--transition-fast);
 }
 
 a:hover {
   text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--volt-primary-light) 70%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--volt-scrollbar-thumb) var(--volt-scrollbar-track);
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--volt-bg-secondary);
+  background: var(--volt-scrollbar-track);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--volt-bg-quaternary);
-  border-radius: 4px;
+  background: var(--volt-scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid var(--volt-scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #31405c;
+  background: var(--volt-scrollbar-thumb-hover);
 }
 
 .btn {
-  padding: 10px 20px;
-  border-radius: var(--border-radius-sm);
-  font-weight: 500;
+  min-height: var(--control-height-md);
+  padding: 0 var(--space-5);
+  border-radius: var(--border-radius-md);
+  border: 1px solid transparent;
+  font-weight: 600;
   font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0.01em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  transition: all var(--transition-fast);
+  gap: var(--space-2);
+  box-shadow: var(--elevation-1);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-2);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .btn-primary {
   background: var(--volt-primary);
+  border-color: rgba(var(--primary-rgb), 0.5);
   color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--volt-primary-dark);
+  border-color: rgba(var(--primary-rgb), 0.65);
 }
 
 .btn-secondary {
-  background: var(--volt-bg-quaternary);
+  background: var(--surface-3);
+  border-color: var(--volt-border-subtle);
   color: var(--volt-text-primary);
 }
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--volt-border);
+  border-color: var(--volt-border-strong);
 }
 
 .btn-success {
   background: var(--volt-success);
+  border-color: rgba(var(--success-rgb), 0.5);
   color: white;
 }
 
 .btn-danger {
   background: var(--volt-danger);
+  border-color: rgba(var(--danger-rgb), 0.45);
   color: white;
 }
 
 .input {
-  background: var(--volt-bg-tertiary);
+  background: var(--surface-2);
   color: var(--volt-text-primary);
-  padding: 10px 12px;
-  border-radius: var(--border-radius-sm);
+  min-height: var(--control-height-md);
+  padding: var(--control-padding-y) var(--control-padding-x);
+  border-radius: var(--border-radius-md);
   width: 100%;
-  transition: background var(--transition-fast);
-  border: 1px solid transparent;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  border: 1px solid var(--volt-border-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.input:hover {
+  border-color: var(--volt-border-strong);
 }
 
 .input:focus {
-  background: var(--volt-bg-quaternary);
+  background: var(--surface-3);
   border-color: var(--volt-primary);
+  box-shadow: 0 0 0 var(--focus-ring-size) var(--volt-focus-ring);
 }
 
 .input::placeholder {
@@ -522,16 +700,17 @@ select.input option {
 }
 
 .card {
-  background: var(--volt-bg-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--volt-border-subtle);
   border-radius: var(--border-radius-lg);
-  padding: 20px;
-  box-shadow: 0 2px 10px var(--volt-shadow);
+  padding: var(--space-5);
+  box-shadow: var(--elevation-2);
 }
 
 .divider {
   height: 1px;
-  background: var(--volt-border);
-  margin: 16px 0;
+  background: var(--volt-border-subtle);
+  margin: var(--space-4) 0;
 }
 
 .pulse {
@@ -565,18 +744,24 @@ select.input option {
 .icon-btn {
   width: 32px;
   height: 32px;
+  border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none;
+  background: transparent;
   color: var(--volt-text-secondary);
   border-radius: var(--border-radius-sm);
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
   padding: 0;
 }
 
 .icon-btn:hover {
   background: var(--volt-hover);
+  border-color: var(--volt-border-subtle);
   color: var(--volt-text-primary);
 }
 
@@ -589,15 +774,43 @@ select.input option {
   gap: 16px;
   font-size: 18px;
   color: var(--volt-text-secondary);
+  background: var(--volt-bg-primary);
+}
+
+/* Pulsing gradient progress bar at top of loading container */
+.loading-container::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--volt-primary) 30%,
+    var(--volt-primary-light) 50%,
+    var(--volt-primary) 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: loading-bar-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes loading-bar-sweep {
+  0%   { background-position: 100% 0; opacity: 0.7; }
+  50%  { background-position: 0% 0;   opacity: 1; }
+  100% { background-position: -100% 0; opacity: 0.7; }
 }
 
 .loading-spinner {
   width: 48px;
   height: 48px;
-  border: 4px solid var(--volt-bg-tertiary);
-  border-top: 4px solid var(--volt-primary);
+  border: 3px solid var(--volt-bg-quaternary);
+  border-top: 3px solid var(--volt-primary);
+  border-right: 3px solid var(--volt-primary-light);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 0.9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes spin {
@@ -775,13 +988,25 @@ select.input option {
   --volt-parallax-effects: 0;
 }
 
-/* Reduced Motion Support */
+/* Reduced Motion Support — app-level toggle */
 [data-reduced-motion="true"] *,
 [data-reduced-motion="true"] *::before,
 [data-reduced-motion="true"] *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
+}
+
+/* Reduced Motion Support — OS/browser preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Smooth Transitions */
@@ -2103,4 +2328,78 @@ body.has-background-image #root .voice-panel-header {
 body.has-background-image .user-panel,
 body.has-background-image #root .user-panel {
   background: var(--volt-bg-tertiary-transparent) !important;
+}
+
+/* ============================================================================
+   GLOBAL FLOATING SURFACE HIERARCHY
+   Applies a consistent edge + depth treatment to popovers/modals/menus while
+   preserving existing component class names and background variables.
+   ============================================================================ */
+.modal-content,
+[class*="modal-content"],
+.popover,
+.dropdown-menu,
+.context-menu,
+.tooltip,
+.user-popout,
+.quick-switcher,
+.command-palette,
+.status-picker {
+  border: 1px solid var(--volt-border-subtle);
+  box-shadow: var(--elevation-3);
+  background-clip: padding-box;
+}
+
+.drawer-overlay {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+/* ============================================================================
+   ACCESSIBLE FOCUS-VISIBLE RINGS
+   Applied only via :focus-visible so mouse users are unaffected.
+   Targets interactive elements that lack an intentional focus style.
+   The chat-input-container already has its own outline via .focused; skip it.
+   ============================================================================ */
+
+/* Suppress inconsistent browser default outlines for pointer users */
+:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+:focus-visible {
+  outline: var(--focus-outline-width) solid var(--volt-focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+
+/* Buttons and role=button */
+button:focus-visible,
+[role="button"]:focus-visible {
+  box-shadow: 0 0 0 var(--focus-ring-size) var(--volt-focus-ring);
+}
+
+/* Links */
+a:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 var(--focus-ring-size) var(--volt-focus-ring);
+}
+
+/* Inputs and textareas */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-color: var(--volt-primary);
+  box-shadow: 0 0 0 var(--focus-ring-size) var(--volt-focus-ring);
+}
+
+/* Generic interactive elements (checkboxes, custom controls) */
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  box-shadow: 0 0 0 var(--focus-ring-size) var(--volt-focus-ring);
+}
+
+/* Icon buttons specifically */
+.icon-btn:focus-visible {
+  border-color: var(--volt-primary);
+  box-shadow: 0 0 0 var(--focus-ring-size) var(--volt-focus-ring);
+  background: var(--volt-hover);
 }

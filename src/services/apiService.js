@@ -7,8 +7,10 @@ import {
 import {
   clearSessionStorage,
   getStoredAccessToken,
-  getStoredRefreshToken
+  getStoredRefreshToken,
+  setSessionValue
 } from './authSession'
+import { authService } from './authService'
 
 function getBaseURL() {
   const server = getStoredServer()
@@ -32,6 +34,8 @@ const api = axios.create({
 const RETRYABLE_METHODS = new Set(['get', 'head', 'options', 'delete'])
 const MAX_RETRIES = 2
 
+const RETRYABLE_4XX = new Set([408, 429])
+
 const shouldRetryRequest = (error) => {
   const config = error?.config || {}
   const method = String(config.method || 'get').toLowerCase()
@@ -43,7 +47,9 @@ const shouldRetryRequest = (error) => {
   )
 
   if (networkFailure) return true
+  if (status >= 400 && status < 500 && !RETRYABLE_4XX.has(status)) return false
   if (status >= 500 && RETRYABLE_METHODS.has(method)) return true
+  if (RETRYABLE_4XX.has(status) && RETRYABLE_METHODS.has(method)) return true
   return false
 }
 
@@ -93,23 +99,59 @@ api.interceptors.response.use(
   async (error) => {
     const config = error?.config || null
 
-    if (config && shouldRetryRequest(error)) {
-      config.__retryCount = (config.__retryCount || 0) + 1
-      if (config.__retryCount <= MAX_RETRIES) {
-        await wait(300 * config.__retryCount)
-        return api.request(config)
-      }
+    // --- Network / timeout: surface structured error so UI can react ---
+    const isNetworkError = !error?.response && (
+      error?.code === 'ECONNABORTED' ||
+      error?.message?.includes('Network Error') ||
+      error?.message?.includes('timeout')
+    )
+    if (isNetworkError) {
+      const structured = { ok: false, code: 'NETWORK', message: 'Could not reach server' }
+      const networkErr = Object.assign(new Error(structured.message), { isNetworkError: true, structured })
+      return Promise.reject(networkErr)
     }
 
     const status = error.response?.status
 
-    if (status === 401) {
-      const hasRefreshToken = !!getStoredRefreshToken()
-      if (!hasRefreshToken) {
-        clearSessionStorage()
-        window.location.href = '/login'
+    // --- Safe logging: URL + status only, never response body ---
+    if (status) {
+      console.warn(`[api] ${status} ${config?.url ?? '(unknown)'}`)
+    }
+
+    // --- 401: attempt token refresh once ---
+    if (status === 401 && config && !config.__refreshed) {
+      const refreshToken = getStoredRefreshToken()
+      if (refreshToken) {
+        try {
+          const tokenData = await authService.refreshAccessToken(refreshToken)
+          if (tokenData?.access_token) {
+            setSessionValue('access_token', tokenData.access_token)
+            if (tokenData.refresh_token) {
+              setSessionValue('refresh_token', tokenData.refresh_token)
+            }
+            config.__refreshed = true
+            config.headers = config.headers || {}
+            config.headers.Authorization = `Bearer ${tokenData.access_token}`
+            return api.request(config)
+          }
+        } catch {
+          // Refresh failed — fall through to clear session and propagate
+        }
+      }
+      clearSessionStorage()
+      return Promise.reject(error)
+    }
+
+    // --- Retry with exponential backoff + jitter ---
+    if (config && shouldRetryRequest(error)) {
+      config.__retryCount = (config.__retryCount || 0) + 1
+      if (config.__retryCount <= MAX_RETRIES) {
+        const delay = Math.min(1000 * 2 ** config.__retryCount + Math.random() * 250, 8000)
+        await wait(delay)
+        return api.request(config)
       }
     }
+
     return Promise.reject(error)
   }
 )

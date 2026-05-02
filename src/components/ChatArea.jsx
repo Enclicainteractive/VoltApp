@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useOptimizedCallback, useOptimizedMemo, useThrottledState, usePerformanceMonitor } from '../hooks/usePerformanceOptimization'
 import { HashtagIcon, UsersIcon, MapPinIcon, XMarkIcon, MagnifyingGlassIcon, DocumentTextIcon, ArrowUturnLeftIcon } from "@heroicons/react/24/outline";
 import { Hash, Users, MapPin, Search, Smile, X, FileText, Lock, AtSign, Signal, Grip, LayoutGrid } from 'lucide-react'
 import { useSocket } from '../contexts/SocketContext'
@@ -33,7 +34,9 @@ import { loadWidgets, saveWidgets, subscribeWidgets } from '../services/widgetSe
 import '../assets/styles/ChatArea.css'
 import '../assets/styles/ChatInput.css'
 
-const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic = null, initialMembers = [], initialServer = null, onMessageSent, onMessageFailed, onMessageAck, onAgeGateTriggered, onLoadMoreMessages, onToggleMembers, onSaveScrollPosition, scrollPosition, onShowProfile, isAdmin, isLoading }) => {
+// Memoize the entire ChatArea component for better performance
+const ChatArea = React.memo(({ channelId, serverId, channels, messages, channelDiagnostic = null, initialMembers = [], initialServer = null, onMessageSent, onMessageFailed, onMessageAck, onAgeGateTriggered, onLoadMoreMessages, onToggleMembers, onSaveScrollPosition, scrollPosition, onShowProfile, isAdmin, isLoading }) => {
+  const performanceMetrics = usePerformanceMonitor('ChatArea')
   const { socket, connected } = useSocket()
   const { user } = useAuth()
   const { t } = useTranslation()
@@ -85,6 +88,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
   const [isSearching, setIsSearching] = useState(false)
   const [pinnedMessages, setPinnedMessages] = useState([])
   const [isLoadingPins, setIsLoadingPins] = useState(false)
+  const [pinningMessageId, setPinningMessageId] = useState(null)
   const [highlightMessageId, setHighlightMessageId] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [encryptionError, setEncryptionError] = useState(null)
@@ -103,6 +107,9 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
   const uploadXhrRef = useRef(null)
   const chatAreaRef = useRef(null)
   const safeChannels = Array.isArray(channels) ? channels : channels && typeof channels === 'object' ? Object.values(channels) : []
+  const safeMessages = useMemo(() => (Array.isArray(messages) ? messages : []), [messages])
+  const typingUsersList = useMemo(() => Array.from(typingUsers), [typingUsers])
+  const hasTypingUsers = typingUsersList.length > 0
   const currentChannel = safeChannels.find(c => c.id === channelId)
 
   useEffect(() => {
@@ -833,22 +840,28 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
 
   const handlePinMessage = async (messageId) => {
     if (!channelId) return
+    setPinningMessageId(messageId)
     try {
       await apiService.pinMessage(channelId, messageId)
       socket?.emit('message:pin', { messageId, channelId })
     } catch (err) {
       console.error('Failed to pin message:', err)
+    } finally {
+      setPinningMessageId(null)
     }
   }
 
   const handleUnpinMessage = async (messageId) => {
     if (!channelId) return
+    setPinningMessageId(messageId)
     try {
       await apiService.unpinMessage(channelId, messageId)
       socket?.emit('message:unpin', { messageId, channelId })
       setPinnedMessages(prev => prev.filter(m => m.id !== messageId))
     } catch (err) {
       console.error('Failed to unpin message:', err)
+    } finally {
+      setPinningMessageId(null)
     }
   }
 
@@ -943,7 +956,7 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
 
   return (
     <div 
-      className={`chat-area ${isDragging ? 'dragging' : ''}`}
+      className={`chat-area ${isDragging ? 'dragging' : ''} ${isLoading ? 'is-loading' : ''} ${safeMessages.length === 0 ? 'is-empty' : ''}`}
       ref={chatAreaRef}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1056,11 +1069,11 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
         </div>
       )}
 
-      <MessageList 
-        messages={messages || []} 
+      <MessageList
+        messages={safeMessages}
         emptyState={channelDiagnostic}
-        currentUserId={user?.id} 
-        channelId={channelId} 
+        currentUserId={user?.id}
+        channelId={channelId}
         onReply={setReplyingTo}
         onLoadMore={handleLoadMoreMessages}
         onPinMessage={handlePinMessage}
@@ -1076,20 +1089,21 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
         isAdmin={isAdmin}
         server={server}
         isLoading={isLoading}
+        pinningMessageId={pinningMessageId}
       />
 
-      {typingUsers.size > 0 && (
-        <div className="typing-indicator">
-          <div className="typing-dots">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-          <span className="typing-text">
-            {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'is' : 'are'} typing...
-          </span>
+      <div className={`typing-indicator ${hasTypingUsers ? 'is-active' : ''}`} aria-live="polite" aria-atomic="true">
+        <div className="typing-dots" aria-hidden={!hasTypingUsers}>
+          <span></span>
+          <span></span>
+          <span></span>
         </div>
-      )}
+        <span className="typing-text">
+          {hasTypingUsers
+            ? `${typingUsersList.join(', ')} ${typingUsersList.length === 1 ? 'is' : 'are'} typing...`
+            : '\u00A0'}
+        </span>
+      </div>
 
       {sendError && (
         <div className="safety-toast">
@@ -1443,6 +1457,8 @@ const ChatArea = ({ channelId, serverId, channels, messages, channelDiagnostic =
       </div>
     </div>
   )
-}
+})
+
+ChatArea.displayName = 'ChatArea'
 
 export default ChatArea

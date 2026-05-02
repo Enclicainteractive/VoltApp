@@ -771,6 +771,13 @@ const ColabCreateDAW = ({ sdk, currentUser }) => {
       setSelectedTrackId(firstTrack.id)
       setSelectedClipId(firstTrack.clips[0]?.id || null)
     }
+    return () => {
+      const ctx = engineRef.current?.audioContext
+      if (ctx) {
+        try { ctx.close() } catch {}
+      }
+      engineRef.current = null
+    }
   }, [])
 
   useEffect(() => {

@@ -22,6 +22,7 @@ import {
   scanSelectedImageFiles
 } from '../services/nsfwDetectionService'
 import { soundService } from '../services/soundService'
+import lazyLoadingService from '../services/lazyLoadingService'
 import Avatar from './Avatar'
 import EmojiPicker from './EmojiPicker'
 import KlipyPicker from './KlipyPicker'
@@ -141,6 +142,7 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
 
   useEffect(() => {
     warmupSafetyModels({ text: true, images: false })
+    lazyLoadingService.preloadComponents(['FileAttachment', 'ReactionEmojiPicker', 'EmojiPicker'], { idle: true })
   }, [])
   const [isAcceptingE2ee, setIsAcceptingE2ee] = useState(false)
   const [isCancellingE2eeRequest, setIsCancellingE2eeRequest] = useState(false)
@@ -272,10 +274,27 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
     return Array.from(map.values())
   }, [conversation?.participants, conversation?.recipients, recipient, user])
   const isGroupConversation = !!conversation?.isGroup || (Array.isArray(conversation?.participants) && conversation.participants.length > 2)
+  const groupParticipantIds = (conversation?.recipients || []).map(r => r.id).filter(Boolean)
+  const normalizedRecipientStatus = String(recipient?.status || 'offline').toLowerCase()
+  const canStartCall = connected && (isGroupConversation
+    ? groupParticipantIds.length > 0
+    : normalizedRecipientStatus !== 'offline' && normalizedRecipientStatus !== 'invisible')
+  const callActionDisabledReason = !connected
+    ? t('chat.disconnected', 'Disconnected')
+    : t('dm.recipientOffline', 'Recipient is offline')
   const conversationTitle = isGroupConversation
   ? (conversation?.groupName || conversation?.title || conversation?.recipients?.map(r => r.displayName || r.username).slice(0, 3).join(', ') || t('dm.title', 'Direct Messages'))
   : (recipient?.displayName || recipient?.customUsername || recipient?.username)
-  const groupParticipantIds = (conversation?.recipients || []).map(r => r.id).filter(Boolean)
+  const recipientStatusText = recipient?.customStatus || t(`status.${normalizedRecipientStatus}`, t('status.offline', 'Offline'))
+  const participantCount = Array.isArray(conversation?.participants) && conversation.participants.length > 0
+    ? conversation.participants.length
+    : (conversation?.recipients?.length || (recipient?.id ? 1 : 0))
+  const conversationMetaText = isGroupConversation
+    ? `${participantCount} participant${participantCount === 1 ? '' : 's'}`
+    : t('dm.meta.directMessage', 'Direct message')
+  const realtimeStatusText = connected
+    ? t('dm.realtime.connected', 'Connected')
+    : t('dm.realtime.reconnecting', 'Reconnecting…')
 
   const resolveRecipientSafetyContext = useCallback(async () => {
     const targetIds = isGroupConversation
@@ -1428,20 +1447,29 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
 
     {/* Header */}
     <div className="dm-chat-header">
-    <Avatar src={recipient?.avatar} fallback={recipient?.username} size={32} userId={recipient?.id} />
+    <div className="dm-recipient-avatar-wrap">
+    <Avatar src={recipient?.avatar} fallback={recipient?.username} size={34} userId={recipient?.id} />
+    <span className={`dm-presence-dot ${normalizedRecipientStatus || 'offline'}`} />
+    </div>
     <div className="dm-recipient-info">
+    <div className="dm-recipient-top-row">
     <span className="dm-recipient-name">
     {conversationTitle}
+    </span>
     <E2eeStatusBadge
     enabled={isDmEncryptionEnabled(conversation?.id)}
     mode={dmEncryptionStatus?.mode}
     needsKey={needsKey}
     size={14}
     />
+    </div>
+    <div className="dm-recipient-subline">
+    <span className={`dm-recipient-status-pill ${normalizedRecipientStatus || 'offline'}`} title={recipientStatusText}>
+    <span className="dm-status-dot" />
+    <span className="dm-recipient-status-text">{recipientStatusText}</span>
     </span>
-    <span className={`dm-recipient-status ${recipient?.status || 'offline'}`}>
-    {t(`status.${recipient?.status}`, t('status.offline', 'Offline'))}
-    </span>
+    <span className="dm-recipient-meta">{conversationMetaText}</span>
+    </div>
     </div>
     <button
     className={`icon-btn e2ee-settings-btn ${needsKey ? 'needs-key' : ''}`}
@@ -1451,17 +1479,20 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
     {needsKey ? <LockOpenIcon size={18} /> : <LockClosedIcon size={18} />}
     </button>
     <div className="dm-header-actions">
+    <span className={`dm-connection-pill ${connected ? 'online' : 'offline'}`} title={connected ? 'Live connection active' : 'Trying to reconnect'}>
+    {realtimeStatusText}
+    </span>
     {activeCall && activeCall.conversationId === conversation?.id ? (
       <>
       {!showCallView && (
-        <button className="icon-btn" title="Return to call" onClick={() => setShowCallView(true)}>
+        <button type="button" className="icon-btn" title="Return to call" onClick={() => setShowCallView(true)}>
         <PhoneIcon size={20} />
         </button>
       )}
       <span className="dm-call-indicator">
       {callStatus === 'active' ? formatDuration(callDuration || 0) : callStatus}
       </span>
-      <button className="icon-btn active-call" title="End Call" onClick={endCall}>
+      <button type="button" className="icon-btn active-call" title="End Call" onClick={endCall}>
       <PhoneXMarkIcon size={20} />
       </button>
       </>
@@ -1469,7 +1500,8 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
       <>
       <button
       className="icon-btn"
-      title="Voice Call"
+      type="button"
+      title={canStartCall ? 'Voice Call' : callActionDisabledReason}
       onClick={() => initiateCall(
         recipient?.id || conversation.recipientId || groupParticipantIds[0],
         conversation.id,
@@ -1477,13 +1509,14 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
         recipient,
         isGroupConversation ? groupParticipantIds : null
       )}
-      disabled={isGroupConversation ? groupParticipantIds.length === 0 : (!recipient?.status || recipient.status === 'offline')}
+      disabled={!canStartCall}
       >
       <PhoneIcon size={20} />
       </button>
       <button
       className="icon-btn"
-      title="Video Call"
+      type="button"
+      title={canStartCall ? 'Video Call' : callActionDisabledReason}
       onClick={() => initiateCall(
         recipient?.id || conversation.recipientId || groupParticipantIds[0],
         conversation.id,
@@ -1491,13 +1524,13 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
         recipient,
         isGroupConversation ? groupParticipantIds : null
       )}
-      disabled={isGroupConversation ? groupParticipantIds.length === 0 : (!recipient?.status || recipient.status === 'offline')}
+      disabled={!canStartCall}
       >
       <VideoCameraIcon size={20} />
       </button>
       </>
     )}
-    <button className="icon-btn" title="Search" onClick={() => setShowSearch(!showSearch)}><MagnifyingGlassIcon size={20} /></button>
+    <button type="button" className="icon-btn" title="Search" onClick={() => setShowSearch(!showSearch)}><MagnifyingGlassIcon size={20} /></button>
     </div>
     </div>
 
@@ -1563,17 +1596,40 @@ const DMChat = ({ conversation, onClose, onShowProfile }) => {
     onScroll={handleScroll}
     >
     {isLoadingMore && (
-      <div className="dm-loading-more">Loading earlier messages...</div>
+      <div className="dm-loading-more">
+      <span className="dm-inline-spinner" />
+      <span>Loading earlier messages...</span>
+      </div>
     )}
 
     {loading ? (
-      <div className="dm-loading">Loading messages...</div>
+      <div className="dm-loading" role="status" aria-live="polite">
+      <div className="dm-state-icon-wrap">
+      <ChatBubbleLeftRightIcon size={46} className="dm-empty-icon" />
+      <span className="dm-loading-spinner" />
+      </div>
+      <h3>Loading conversation</h3>
+      <p>{connected ? 'Fetching the latest messages…' : 'Waiting for connection to load messages…'}</p>
+      </div>
     ) : messages.length === 0 ? (
-      <div className="dm-empty">
-      <ChatBubbleLeftRightIcon size={48} className="dm-empty-icon" />
-      <Avatar src={recipient?.avatar} fallback={recipient?.username} size={80} userId={recipient?.id} />
-      <h3>Start of your conversation with {recipient?.username}</h3>
-      <p>No messages yet. Say hi!</p>
+      <div className="dm-empty" role="status">
+      <div className="dm-empty-hero">
+      <Avatar src={recipient?.avatar} fallback={recipient?.username} size={72} userId={recipient?.id} />
+      <ChatBubbleLeftRightIcon size={34} className="dm-empty-icon" />
+      </div>
+      <h3>
+      {isGroupConversation
+        ? `Start chatting in ${conversationTitle}`
+        : `Start of your conversation with ${recipient?.username || conversationTitle}`}
+      </h3>
+      <p>
+      {isGroupConversation
+        ? 'No messages yet. Kick off the thread with the first message.'
+        : 'No messages yet. Send a message to break the ice.'}
+      </p>
+      {needsKey && (
+        <p className="dm-empty-hint">Encrypted chat is enabled. Enter your key to unlock messages.</p>
+      )}
       </div>
     ) : (
       messages.map((message, index) => {

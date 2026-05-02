@@ -1,0 +1,368 @@
+/* Skeleton Loading Animations for Progressive Loading */
+
+/* Base skeleton animations */
+@keyframes skeleton-loading {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Base skeleton styles — use theme surface tokens so dark/light theme both render correctly */
+.skeleton-base {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2, var(--volt-bg-tertiary, #162138)) 25%,
+    var(--surface-3, var(--volt-bg-quaternary, #1d2a42)) 50%,
+    var(--surface-2, var(--volt-bg-tertiary, #162138)) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 4px;
+}
+
+[data-theme="light"] .skeleton-base {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2, var(--volt-bg-tertiary, #d6e0f2)) 25%,
+    var(--surface-3, var(--volt-bg-quaternary, #c4d2e8)) 50%,
+    var(--surface-2, var(--volt-bg-tertiary, #d6e0f2)) 75%
+  );
+}
+
+/* Skeleton line variations */
+.skeleton-line {
+  height: 16px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  width: 100%;
+}
+
+.skeleton-line.skeleton-line-title {
+  height: 20px;
+  width: 60%;
+  margin-bottom: 12px;
+}
+
+.skeleton-line.skeleton-line-short {
+  width: 40%;
+}
+
+.skeleton-line.skeleton-line-medium {
+  width: 70%;
+}
+
+.skeleton-line.skeleton-line-text {
+  width: 85%;
+}
+
+/* Skeleton shapes */
+.skeleton-circle {
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.skeleton-circle.small {
+  width: 24px;
+  height: 24px;
+}
+
+.skeleton-circle.large {
+  width: 60px;
+  height: 60px;
+}
+
+.skeleton-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.skeleton-button {
+  height: 36px;
+  width: 80px;
+  border-radius: 6px;
+  margin-right: 8px;
+}
+
+.skeleton-button.primary {
+  width: 100px;
+}
+
+/* Card skeleton */
+.skeleton-card {
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.skeleton-card .skeleton-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* List skeleton */
+.skeleton-list {
+  padding: 8px 0;
+}
+
+.skeleton-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  margin-bottom: 4px;
+}
+
+.skeleton-list-item .skeleton-line {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* Message skeleton */
+.skeleton-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 16px;
+  margin-bottom: 8px;
+}
+
+.skeleton-message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.skeleton-message-content .skeleton-line:first-child {
+  width: 30%;
+  height: 14px;
+  margin-bottom: 6px;
+}
+
+/* Sidebar skeleton */
+.skeleton-sidebar {
+  width: 100%;
+  padding: 16px;
+}
+
+.skeleton-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 16px;
+}
+
+.skeleton-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 4px;
+}
+
+/* Modal skeleton */
+.skeleton-modal {
+  background: rgba(0, 0, 0, 0.9);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  margin: auto;
+}
+
+.skeleton-modal-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.skeleton-modal-content {
+  margin-bottom: 24px;
+}
+
+.skeleton-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Progressive loading states */
+.lazy-component-container {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.lazy-component-container[data-loading="true"] {
+  opacity: 0.7;
+}
+
+.lazy-component-container.loaded {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.lazy-component-container:not(.loaded) {
+  transform: translateY(10px);
+}
+
+/* Error states */
+.component-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  background: rgba(255, 0, 0, 0.1);
+  border: 1px solid rgba(255, 0, 0, 0.2);
+  border-radius: 8px;
+  color: #ff6b6b;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.error-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.error-message {
+  font-size: 14px;
+  opacity: 0.8;
+  margin-bottom: 20px;
+}
+
+.error-retry-btn {
+  background: #ff6b6b;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.error-retry-btn:hover {
+  background: #ff5252;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .skeleton-card {
+    padding: 12px;
+  }
+  
+  .skeleton-avatar {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .skeleton-circle {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .skeleton-message {
+    padding: 6px 12px;
+  }
+  
+  .skeleton-sidebar {
+    padding: 12px;
+  }
+  
+  .skeleton-modal {
+    padding: 20px;
+    margin: 16px;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .skeleton-base {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.3) 25%,
+      rgba(255, 255, 255, 0.5) 50%,
+      rgba(255, 255, 255, 0.3) 75%
+    );
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-base {
+    animation: skeleton-pulse 2s infinite;
+  }
+  
+  .lazy-component-container {
+    transition: none;
+  }
+}
+
+/* Performance optimizations */
+.skeleton-base,
+.skeleton-line,
+.skeleton-circle,
+.skeleton-avatar,
+.skeleton-button {
+  will-change: background-position;
+  contain: layout style paint;
+}
+
+/* Apply skeleton base to all skeleton elements */
+.skeleton-line,
+.skeleton-circle,
+.skeleton-avatar,
+.skeleton-button {
+  @extend .skeleton-base;
+}
+
+/* Custom skeleton themes */
+.skeleton-theme-chat .skeleton-base {
+  background: linear-gradient(
+    90deg,
+    rgba(88, 101, 242, 0.1) 25%,
+    rgba(88, 101, 242, 0.2) 50%,
+    rgba(88, 101, 242, 0.1) 75%
+  );
+}
+
+.skeleton-theme-success .skeleton-base {
+  background: linear-gradient(
+    90deg,
+    rgba(46, 204, 113, 0.1) 25%,
+    rgba(46, 204, 113, 0.2) 50%,
+    rgba(46, 204, 113, 0.1) 75%
+  );
+}
+
+.skeleton-theme-warning .skeleton-base {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 193, 7, 0.1) 25%,
+    rgba(255, 193, 7, 0.2) 50%,
+    rgba(255, 193, 7, 0.1) 75%
+  );
+}

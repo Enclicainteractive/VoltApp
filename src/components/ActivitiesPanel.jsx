@@ -137,9 +137,17 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
     ui.setOpen(value)
   }, [ui])
 
-  const setActiveTab = useCallback((tab) => ui.setTab(tab), [ui])
+  const setActiveTab = useCallback((tab) => {
+    ui.setTab(tab)
+    ui.setError('')
+  }, [ui])
   const setBusy = useCallback((value) => ui.setBusy(value), [ui])
   const setError = useCallback((value) => ui.setError(value), [ui])
+  const refreshActivityState = useCallback(() => {
+    if (!socket || !contextId) return
+    socket.emit('activity:list-catalog')
+    socket.emit('activity:get-sessions', { contextType, contextId })
+  }, [contextId, contextType, socket])
 
   const sessionsForContext = useMemo(
     () => sessions.filter(s => s?.id && s.contextType === contextType && s.contextId === contextId),
@@ -254,8 +262,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
     const onConnect = () => {
       setError('')
       clearPendingAction()
-      socket.emit('activity:list-catalog')
-      socket.emit('activity:get-sessions', { contextType, contextId })
+      refreshActivityState()
     }
 
     socket.on('activity:catalog', onCatalog)
@@ -267,8 +274,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
     socket.on('disconnect', onDisconnect)
     socket.on('connect', onConnect)
 
-    socket.emit('activity:list-catalog')
-    socket.emit('activity:get-sessions', { contextType, contextId })
+    refreshActivityState()
 
     return () => {
       socket.off('activity:catalog', onCatalog)
@@ -280,7 +286,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
       socket.off('disconnect', onDisconnect)
       socket.off('connect', onConnect)
     }
-  }, [socket, open, contextType, contextId, guard, setError, clearPendingAction, pendingLaunchId])
+  }, [socket, open, contextType, contextId, guard, setError, clearPendingAction, pendingLaunchId, refreshActivityState])
 
   useEffect(() => {
     if (!canUse && open) {
@@ -322,7 +328,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
   }, [open, guard, setError])
 
   const launchActivity = (activityId) => {
-    if (!socket || !canUse || !activityId || typeof activityId !== 'string') return
+    if (!socket || !canUse || !activityId || typeof activityId !== 'string' || pendingAction) return
     setError('')
     setBusy(true)
     setPendingAction({ type: 'launch', id: activityId })
@@ -351,7 +357,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
   }
 
   const joinSession = (sessionId) => {
-    if (!socket || !sessionId || typeof sessionId !== 'string') return
+    if (!socket || !sessionId || typeof sessionId !== 'string' || pendingAction) return
     setError('')
     setBusy(true)
     setPendingAction({ type: 'join', id: sessionId })
@@ -370,7 +376,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
   }
 
   const leaveSession = (sessionId) => {
-    if (!socket || !sessionId || typeof sessionId !== 'string') return
+    if (!socket || !sessionId || typeof sessionId !== 'string' || pendingAction) return
     socket.emit('activity:leave-session', { sessionId })
     socket.emit('activity:get-sessions', { contextType, contextId })
   }
@@ -387,6 +393,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
       <button
         className={`${buttonClassName} activities-btn ${open ? 'active' : ''}`}
         title="Activities"
+        type="button"
         disabled={!canUse}
         onClick={() => setOpen(v => !v)}
       >
@@ -401,19 +408,20 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
                 <h2>Activities</h2>
                 <small>{contextLabel} • {participantsCount} participants</small>
               </div>
-              <button className="modal-close activities-icon-btn" onClick={() => setOpen(false)} aria-label="Close activities">
+              <button type="button" className="modal-close activities-icon-btn" onClick={() => setOpen(false)} aria-label="Close activities">
                 <XMarkIcon width={18} height={18} />
               </button>
             </div>
 
             <div className="activities-tabs">
-              <button className={activeTab === 'discover' ? 'active' : ''} onClick={() => setActiveTab('discover')}>Discover</button>
-              <button className={activeTab === 'sessions' ? 'active' : ''} onClick={() => setActiveTab('sessions')}>Live</button>
+              <button type="button" className={activeTab === 'discover' ? 'active' : ''} onClick={() => setActiveTab('discover')}>Discover</button>
+              <button type="button" className={activeTab === 'sessions' ? 'active' : ''} onClick={() => setActiveTab('sessions')}>Live</button>
+              <button type="button" className="muted" onClick={refreshActivityState} disabled={busy}>Refresh</button>
             </div>
 
-            {error && <div className="activities-error">{error}</div>}
+            {error && <div className="activities-error" role="alert">{error}</div>}
             {pendingAction && (
-              <div className="activities-pending">
+              <div className="activities-pending" role="status" aria-live="polite">
                 {pendingAction.type === 'launch' ? 'Starting activity…' : 'Joining activity…'}
               </div>
             )}
@@ -447,9 +455,9 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
             {activeTab === 'discover' && (
               <div className="activities-list">
                 <div className="activities-launch-options">
-                  <label><input type="checkbox" checked={sessionOptions.p2pEnabled} onChange={e => setSessionOptions(prev => ({ ...prev, p2pEnabled: e.target.checked }))} /> P2P enabled</label>
-                  <label><input type="checkbox" checked={sessionOptions.p2pPreferred} onChange={e => setSessionOptions(prev => ({ ...prev, p2pPreferred: e.target.checked }))} /> P2P preferred</label>
-                  <label><input type="checkbox" checked={sessionOptions.soundEnabled} onChange={e => setSessionOptions(prev => ({ ...prev, soundEnabled: e.target.checked }))} /> Sound cues</label>
+                  <label><input type="checkbox" checked={sessionOptions.p2pEnabled} onChange={e => setSessionOptions(prev => ({ ...prev, p2pEnabled: e.target.checked }))} disabled={busy} /> P2P enabled</label>
+                  <label><input type="checkbox" checked={sessionOptions.p2pPreferred} onChange={e => setSessionOptions(prev => ({ ...prev, p2pPreferred: e.target.checked }))} disabled={busy} /> P2P preferred</label>
+                  <label><input type="checkbox" checked={sessionOptions.soundEnabled} onChange={e => setSessionOptions(prev => ({ ...prev, soundEnabled: e.target.checked }))} disabled={busy} /> Sound cues</label>
                 </div>
                 {mergedCatalog.filter(item => item?.id).map(item => (
                   <div key={item.id} className="activities-item">
@@ -466,7 +474,7 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
                         <div className="activities-subtitle">{item.description || 'No description'}</div>
                       </div>
                     </div>
-                    <button disabled={busy} onClick={() => launchActivity(item.id)}>
+                    <button type="button" disabled={busy} onClick={() => launchActivity(item.id)}>
                       {pendingAction?.type === 'launch' && pendingAction?.id === item.id ? 'Starting…' : 'Start'}
                     </button>
                   </div>
@@ -494,13 +502,13 @@ const ActivitiesPanel = ({ socket, contextType, contextId, participantsCount = 0
                       </div>
                     </div>
                     <div className="activities-actions">
-                      <button disabled={busy} onClick={() => joinSession(session.id)}>
+                      <button type="button" disabled={busy} onClick={() => joinSession(session.id)}>
                         {pendingAction?.type === 'join' && pendingAction?.id === session.id ? 'Joining…' : 'Join'}
                       </button>
                       {String(session.activityId || '').startsWith('builtin:') && (
-                        <button onClick={() => setActiveBuiltinSession(session)}>Open</button>
+                        <button type="button" onClick={() => setActiveBuiltinSession(session)} disabled={busy}>Open</button>
                       )}
-                      <button className="muted" onClick={() => leaveSession(session.id)}>Leave</button>
+                      <button type="button" className="muted" onClick={() => leaveSession(session.id)} disabled={busy}>Leave</button>
                     </div>
                   </div>
                 ))}

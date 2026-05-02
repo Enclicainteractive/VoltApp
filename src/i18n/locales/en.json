@@ -19,6 +19,7 @@
     "placeholder": "Type a message...",
     "messageChannel": "Message #{{channel}}",
     "deleteConfirm": "Delete this message?",
+    "unpinConfirm": "Unpin this message?",
     "send": "Send",
     "editMessage": "Edit Message",
     "deleteMessage": "Delete Message",

@@ -218,7 +218,7 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
     }, 1500)
 
     return () => {
-      sdk.emitEvent('bytebeat:leave', { userId: ownId }, { serverRelay: true })
+      if (sdk) sdk.emitEvent('bytebeat:leave', { userId: ownId }, { serverRelay: true })
     }
   }, [sdk])
 
@@ -702,6 +702,7 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
     const FRAME_THROTTLE = 33
     
     const draw = (timestamp) => {
+      if (!scopeRef.current && !diagramRef.current) return
       animationRef.current = requestAnimationFrame(draw)
       
       if (timestamp - lastDrawTime < FRAME_THROTTLE) return
@@ -973,11 +974,14 @@ export default function BytebeatActivity({ sdk, rawState, updateState }) {
 
   useEffect(() => {
     return () => {
+      if (workletNodeRef.current) {
+        try { workletNodeRef.current.port?.close?.() } catch {}
+        workletNodeRef.current = null
+      }
       if (audioCtxRef.current) {
         audioCtxRef.current.close()
         audioCtxRef.current = null
       }
-      workletNodeRef.current = null
       analyserRef.current = null
       gainRef.current = null
     }

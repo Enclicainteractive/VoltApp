@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { XMarkIcon, UserIcon, BellIcon, ShieldCheckIcon, MicrophoneIcon, VideoCameraIcon, VideoCameraSlashIcon, ComputerDesktopIcon, EyeIcon, PencilIcon, ServerIcon, SparklesIcon, PlayIcon, PauseIcon, SpeakerWaveIcon, Cog6ToothIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, KeyIcon, RocketLaunchIcon } from "@heroicons/react/24/outline";
 import { Camera, ImagePlus, Trash2, X, User, Bell, Volume2, ShieldCheck, Palette, Info, Mic, Video, Monitor, VideoOff, Eye, Pencil, Globe, Server, Settings, Sparkles, Play, Pause, Languages, Download, Upload, Key, Wand2, Type, Sliders, Code, Palette as PaletteIcon, Package, Keyboard } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
@@ -23,6 +23,7 @@ import FontSelector from './FontSelector'
 import AnimationSettings from './AnimationSettings'
 import ColorCustomizer from './ColorCustomizer'
 import SelfVoltPanel from '../SelfVoltPanel'
+import StatusSelector from '../StatusSelector'
 import FederationPanel from '../FederationPanel'
 import BotPanel from '../BotPanel'
 import ActivityAppsPanel from '../ActivityAppsPanel'
@@ -109,6 +110,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   const micStreamRef = useRef(null)
   const cameraStreamRef = useRef(null)
   const videoPreviewRef = useRef(null)
+  const settingsContentRef = useRef(null)
   const avatarInputRef = useRef(null)
   const bannerInputRef = useRef(null)
   const analyserRef = useRef(null)
@@ -247,6 +249,12 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  useLayoutEffect(() => {
+    const container = settingsContentRef.current
+    if (!container) return
+    container.scrollTop = 0
+  }, [activeTab, showSidebar, isMobile])
 
   useEffect(() => {
     if (isDesktopApp) {
@@ -628,25 +636,46 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
   }
 
   const allTabs = [
-    { id: 'account', label: t('settings.account'), icon: User },
-    { id: 'notifications', label: t('settings.notifications'), icon: Bell },
-    { id: 'language', label: t('settings.language'), icon: Languages },
-    { id: 'voice', label: t('settings.voice'), icon: SpeakerWaveIcon },
-    { id: 'privacy', label: t('settings.privacy'), icon: ShieldCheck },
-    { id: 'reports', label: t('settings.reports', 'My Reports'), icon: ShieldCheck },
-    { id: 'age', label: t('settings.age'), icon: ShieldCheck },
-    { id: 'selfvolt', label: t('settings.selfvolt'), icon: Globe },
-    { id: 'federation', label: t('settings.federation'), icon: Globe, adminOnly: true },
-    { id: 'bots', label: t('settings.bots'), icon: SparklesIcon },
-    { id: 'apps', label: t('settings.apps', 'Apps'), icon: RocketLaunchIcon },
-    { id: 'serverconfig', label: t('settings.serverconfig'), icon: Settings, adminOnly: true },
-    { id: 'customization', label: 'Customization', icon: Wand2 },
-    { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
-    { id: 'about', label: t('settings.about'), icon: Info },
+    { id: 'account', label: t('settings.account'), icon: User, group: 'profile' },
+    { id: 'notifications', label: t('settings.notifications'), icon: Bell, group: 'profile' },
+    { id: 'language', label: t('settings.language'), icon: Languages, group: 'profile' },
+    { id: 'customization', label: 'Customization', icon: Wand2, group: 'profile' },
+    { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard, group: 'profile' },
+    { id: 'voice', label: t('settings.voice'), icon: SpeakerWaveIcon, group: 'communication' },
+    { id: 'apps', label: t('settings.apps', 'Apps'), icon: RocketLaunchIcon, group: 'communication' },
+    { id: 'bots', label: t('settings.bots'), icon: SparklesIcon, group: 'communication' },
+    { id: 'privacy', label: t('settings.privacy'), icon: ShieldCheck, group: 'safety' },
+    { id: 'reports', label: t('settings.reports', 'My Reports'), icon: ShieldCheck, group: 'safety' },
+    { id: 'age', label: t('settings.age'), icon: ShieldCheck, group: 'safety' },
+    { id: 'selfvolt', label: t('settings.selfvolt'), icon: Globe, group: 'network' },
+    { id: 'federation', label: t('settings.federation'), icon: Globe, group: 'network', adminOnly: true },
+    { id: 'serverconfig', label: t('settings.serverconfig'), icon: Settings, adminOnly: true, group: 'network' },
+    { id: 'about', label: t('settings.about'), icon: Info, group: 'system' },
+  ]
+  const tabGroups = [
+    { id: 'profile', label: t('settings.group.profile', 'Profile') },
+    { id: 'communication', label: t('settings.group.communication', 'Communication') },
+    { id: 'safety', label: t('settings.group.safety', 'Safety & Privacy') },
+    { id: 'network', label: t('settings.group.network', 'Network') },
+    { id: 'system', label: t('settings.group.system', 'System') },
   ]
   const isVoltageServer = server?.name?.toLowerCase() === 'voltage'
   const canAccessAdminTabs = isAdminUser && (!isVoltageServer || server?.ownerId === user?.id)
   const tabs = allTabs.filter(t => !t.adminOnly || canAccessAdminTabs)
+  const tabGroupIds = new Set(tabGroups.map((group) => group.id))
+  const groupedTabs = [
+    ...tabGroups
+      .map((group) => ({
+        ...group,
+        tabs: tabs.filter((tab) => tab.group === group.id)
+      }))
+      .filter((group) => group.tabs.length > 0),
+    ...(() => {
+      const uncategorizedTabs = tabs.filter((tab) => !tabGroupIds.has(tab.group))
+      if (uncategorizedTabs.length === 0) return []
+      return [{ id: 'other', label: t('settings.group.other', 'Other'), tabs: uncategorizedTabs }]
+    })()
+  ]
 
   const loadAgeInfo = async () => {
     setAgeLoading(true)
@@ -995,6 +1024,32 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
     }
   }
 
+  const getSelectedDeviceLabel = (deviceList, selectedId, defaultLabel, fallbackPrefix) => {
+    if (!selectedId || selectedId === 'default') return defaultLabel
+    const selected = deviceList.find((device) => device.deviceId === selectedId)
+    if (selected?.label) return selected.label
+    return `${fallbackPrefix} (${selectedId.slice(0, 8)}...)`
+  }
+
+  const hasSelectedInputDevice = settings.inputDevice === 'default' || devices.audio.some((device) => device.deviceId === settings.inputDevice)
+  const hasSelectedOutputDevice = settings.outputDevice === 'default' || devices.output.some((device) => device.deviceId === settings.outputDevice)
+  const hasSelectedVideoDevice = settings.videoDevice === 'default' || devices.video.some((device) => device.deviceId === settings.videoDevice)
+
+  const selectedInputLabel = getSelectedDeviceLabel(devices.audio, settings.inputDevice, t('voice.defaultMic'), 'Mic')
+  const selectedOutputLabel = getSelectedDeviceLabel(devices.output, settings.outputDevice, t('voice.defaultSpeaker'), 'Speaker')
+  const selectedVideoLabel = getSelectedDeviceLabel(devices.video, settings.videoDevice, t('voice.defaultCamera'), 'Camera')
+
+  const statusLabels = {
+    online: t('status.online', 'Online'),
+    idle: t('status.idle', 'Idle'),
+    dnd: t('status.dnd', 'Do Not Disturb'),
+    invisible: t('status.invisible', 'Invisible')
+  }
+  const currentPresenceStatus = typeof user?.status === 'string' ? user.status : 'online'
+  const currentPresenceLabel = statusLabels[currentPresenceStatus] || statusLabels.online
+  const currentCustomStatus = typeof user?.customStatus === 'string' ? user.customStatus.trim() : ''
+  const browserNotificationPermission = typeof Notification !== 'undefined' ? Notification.permission : 'default'
+
   return (
     <>
     <div className="modal-overlay settings-overlay" onClick={onClose} style={showAdminConfig ? { display: 'none' } : undefined}>
@@ -1004,26 +1059,38 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
             <div className="settings-sidebar">
               {isMobile && (
                 <div className="settings-mobile-header">
-                  <h3>{t('settings.title')}</h3>
+                  <div>
+                    <h3>{t('settings.title')}</h3>
+                    <p className="settings-mobile-subtitle">{t('settings.chooseSection', 'Choose a section')}</p>
+                  </div>
                   <button className="settings-mobile-close" onClick={onClose} aria-label={t('common.close', 'Close')}>
                     <XMarkIcon size={18} />
                   </button>
                 </div>
               )}
               <div className="settings-tabs">
-                {tabs.map(tab => {
-                  const Icon = tab.icon
-                  return (
-                    <button
-                      key={tab.id}
-                      className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
-                      onClick={() => handleTabClick(tab.id)}
-                    >
-                      <Icon size={20} />
-                      <span>{tab.label}</span>
-                    </button>
-                  )
-                })}
+                {groupedTabs.map((group) => (
+                  <div key={group.id} className="settings-tab-group">
+                    <p className="settings-tab-group-title">{group.label}</p>
+                    <div className="settings-tab-group-list">
+                      {group.tabs.map((tab) => {
+                        const Icon = tab.icon
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
+                            onClick={() => handleTabClick(tab.id)}
+                            aria-current={activeTab === tab.id ? 'page' : undefined}
+                          >
+                            <Icon size={20} />
+                            <span>{tab.label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
               <div className="settings-footer">
                 <button className="btn btn-danger" onClick={logout}>
@@ -1047,7 +1114,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
             </div>
           )}
 
-          <div className={`settings-content ${isMobile && !showSidebar ? 'mobile-full' : ''} ${isMobile && showSidebar ? 'mobile-hidden' : ''}`}>
+          <div
+            ref={settingsContentRef}
+            className={`settings-content ${isMobile && !showSidebar ? 'mobile-full' : ''} ${isMobile && showSidebar ? 'mobile-hidden' : ''}`}
+          >
             {!isMobile && (
               <button className="settings-close" onClick={onClose}>
                 <XMarkIcon size={24} />
@@ -1068,7 +1138,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   >
                     <div className="account-media-actions banner">
                       <button type="button" className="btn btn-secondary btn-sm" onClick={() => bannerInputRef.current?.click()} disabled={savingBanner}>
-                        <ImagePlus size={14} /> {savingBanner ? 'Saving...' : 'Change Banner'}
+                        {savingBanner ? <span className="settings-spinner" aria-hidden="true"></span> : <ImagePlus size={14} />}
+                        {savingBanner ? 'Saving banner...' : 'Change Banner'}
                       </button>
                       {accountBannerPreview ? (
                         <button type="button" className="btn btn-danger btn-sm" onClick={handleSettingsBannerRemove} disabled={savingBanner}>
@@ -1087,7 +1158,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   />
                   <div className="account-avatar-actions">
                     <button type="button" className="btn btn-primary btn-sm" onClick={() => avatarInputRef.current?.click()} disabled={savingAvatar}>
-                      <Camera size={14} /> {savingAvatar ? 'Saving...' : 'Change Avatar'}
+                      {savingAvatar ? <span className="settings-spinner" aria-hidden="true"></span> : <Camera size={14} />}
+                      {savingAvatar ? 'Saving avatar...' : 'Change Avatar'}
                     </button>
                     {(accountAvatarPreview || user?.avatar) ? (
                       <button type="button" className="btn btn-secondary btn-sm" onClick={handleSettingsAvatarRemove} disabled={savingAvatar}>
@@ -1099,6 +1171,25 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <h3>{user?.displayName || user?.customUsername || user?.username || 'User'}</h3>
                     <p className="user-username">@{user?.customUsername || user?.username}</p>
                     <p className="user-email">{user?.email}</p>
+                  </div>
+                </div>
+
+                <div className="privacy-note" style={{ marginTop: 0, marginBottom: '18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <h4 style={{ marginBottom: '6px' }}>{t('status.setStatus', 'Set Status')}</h4>
+                      <p style={{ marginBottom: 0 }}>
+                        {t('status.manageStatusHint', 'Control how others see your presence and custom status.')}
+                      </p>
+                      <span className="device-count" style={{ marginTop: '6px', display: 'inline-block' }}>
+                        {currentCustomStatus ? `${currentPresenceLabel} • ${currentCustomStatus}` : currentPresenceLabel}
+                      </span>
+                    </div>
+                    <StatusSelector
+                      currentStatus={currentPresenceStatus}
+                      customStatus={currentCustomStatus}
+                      onStatusChange={() => refreshUser?.()}
+                    />
                   </div>
                 </div>
 
@@ -1338,6 +1429,11 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <div>
                       <h4>{t('notifications.pushNotifications')}</h4>
                       <p>{t('notifications.pushNotificationsDesc')}</p>
+                      <span className="device-count">
+                        {pushEnabled
+                          ? t('notifications.pushStatusEnabled', 'Subscription active on this device')
+                          : t('notifications.pushStatusDisabled', 'No active push subscription on this device')}
+                      </span>
                     </div>
                     <label className="toggle">
                       <input
@@ -1414,6 +1510,13 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   <div>
                     <h4>{t('notifications.desktopNotifications')}</h4>
                     <p>{t('notifications.desktopNotificationsDesc')}</p>
+                    <span className="device-count">
+                      {browserNotificationPermission === 'granted'
+                        ? t('notifications.permissionGranted', 'Browser permission granted')
+                        : browserNotificationPermission === 'denied'
+                          ? t('notifications.permissionDenied', 'Browser permission blocked')
+                          : t('notifications.permissionPrompt', 'Browser permission not decided yet')}
+                    </span>
                   </div>
                   <label className="toggle">
                       <input
@@ -1582,6 +1685,48 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
             {activeTab === 'voice' && (
               <div className="settings-section">
                 <h2>{t('settings.voice')}</h2>
+                <p style={{ marginBottom: '16px', color: 'var(--volt-text-secondary)' }}>
+                  {t('voice.settingsOverview', 'Choose your input/output devices, test them quickly, and keep voice behavior predictable across reconnects.')}
+                </p>
+
+                <div className="device-grid">
+                  <div className="device-card">
+                    <div className="device-meta">
+                      <span className="device-type">{t('voice.permissions', 'Permissions')}</span>
+                      <strong style={{ color: permissionsGranted ? 'var(--volt-success)' : 'var(--volt-warning)' }}>
+                        {permissionsGranted ? t('voice.permissionsReady', 'Ready') : t('voice.permissionsNeeded', 'Needs access')}
+                      </strong>
+                      <span className="device-count">
+                        {permissionsGranted
+                          ? t('voice.permissionsReadyDesc', 'Mic and camera labels available')
+                          : t('voice.permissionsNeededDesc', 'Allow access to unlock full device list')}
+                      </span>
+                    </div>
+                    {!permissionsGranted && (
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={requestPermissions}>
+                        <MicrophoneIcon size={14} /> {t('voice.allowAccess')}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="device-card">
+                    <div className="device-meta">
+                      <span className="device-type">{t('voice.selectedDevices', 'Selected devices')}</span>
+                      <strong>{selectedInputLabel}</strong>
+                      <span className="device-count">{selectedOutputLabel}</span>
+                    </div>
+                  </div>
+
+                  <div className="device-card">
+                    <div className="device-meta">
+                      <span className="device-type">{t('voice.connectedDevices', 'Connected devices')}</span>
+                      <strong>{devices.audio.length} {t('voice.audioInputs', 'mics')}</strong>
+                      <span className="device-count">
+                        {devices.video.length} {t('voice.videoInputs', 'cameras')} · {devices.output.length} {t('voice.audioOutputs', 'outputs')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
                 <div className="voice-settings-group">
                   <h3><MicrophoneIcon size={18} /> {t('voice.voiceSettings')}</h3>
@@ -1589,7 +1734,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                   {!permissionsGranted && devices.audio.length === 0 && (
                     <div className="permission-notice">
                       <p>{t('voice.grantMicAccess')}</p>
-                      <button className="btn btn-secondary btn-sm" onClick={requestPermissions}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={requestPermissions}>
                         <MicrophoneIcon size={14} /> {t('voice.allowAccess')}
                       </button>
                     </div>
@@ -1603,14 +1748,23 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       onChange={(e) => handleSelect('inputDevice', e.target.value)}
                     >
                       <option value="default">{t('voice.defaultMic')}</option>
-                      {devices.audio.map(d => (
+                      {devices.audio.map((d) => (
                         <option key={d.deviceId} value={d.deviceId}>
                           {d.label || `Mic (${d.deviceId.slice(0, 8)}...)`}
                         </option>
                       ))}
                     </select>
-                    {devices.audio.length > 0 && (
-                      <span className="device-count">{devices.audio.length} {t('voice.devicesDetected')}</span>
+                    <span className="device-count">
+                      {hasSelectedInputDevice
+                        ? `${devices.audio.length} ${t('voice.devicesDetected')} · ${selectedInputLabel}`
+                        : t('voice.savedInputUnavailable', 'Saved microphone is no longer available.')}
+                    </span>
+                    {!hasSelectedInputDevice && (
+                      <div style={{ marginTop: '8px' }}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleSelect('inputDevice', 'default')}>
+                          {t('voice.useDefaultMic', 'Use default microphone')}
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1625,7 +1779,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                         min="0"
                         max="100"
                         value={settings.inputVolume}
-                        onChange={(e) => setSettings(prev => ({ ...prev, inputVolume: parseInt(e.target.value) }))}
+                        onChange={(e) => handleSelect('inputVolume', parseInt(e.target.value, 10))}
                         className="volume-slider"
                       />
                       <span className="volume-value">{settings.inputVolume}%</span>
@@ -1641,14 +1795,23 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       onFocus={() => enumerateDevices()}
                     >
                       <option value="default">{t('voice.defaultSpeaker')}</option>
-                      {devices.output.map(d => (
+                      {devices.output.map((d) => (
                         <option key={d.deviceId} value={d.deviceId}>
                           {d.label || `Speaker (${d.deviceId.slice(0, 8)}...)`}
                         </option>
                       ))}
                     </select>
-                    {devices.output.length > 0 && (
-                      <span className="device-count">{devices.output.length} {t('voice.devicesDetected')}</span>
+                    <span className="device-count">
+                      {hasSelectedOutputDevice
+                        ? `${devices.output.length} ${t('voice.devicesDetected')} · ${selectedOutputLabel}`
+                        : t('voice.savedOutputUnavailable', 'Saved speaker output is no longer available.')}
+                    </span>
+                    {!hasSelectedOutputDevice && (
+                      <div style={{ marginTop: '8px' }}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleOutputDeviceChange('default')}>
+                          {t('voice.useDefaultSpeaker', 'Use default speaker')}
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1678,8 +1841,25 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <label className="toggle">
                       <input
                         type="checkbox"
+                        aria-label={t('voice.muteAll')}
                         checked={settings.muteAll}
                         onChange={() => handleToggle('muteAll')}
+                      />
+                      <span className="toggle-slider"></span>
+                    </label>
+                  </div>
+
+                  <div className="setting-item">
+                    <div>
+                      <h4>{t('voice.rememberVoiceState', 'Remember Mute/Deafen State')}</h4>
+                      <p>{t('voice.rememberVoiceStateDesc', 'Restore your previous mute and deafen state after reconnecting.')}</p>
+                    </div>
+                    <label className="toggle">
+                      <input
+                        type="checkbox"
+                        aria-label={t('voice.rememberVoiceState', 'Remember Mute/Deafen State')}
+                        checked={settings.rememberVoiceState !== false}
+                        onChange={() => handleToggle('rememberVoiceState')}
                       />
                       <span className="toggle-slider"></span>
                     </label>
@@ -1691,6 +1871,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     {micError && <div className="test-error">{micError}</div>}
                     <div className="mic-test-controls">
                       <button
+                        type="button"
                         className={`btn ${testingMic ? 'btn-danger' : 'btn-primary'}`}
                         onClick={testingMic ? stopMicTest : startMicTest}
                       >
@@ -1723,14 +1904,23 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       onChange={(e) => handleSelect('videoDevice', e.target.value)}
                     >
                       <option value="default">{t('voice.defaultCamera')}</option>
-                      {devices.video.map(d => (
+                      {devices.video.map((d) => (
                         <option key={d.deviceId} value={d.deviceId}>
                           {d.label || `Camera (${d.deviceId.slice(0, 8)}...)`}
                         </option>
                       ))}
                     </select>
-                    {devices.video.length > 0 && (
-                      <span className="device-count">{devices.video.length} {t('voice.devicesDetected')}</span>
+                    <span className="device-count">
+                      {hasSelectedVideoDevice
+                        ? `${devices.video.length} ${t('voice.devicesDetected')} · ${selectedVideoLabel}`
+                        : t('voice.savedCameraUnavailable', 'Saved camera is no longer available.')}
+                    </span>
+                    {!hasSelectedVideoDevice && (
+                      <div style={{ marginTop: '8px' }}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleSelect('videoDevice', 'default')}>
+                          {t('voice.useDefaultCamera', 'Use default camera')}
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1761,6 +1951,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       )}
                     </div>
                     <button
+                      type="button"
                       className={`btn ${testingCamera ? 'btn-danger' : 'btn-primary'}`}
                       onClick={testingCamera ? stopCameraTest : startCameraTest}
                     >
@@ -1771,6 +1962,9 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
 
                 <div className="voice-settings-group">
                   <h3><ComputerDesktopIcon size={18} /> {t('voice.advanced')}</h3>
+                  <p className="device-count" style={{ marginBottom: '4px' }}>
+                    {t('voice.processingHint', 'These options affect local microphone processing quality and stability.')}
+                  </p>
 
                   <div className="setting-item">
                     <div>
@@ -1780,6 +1974,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <label className="toggle">
                       <input
                         type="checkbox"
+                        aria-label={t('voice.noiseSuppression')}
                         checked={settings.noiseSuppression}
                         onChange={() => handleToggle('noiseSuppression')}
                       />
@@ -1795,6 +1990,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <label className="toggle">
                       <input
                         type="checkbox"
+                        aria-label={t('voice.echoCancellation')}
                         checked={settings.echoCancellation}
                         onChange={() => handleToggle('echoCancellation')}
                       />
@@ -1810,6 +2006,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <label className="toggle">
                       <input
                         type="checkbox"
+                        aria-label={t('voice.autoGainControl')}
                         checked={settings.autoGainControl}
                         onChange={() => handleToggle('autoGainControl')}
                       />
@@ -1902,12 +2099,11 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     )}
 
                     <button
-                      className="btn btn-primary"
+                      className="btn btn-primary settings-pending-btn"
                       onClick={handleExportKeys}
                       disabled={isBackingUp}
-                      style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                     >
-                      <Download size={16} />
+                      {isBackingUp ? <span className="settings-spinner" aria-hidden="true"></span> : <Download size={16} />}
                       {isBackingUp ? (t('settings.backup.exporting') || 'Exporting...') : (t('settings.backup.export') || 'Export Keys')}
                     </button>
                   </div>
@@ -1930,6 +2126,7 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       type="file"
                       accept=".json"
                       onChange={handleImportKeys}
+                      disabled={isRestoring}
                       style={{ width: '100%', padding: '8px', background: 'var(--volt-bg-secondary)', border: '1px solid var(--volt-border)', borderRadius: '4px' }}
                     />
                   </div>
@@ -1944,9 +2141,16 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                       placeholder={t('settings.backup.restorePasswordPlaceholder') || 'Enter the password used when creating the backup'}
                       value={restorePassword}
                       onChange={(e) => setRestorePassword(e.target.value)}
+                      disabled={isRestoring}
                       style={{ width: '100%' }}
                     />
                   </div>
+                  {isRestoring && (
+                    <div className="settings-inline-pending" role="status" aria-live="polite">
+                      <span className="settings-spinner" aria-hidden="true"></span>
+                      <span>Restoring backup...</span>
+                    </div>
+                  )}
 
                   {restoreError && (
                     <div className="test-error" style={{ marginBottom: '12px' }}>{restoreError}</div>
@@ -1966,7 +2170,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 </p>
 
                 {ageLoading ? (
-                  <div className="privacy-note">{t('age.loading')}</div>
+                  <div className="privacy-note settings-loading-state" role="status" aria-live="polite">
+                    <span className="settings-spinner" aria-hidden="true"></span>
+                    <span>{t('age.loading')}</span>
+                  </div>
                 ) : (
                   <div className="privacy-note age-settings-card">
                     <h4>{t('age.status')}</h4>
@@ -2019,14 +2226,20 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <div className="age-actions-row" style={{ marginTop: 12 }}>
                       {!ageInfo?.requiresProofVerification && (
                         <button className="btn btn-secondary" onClick={handleAgeSelfAttest} disabled={ageSavingPolicy}>
-                          I'm Over 18
+                          {ageSavingPolicy ? (
+                            <>
+                              <span className="settings-spinner" aria-hidden="true"></span>
+                              <span>Saving...</span>
+                            </>
+                          ) : "I'm Over 18"}
                         </button>
                       )}
-                      <button className="btn btn-primary" onClick={() => { setShowAgeVerify(true); setAgeError('') }}>
+                      <button className="btn btn-primary" onClick={() => { setShowAgeVerify(true); setAgeError('') }} disabled={ageSavingPolicy}>
                         {ageInfo?.verified ? t('age.rerunVerification') : 'Run full verification'}
                       </button>
-                      <button className="btn btn-secondary" onClick={loadAgeInfo}>
-                        {t('age.refresh')}
+                      <button className="btn btn-secondary settings-pending-btn" onClick={loadAgeInfo} disabled={ageSavingPolicy}>
+                        {ageSavingPolicy ? <span className="settings-spinner" aria-hidden="true"></span> : null}
+                        {ageSavingPolicy ? 'Updating policy...' : t('age.refresh')}
                       </button>
                     </div>
                   </div>
@@ -2046,7 +2259,8 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                     <h4>Report History</h4>
                     <p>Your reports are metadata-only and do not expose private message plaintext.</p>
                   </div>
-                  <button className="btn btn-secondary" onClick={loadMyReports} disabled={reportsLoading}>
+                  <button className="btn btn-secondary settings-pending-btn" onClick={loadMyReports} disabled={reportsLoading}>
+                    {reportsLoading ? <span className="settings-spinner" aria-hidden="true"></span> : null}
                     {reportsLoading ? 'Refreshing...' : 'Refresh'}
                   </button>
                 </div>
@@ -2065,7 +2279,10 @@ const SettingsModal = ({ onClose, initialTab = 'account' }) => {
                 )}
 
                 {reportsLoading ? (
-                  <div className="privacy-note">Loading report history...</div>
+                  <div className="privacy-note settings-loading-state" role="status" aria-live="polite">
+                    <span className="settings-spinner" aria-hidden="true"></span>
+                    <span>Loading report history...</span>
+                  </div>
                 ) : myReports.length === 0 ? (
                   <div className="privacy-note">No reports submitted yet.</div>
                 ) : (

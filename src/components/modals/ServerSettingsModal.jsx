@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { XMarkIcon, ServerIcon, UsersIcon, ShieldCheckIcon, LinkIcon, TrashIcon, HashtagIcon, SpeakerWaveIcon, ChevronDownIcon, ChevronRightIcon, TrophyIcon, UserMinusIcon, NoSymbolIcon, Cog6ToothIcon, CogIcon, PlusIcon, PencilIcon, CheckIcon, ClipboardIcon, ClipboardDocumentIcon, PaintBrushIcon, GlobeAltIcon, CheckCircleIcon, ClockIcon, LockClosedIcon, KeyIcon, ArrowPathIcon, ArrowDownIcon, ArrowUpIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MusicalNoteIcon, FolderIcon, ListBulletIcon, FaceSmileIcon, PuzzlePieceIcon, BeakerIcon, AcademicCapIcon, FilmIcon, BriefcaseIcon } from "@heroicons/react/24/outline";
 import { X, Server, Users, ShieldCheck, Link, Trash, Hash, Volume2, ChevronDown, ChevronRight, Trophy, UserMinus, Ban, Settings, Plus, Pencil, Check, Clipboard, Palette, Globe, CheckCircle, Clock, Lock, Key, RefreshCw, ArrowDown, ArrowUp, Music, Folder, List, Smile, Puzzle, Beaker, GraduationCap, Film, Briefcase, Sparkles, ShieldAlert, CalendarDays, LayoutGrid } from 'lucide-react'
 import { apiService } from '../../services/apiService'
@@ -125,12 +125,15 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const loadDiscoveryCategories = async () => {
+    setDiscoveryCategoriesLoading(true)
     try {
       const res = await apiService.getDiscoveryCategories()
       setDiscoveryCategories(normalizeDiscoveryCategories(res.data))
     } catch (err) {
       console.error('Failed to load categories:', err)
       setDiscoveryCategories(normalizeDiscoveryCategories([]))
+    } finally {
+      setDiscoveryCategoriesLoading(false)
     }
   }
 
@@ -216,6 +219,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const [showRoleMenu, setShowRoleMenu] = useState({})
   const [membersLoading, setMembersLoading] = useState(false)
   const [invites, setInvites] = useState([])
+  const [invitesLoading, setInvitesLoading] = useState(false)
   const [newInvite, setNewInvite] = useState(null)
   const [editingChannel, setEditingChannel] = useState(null)
   const [newChannelName, setNewChannelName] = useState('')
@@ -231,8 +235,10 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const [discoveryStatus, setDiscoveryStatus] = useState(null)
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [discoveryCategories, setDiscoveryCategories] = useState([])
+  const [discoveryCategoriesLoading, setDiscoveryCategoriesLoading] = useState(false)
   const [discoverySubmit, setDiscoverySubmit] = useState({ description: '', category: '' })
   const [serverEmojis, setServerEmojis] = useState([])
+  const [serverEmojisLoading, setServerEmojisLoading] = useState(false)
   const [newEmojiName, setNewEmojiName] = useState('')
   const [uploadingEmoji, setUploadingEmoji] = useState(false)
   const [auditLogs, setAuditLogs] = useState([])
@@ -245,6 +251,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   const bannerInputRef = useRef(null)
   const iconInputRef = useRef(null)
   const backgroundInputRef = useRef(null)
+  const settingsContentRef = useRef(null)
 
   const isOwner = server?.ownerId === user?.id
   const getMemberRoles = (memberId) => {
@@ -389,6 +396,12 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     loadBans()
   }, [server?.id])
 
+  useLayoutEffect(() => {
+    const container = settingsContentRef.current
+    if (!container) return
+    container.scrollTop = 0
+  }, [activeTab, server?.id])
+
   const loadMembers = async () => {
     if (!server?.id) {
       setMembers([])
@@ -449,11 +462,14 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const loadServerEmojis = async () => {
+    setServerEmojisLoading(true)
     try {
       const res = await apiService.getServerEmojis(server.id)
       setServerEmojis(res.data || [])
     } catch (err) {
       console.error('Failed to load server emojis:', err)
+    } finally {
+      setServerEmojisLoading(false)
     }
   }
 
@@ -516,11 +532,14 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
   }
 
   const loadInvites = async () => {
+    setInvitesLoading(true)
     try {
       const res = await apiService.getServerInvites(server.id)
       setInvites(res.data || [])
     } catch (err) {
       console.error('Failed to load invites:', err)
+    } finally {
+      setInvitesLoading(false)
     }
   }
 
@@ -967,6 +986,17 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
     ...(isOwner ? [{ id: 'danger', label: t('appearance.danger', 'Danger Zone'), icon: Trash }] : [])
   ]
 
+  const uncategorizedChannels = channels.filter(c => !c.categoryId)
+  const channelsAndCategoriesLoading = channelsLoading || categoriesLoading
+  const filteredMembers = members.filter(m => {
+    const matchesSearch = !memberSearch ||
+      m.username?.toLowerCase().includes(memberSearch.toLowerCase())
+    const matchesRole = roleFilter === 'all' ||
+      (roleFilter === 'none' ? (!m.roles || m.roles.length === 0) : m.roles?.includes(roleFilter))
+    return matchesSearch && matchesRole
+  })
+  const hasMemberFilters = !!memberSearch.trim() || roleFilter !== 'all'
+
   return (
     <div className="modal-overlay settings-overlay" onClick={onClose}>
       <div className="modal-content server-settings-modal" onClick={e => e.stopPropagation()}>
@@ -999,8 +1029,8 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
             </div>
           </div>
 
-          <div className="settings-content">
-            <button className="settings-close" onClick={onClose}>
+          <div ref={settingsContentRef} className="settings-content">
+            <button className="settings-close" onClick={onClose} title={t('common.close', 'Close')} aria-label={t('common.close', 'Close')}>
               <XMarkIcon size={24} />
             </button>
 
@@ -1318,11 +1348,22 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     <h2>{t('serverSettings.channelsAndCategories', 'Channels & Categories')}</h2>
                     <p className="section-desc">{t('serverSettings.channelsAndCategoriesDesc', "Manage your server's channels and categories. Drag to reorder.")}</p>
                   </div>
-                  <button className="btn btn-secondary" onClick={() => { loadChannels(); loadCategories(); }} disabled={channelsLoading || categoriesLoading}>
-                    <RefreshCw size={16} className={channelsLoading || categoriesLoading ? 'spinning' : ''} />
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => { loadChannels(); loadCategories(); }}
+                    disabled={channelsAndCategoriesLoading}
+                    title={t('serverSettings.refreshChannelsAndCategories', 'Refresh channels and categories')}
+                  >
+                    <RefreshCw size={16} className={channelsAndCategoriesLoading ? 'spinning' : ''} />
                     {t('common.refresh', 'Refresh')}
                   </button>
                 </div>
+                {channelsAndCategoriesLoading && (categories.length > 0 || channels.length > 0) && (
+                  <div className="section-status-inline">
+                    <RefreshCw size={14} className="spinning" />
+                    <span>{t('serverSettings.refreshingChanges', 'Refreshing latest changes...')}</span>
+                  </div>
+                )}
                 {error && (
                   <div className="error-message">
                     {error}
@@ -1332,7 +1373,10 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                 {/* Categories Section */}
                 <div className="categories-section">
                   <div className="section-header-with-action">
-                    <h4>{t('serverSettings.categories', 'Categories')}</h4>
+                    <div>
+                      <h4>{t('serverSettings.categories', 'Categories')}</h4>
+                      <p className="subsection-desc">{t('serverSettings.categoriesHelp', 'Group related channels so members can scan your server faster.')}</p>
+                    </div>
                     {isAdmin && (
                       <div className="create-category-inline">
                         <input
@@ -1347,6 +1391,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           className="btn btn-primary btn-small"
                           onClick={handleCreateCategory}
                           disabled={!newCategoryName.trim()}
+                          title={t('serverSettings.createCategory', 'Create category')}
                         >
                           <PlusIcon size={14} /> {t('serverSettings.add', 'Add')}
                         </button>
@@ -1355,55 +1400,79 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                   </div>
 
                   <div className="categories-list">
-                    {categories.map((category, index) => (
-                      <div
-                        key={category.id}
-                        className={`category-manage-item ${draggedCategory?.id === category.id ? 'dragging' : ''} ${dragOverCategory === category.id ? 'drag-over' : ''}`}
-                        draggable={isAdmin}
-                        onDragStart={(e) => handleCategoryDragStart(e, category)}
-                        onDragOver={(e) => handleCategoryDragOver(e, category)}
-                        onDragLeave={handleCategoryDragLeave}
-                        onDrop={(e) => handleCategoryDrop(e, category)}
-                        onDragEnd={handleCategoryDragEnd}
-                      >
-                        <ListBulletIcon size={16} className="drag-handle" />
-                        <FolderIcon size={18} className="category-icon" />
-                        {editingCategory === category.id ? (
-                          <input
-                            type="text"
-                            className="input inline-edit"
-                            value={newCategoryName}
-                            onChange={e => setNewCategoryName(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleUpdateCategory(category.id)}
-                            onBlur={() => { setEditingCategory(null); setNewCategoryName('') }}
-                            autoFocus
-                          />
-                        ) : (
-                          <span className="category-manage-name">{category.name}</span>
-                        )}
-                        <span className="category-channel-count">
-                          {channels.filter(c => c.categoryId === category.id).length} {t('chat.channels', 'Channels')}
-                        </span>
-                        {isAdmin && (
-                          <div className="category-manage-actions">
+                    {categoriesLoading && categories.length === 0 ? (
+                      <div className="loading-state compact">
+                        <RefreshCw size={18} className="spinning" />
+                        <p>{t('serverSettings.loadingCategories', 'Loading categories...')}</p>
+                      </div>
+                    ) : (
+                      <>
+                        {categories.map(category => (
+                          <div
+                            key={category.id}
+                            className={`category-manage-item ${draggedCategory?.id === category.id ? 'dragging' : ''} ${dragOverCategory === category.id ? 'drag-over' : ''}`}
+                            draggable={isAdmin}
+                            onDragStart={(e) => handleCategoryDragStart(e, category)}
+                            onDragOver={(e) => handleCategoryDragOver(e, category)}
+                            onDragLeave={handleCategoryDragLeave}
+                            onDrop={(e) => handleCategoryDrop(e, category)}
+                            onDragEnd={handleCategoryDragEnd}
+                          >
+                            <ListBulletIcon size={16} className="drag-handle" />
+                            <FolderIcon size={18} className="category-icon" />
                             {editingCategory === category.id ? (
-                              <button className="icon-btn" onClick={() => handleUpdateCategory(category.id)}>
-                                <CheckIcon size={16} />
-                              </button>
+                              <input
+                                type="text"
+                                className="input inline-edit"
+                                value={newCategoryName}
+                                onChange={e => setNewCategoryName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleUpdateCategory(category.id)}
+                                onBlur={() => { setEditingCategory(null); setNewCategoryName('') }}
+                                autoFocus
+                              />
                             ) : (
-                              <button className="icon-btn" onClick={() => { setEditingCategory(category.id); setNewCategoryName(category.name) }}>
-                                <PencilIcon size={16} />
-                              </button>
+                              <span className="category-manage-name">{category.name}</span>
                             )}
-                            <button className="icon-btn danger" onClick={() => handleDeleteCategory(category.id)}>
-                              <TrashIcon size={16} />
-                            </button>
+                            <span className="category-channel-count">
+                              {channels.filter(c => c.categoryId === category.id).length} {t('chat.channels', 'Channels')}
+                            </span>
+                            {isAdmin && (
+                              <div className="category-manage-actions">
+                                {editingCategory === category.id ? (
+                                  <button
+                                    className="icon-btn"
+                                    onClick={() => handleUpdateCategory(category.id)}
+                                    title={t('common.save', 'Save')}
+                                  >
+                                    <CheckIcon size={16} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="icon-btn"
+                                    onClick={() => { setEditingCategory(category.id); setNewCategoryName(category.name) }}
+                                    title={t('common.edit', 'Edit')}
+                                  >
+                                    <PencilIcon size={16} />
+                                  </button>
+                                )}
+                                <button
+                                  className="icon-btn danger"
+                                  onClick={() => handleDeleteCategory(category.id)}
+                                  title={t('common.delete', 'Delete')}
+                                >
+                                  <TrashIcon size={16} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {categories.length === 0 && (
+                          <div className="empty-state compact">
+                            <Folder size={26} />
+                            <p>{t('serverSettings.noCategoriesYet', 'No categories yet. Create one above!')}</p>
                           </div>
                         )}
-                      </div>
-                    ))}
-                    {categories.length === 0 && (
-                      <div className="no-items-message">{t('serverSettings.noCategoriesYet', 'No categories yet. Create one above!')}</div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1411,84 +1480,28 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                 {/* Channels by Category */}
                 <div className="channels-by-category-section">
                   <h4>{t('chat.channels', 'Channels')}</h4>
-                  
-                  {/* Uncategorized channels */}
-                  <div className="channel-category-group">
-                    <div className="category-group-header">
-                      <FolderIcon size={16} />
-                      <span>{t('modals.noCategory', 'No Category')}</span>
-                      <span className="channel-count">{channels.filter(c => !c.categoryId).length}</span>
-                    </div>
-                    {channels.filter(c => !c.categoryId).map(channel => (
-                      <div
-                        key={channel.id}
-                        className={`channel-manage-item indented ${draggedChannel?.id === channel.id ? 'dragging' : ''} ${dragOverChannel === channel.id ? 'drag-over' : ''}`}
-                        draggable={isAdmin}
-                        onDragStart={(e) => handleDragStart(e, channel)}
-                        onDragOver={(e) => handleDragOver(e, channel)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDrop(e, channel)}
-                        onDragEnd={handleDragEnd}
-                      >
-                        <ListBulletIcon size={16} className="drag-handle" />
-                        {channel.type === 'voice' ? <SpeakerWaveIcon size={18} /> : <Hash size={18} />}
-                        {editingChannel === channel.id ? (
-                          <input
-                            type="text"
-                            className="input inline-edit"
-                            value={newChannelName}
-                            onChange={e => setNewChannelName(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleUpdateChannel(channel.id)}
-                            autoFocus
-                          />
-                        ) : (
-                          <span className="channel-manage-name">{channel.name}</span>
-                        )}
-                        {isAdmin && (
-                          <>
-                            <select
-                              className="input category-select"
-                              value={channel.categoryId || ''}
-                              onChange={e => handleMoveChannelToCategory(channel.id, e.target.value || null)}
-                            >
-                              <option value="">{t('modals.noCategory', 'No Category')}</option>
-                              {categories.map(cat => (
-                                <option key={cat.id} value={cat.id}>{cat.name}</option>
-                              ))}
-                            </select>
-                            <div className="channel-manage-actions">
-                              {editingChannel === channel.id ? (
-                                <button className="icon-btn" onClick={() => handleUpdateChannel(channel.id)}>
-                                  <CheckIcon size={16} />
-                                </button>
-                              ) : (
-                                <button className="icon-btn" onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}>
-                                  <PencilIcon size={16} />
-                                </button>
-                              )}
-                              <button className="icon-btn danger" onClick={() => handleDeleteChannel(channel.id)}>
-                                <TrashIcon size={16} />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <p className="subsection-desc">{t('serverSettings.channelsHelp', 'Drag channels to reorder, or move them between categories with the dropdown.')}</p>
 
-                  {/* Channels grouped by category */}
-                  {categories.map(category => {
-                    const categoryChannels = channels.filter(c => c.categoryId === category.id)
-                    if (categoryChannels.length === 0) return null
-                    
-                    return (
-                      <div key={category.id} className="channel-category-group">
+                  {channelsLoading && channels.length === 0 ? (
+                    <div className="loading-state compact">
+                      <RefreshCw size={18} className="spinning" />
+                      <p>{t('serverSettings.loadingChannels', 'Loading channels...')}</p>
+                    </div>
+                  ) : channels.length === 0 ? (
+                    <div className="empty-state compact">
+                      <Hash size={26} />
+                      <p>{t('serverSettings.noChannelsYet', 'No channels yet. Create your first channel from the chat view.')}</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Uncategorized channels */}
+                      <div className="channel-category-group">
                         <div className="category-group-header">
                           <FolderIcon size={16} />
-                          <span>{category.name}</span>
-                          <span className="channel-count">{categoryChannels.length}</span>
+                          <span>{t('modals.noCategory', 'No Category')}</span>
+                          <span className="channel-count">{uncategorizedChannels.length}</span>
                         </div>
-                        {categoryChannels.map(channel => (
+                        {uncategorizedChannels.map(channel => (
                           <div
                             key={channel.id}
                             className={`channel-manage-item indented ${draggedChannel?.id === channel.id ? 'dragging' : ''} ${dragOverChannel === channel.id ? 'drag-over' : ''}`}
@@ -1500,7 +1513,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                             onDragEnd={handleDragEnd}
                           >
                             <ListBulletIcon size={16} className="drag-handle" />
-                        {channel.type === 'voice' ? <SpeakerWaveIcon size={18} /> : <Hash size={18} />}
+                            {channel.type === 'voice' ? <SpeakerWaveIcon size={18} /> : <Hash size={18} />}
                             {editingChannel === channel.id ? (
                               <input
                                 type="text"
@@ -1519,6 +1532,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                                   className="input category-select"
                                   value={channel.categoryId || ''}
                                   onChange={e => handleMoveChannelToCategory(channel.id, e.target.value || null)}
+                                  title={t('serverSettings.moveToCategory', 'Move to category')}
                                 >
                                   <option value="">{t('modals.noCategory', 'No Category')}</option>
                                   {categories.map(cat => (
@@ -1527,15 +1541,27 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                                 </select>
                                 <div className="channel-manage-actions">
                                   {editingChannel === channel.id ? (
-                                    <button className="icon-btn" onClick={() => handleUpdateChannel(channel.id)}>
+                                    <button
+                                      className="icon-btn"
+                                      onClick={() => handleUpdateChannel(channel.id)}
+                                      title={t('common.save', 'Save')}
+                                    >
                                       <CheckIcon size={16} />
                                     </button>
                                   ) : (
-                                    <button className="icon-btn" onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}>
+                                    <button
+                                      className="icon-btn"
+                                      onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}
+                                      title={t('common.edit', 'Edit')}
+                                    >
                                       <PencilIcon size={16} />
                                     </button>
                                   )}
-                                  <button className="icon-btn danger" onClick={() => handleDeleteChannel(channel.id)}>
+                                  <button
+                                    className="icon-btn danger"
+                                    onClick={() => handleDeleteChannel(channel.id)}
+                                    title={t('common.delete', 'Delete')}
+                                  >
                                     <TrashIcon size={16} />
                                   </button>
                                 </div>
@@ -1544,8 +1570,92 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           </div>
                         ))}
                       </div>
-                    )
-                  })}
+
+                      {/* Channels grouped by category */}
+                      {categories.map(category => {
+                        const categoryChannels = channels.filter(c => c.categoryId === category.id)
+                        if (categoryChannels.length === 0) return null
+
+                        return (
+                          <div key={category.id} className="channel-category-group">
+                            <div className="category-group-header">
+                              <FolderIcon size={16} />
+                              <span>{category.name}</span>
+                              <span className="channel-count">{categoryChannels.length}</span>
+                            </div>
+                            {categoryChannels.map(channel => (
+                              <div
+                                key={channel.id}
+                                className={`channel-manage-item indented ${draggedChannel?.id === channel.id ? 'dragging' : ''} ${dragOverChannel === channel.id ? 'drag-over' : ''}`}
+                                draggable={isAdmin}
+                                onDragStart={(e) => handleDragStart(e, channel)}
+                                onDragOver={(e) => handleDragOver(e, channel)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, channel)}
+                                onDragEnd={handleDragEnd}
+                              >
+                                <ListBulletIcon size={16} className="drag-handle" />
+                                {channel.type === 'voice' ? <SpeakerWaveIcon size={18} /> : <Hash size={18} />}
+                                {editingChannel === channel.id ? (
+                                  <input
+                                    type="text"
+                                    className="input inline-edit"
+                                    value={newChannelName}
+                                    onChange={e => setNewChannelName(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleUpdateChannel(channel.id)}
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <span className="channel-manage-name">{channel.name}</span>
+                                )}
+                                {isAdmin && (
+                                  <>
+                                    <select
+                                      className="input category-select"
+                                      value={channel.categoryId || ''}
+                                      onChange={e => handleMoveChannelToCategory(channel.id, e.target.value || null)}
+                                      title={t('serverSettings.moveToCategory', 'Move to category')}
+                                    >
+                                      <option value="">{t('modals.noCategory', 'No Category')}</option>
+                                      {categories.map(cat => (
+                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                      ))}
+                                    </select>
+                                    <div className="channel-manage-actions">
+                                      {editingChannel === channel.id ? (
+                                        <button
+                                          className="icon-btn"
+                                          onClick={() => handleUpdateChannel(channel.id)}
+                                          title={t('common.save', 'Save')}
+                                        >
+                                          <CheckIcon size={16} />
+                                        </button>
+                                      ) : (
+                                        <button
+                                          className="icon-btn"
+                                          onClick={() => { setEditingChannel(channel.id); setNewChannelName(channel.name) }}
+                                          title={t('common.edit', 'Edit')}
+                                        >
+                                          <PencilIcon size={16} />
+                                        </button>
+                                      )}
+                                      <button
+                                        className="icon-btn danger"
+                                        onClick={() => handleDeleteChannel(channel.id)}
+                                        title={t('common.delete', 'Delete')}
+                                      >
+                                        <TrashIcon size={16} />
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })}
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -1579,18 +1689,18 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           </div>
 {role.id !== 'owner' && role.id !== 'member' && isAdmin && (
                             <div className="role-actions">
-                              <button className="icon-btn" onClick={() => { setEditingRole(role); setEditingRolePerms(role.permissions || []); setPermCategory('general') }}>
+                              <button className="icon-btn" onClick={() => { setEditingRole(role); setEditingRolePerms(role.permissions || []); setPermCategory('general') }} title={t('common.edit', 'Edit')}>
                                 <PencilIcon size={16} />
                               </button>
                               {isOwner && (
-                                <button className="icon-btn danger" onClick={() => handleDeleteRole(role.id)}>
+                                <button className="icon-btn danger" onClick={() => handleDeleteRole(role.id)} title={t('common.delete', 'Delete')}>
                                   <TrashIcon size={16} />
                                 </button>
                               )}
                             </div>
                           )}
                           {(role.id === 'owner' || role.id === 'member') && isAdmin && (
-                            <button className="icon-btn" onClick={() => { setEditingRole(role); setEditingRolePerms(role.permissions || []); setPermCategory('general') }}>
+                            <button className="icon-btn" onClick={() => { setEditingRole(role); setEditingRolePerms(role.permissions || []); setPermCategory('general') }} title={t('serverSettings.configureRole', 'Configure role')}>
                               <CogIcon size={16} />
                             </button>
                           )}
@@ -1743,14 +1853,16 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     <input
                       type="text"
                       className="input"
-                      placeholder={t('common.search')}
+                      placeholder={t('serverSettings.searchMembers', 'Search members')}
                       value={memberSearch}
                       onChange={e => setMemberSearch(e.target.value)}
+                      aria-label={t('serverSettings.searchMembers', 'Search members')}
                     />
                     <select
                       className="input"
                       value={roleFilter}
                       onChange={e => setRoleFilter(e.target.value)}
+                      aria-label={t('serverSettings.filterByRole', 'Filter by role')}
                     >
                       <option value="all">{t('serverSettings.allRoles', 'All Roles')}</option>
                       {roles.map(role => (
@@ -1758,28 +1870,37 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                       ))}
                       <option value="none">{t('serverSettings.noRoles', 'No Roles')}</option>
                     </select>
-                    <button className="btn btn-secondary" onClick={loadMembers} disabled={membersLoading}>
-                      <RefreshCw size={16} />
+                    <button
+                      className="btn btn-secondary"
+                      onClick={loadMembers}
+                      disabled={membersLoading}
+                      title={t('serverSettings.refreshMembers', 'Refresh members')}
+                    >
+                      <RefreshCw size={16} className={membersLoading ? 'spinning' : ''} />
                     </button>
                   </div>
                 </div>
 
                 <div className="members-simple-list">
                   {membersLoading && members.length === 0 && (
-                    <div className="no-members-message">{t('common.loading', 'Loading...')}</div>
+                    <div className="loading-state compact">
+                      <RefreshCw size={18} className="spinning" />
+                      <p>{t('serverSettings.loadingMembers', 'Loading members...')}</p>
+                    </div>
                   )}
                   {!membersLoading && members.length === 0 && (
-                    <div className="no-members-message">{t('serverSettings.noMembers', 'No members found')}</div>
+                    <div className="empty-state compact">
+                      <Users size={26} />
+                      <p>{t('serverSettings.noMembers', 'No members found')}</p>
+                    </div>
                   )}
-                  {members
-                    .filter(m => {
-                      const matchesSearch = !memberSearch || 
-                        m.username?.toLowerCase().includes(memberSearch.toLowerCase())
-                      const matchesRole = roleFilter === 'all' || 
-                        (roleFilter === 'none' ? (!m.roles || m.roles.length === 0) : m.roles?.includes(roleFilter))
-                      return matchesSearch && matchesRole
-                    })
-                    .map(member => {
+                  {!membersLoading && members.length > 0 && filteredMembers.length === 0 && hasMemberFilters && (
+                    <div className="empty-state compact">
+                      <Users size={26} />
+                      <p>{t('serverSettings.noMembersMatchFilters', 'No members match your search or filter.')}</p>
+                    </div>
+                  )}
+                  {filteredMembers.map(member => {
                       const canManage = isAdmin
                       const isSelf = member.id === user?.id
                       const memberRoleIds = Array.isArray(member.roles) ? member.roles : (member.role ? [member.role] : [])
@@ -1822,6 +1943,7 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                           <button 
                             className="role-add-pill"
                             onClick={() => setShowRoleMenu(prev => ({ ...prev, [member.id]: !prev[member.id] }))}
+                            title={t('serverSettings.addRole', 'Add role')}
                           >
                             +
                           </button>
@@ -1890,7 +2012,10 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                 </div>
 
                 {bansLoading ? (
-                  <div className="loading-state">{t('common.loading', 'Loading...')}</div>
+                  <div className="loading-state">
+                    <RefreshCw size={18} className="spinning" />
+                    <p>{t('serverSettings.loadingBans', 'Loading bans...')}</p>
+                  </div>
                 ) : bans.length === 0 ? (
                   <div className="empty-state">
                     <Ban size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
@@ -1933,14 +2058,17 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                     <h2>{t('serverSettings.auditLogs', 'Audit Logs')}</h2>
                     <p className="section-desc">{t('serverSettings.auditLogsDesc', 'Track administrative actions in your server')}</p>
                   </div>
-                  <button className="btn btn-secondary" onClick={loadAuditLogs} disabled={auditLogsLoading}>
-                    <RefreshCw size={16} />
+                  <button className="btn btn-secondary" onClick={loadAuditLogs} disabled={auditLogsLoading} title={t('serverSettings.refreshAuditLogs', 'Refresh audit logs')}>
+                    <RefreshCw size={16} className={auditLogsLoading ? 'spinning' : ''} />
                     {t('common.refresh', 'Refresh')}
                   </button>
                 </div>
 
                 {auditLogsLoading ? (
-                  <div className="loading-state">{t('common.loading', 'Loading...')}</div>
+                  <div className="loading-state">
+                    <RefreshCw size={18} className="spinning" />
+                    <p>{t('serverSettings.loadingAuditLogs', 'Loading audit logs...')}</p>
+                  </div>
                 ) : auditLogs.length === 0 ? (
                   <div className="empty-state">
                     <List size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
@@ -1995,38 +2123,51 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                 <h2>{t('serverSettings.invites', 'Server Invites')}</h2>
                 <p className="section-desc">{t('serverSettings.invitesDesc', 'Create and manage invite links')}</p>
 
-                <button className="btn btn-primary" onClick={handleCreateInvite}>
+                <button className="btn btn-primary" onClick={handleCreateInvite} disabled={invitesLoading}>
                   <PlusIcon size={16} /> {t('modals.createInvite', 'Create Invite Link')}
                 </button>
+                <p className="subsection-desc">
+                  {t('serverSettings.inviteTip', 'Invite links use the format {{host}}/invite/{{code}}.', { host: inviteHost, code: 'abc123' })}
+                </p>
 
                 {newInvite && (
                   <div className="new-invite-box">
                     <span className="invite-code">{buildInviteDisplayUrl(newInvite.code)}</span>
-                    <button className="btn btn-secondary" onClick={() => handleCopyInvite(newInvite.code)}>
+                    <button className="btn btn-secondary" onClick={() => handleCopyInvite(newInvite.code)} title={t('common.copy', 'Copy')}>
                       <ClipboardDocumentIcon size={16} /> {t('common.copy', 'Copy')}
                     </button>
                   </div>
                 )}
 
                 <div className="invites-list">
-                  {invites.map(invite => (
-                    <div key={invite.code} className="invite-item">
-                      <div className="invite-info">
-                        <span className="invite-code">{invite.code}</span>
-                        <span className="invite-uses">{invite.uses} {t('invites.uses', 'uses')}</span>
-                      </div>
-                      <div className="invite-actions">
-                        <button className="icon-btn" onClick={() => handleCopyInvite(invite.code)}>
-                          <ClipboardDocumentIcon size={16} />
-                        </button>
-                        <button className="icon-btn danger" onClick={() => handleDeleteInvite(invite.code)}>
-                          <TrashIcon size={16} />
-                        </button>
-                      </div>
+                  {invitesLoading ? (
+                    <div className="loading-state compact">
+                      <RefreshCw size={18} className="spinning" />
+                      <p>{t('serverSettings.loadingInvites', 'Loading invites...')}</p>
                     </div>
-                  ))}
-                  {invites.length === 0 && (
-                    <div className="no-invites">{t('serverSettings.noActiveInvites', 'No active invites')}</div>
+                  ) : (
+                    invites.map(invite => (
+                      <div key={invite.code} className="invite-item">
+                        <div className="invite-info">
+                          <span className="invite-code">{invite.code}</span>
+                          <span className="invite-uses">{invite.uses} {t('invites.uses', 'uses')}</span>
+                        </div>
+                        <div className="invite-actions">
+                          <button className="icon-btn" onClick={() => handleCopyInvite(invite.code)} title={t('common.copy', 'Copy')}>
+                            <ClipboardDocumentIcon size={16} />
+                          </button>
+                          <button className="icon-btn danger" onClick={() => handleDeleteInvite(invite.code)} title={t('common.delete', 'Delete')}>
+                            <TrashIcon size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {!invitesLoading && invites.length === 0 && (
+                    <div className="empty-state compact">
+                      <Link size={26} />
+                      <p>{t('serverSettings.noActiveInvites', 'No active invites')}</p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -2091,22 +2232,34 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                   <div className="discovery-submit-form">
                     <div className="form-group">
                       <label>{t('modals.category', 'Category')}</label>
-                      <div className="category-grid">
-                        {discoveryCategories.map(cat => {
-                          const IconComponent = CATEGORY_ICONS[cat.id] || Hash
-                          return (
-                            <button
-                              key={cat.id}
-                              type="button"
-                              className={`category-btn ${discoverySubmit.category === cat.id ? 'selected' : ''}`}
-                              onClick={() => setDiscoverySubmit(p => ({ ...p, category: cat.id }))}
-                            >
-                              <IconComponent size={20} />
-                              <span>{cat.name}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
+                      {discoveryCategoriesLoading ? (
+                        <div className="loading-state compact">
+                          <RefreshCw size={18} className="spinning" />
+                          <p>{t('serverSettings.loadingCategories', 'Loading categories...')}</p>
+                        </div>
+                      ) : discoveryCategories.length === 0 ? (
+                        <div className="empty-state compact">
+                          <Globe size={26} />
+                          <p>{t('serverSettings.noDiscoveryCategories', 'Discovery categories are unavailable right now. Please try again.')}</p>
+                        </div>
+                      ) : (
+                        <div className="category-grid">
+                          {discoveryCategories.map(cat => {
+                            const IconComponent = CATEGORY_ICONS[cat.id] || Hash
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                className={`category-btn ${discoverySubmit.category === cat.id ? 'selected' : ''}`}
+                                onClick={() => setDiscoverySubmit(p => ({ ...p, category: cat.id }))}
+                              >
+                                <IconComponent size={20} />
+                                <span>{cat.name}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     <div className="form-group">
@@ -2176,31 +2329,38 @@ const ServerSettingsModal = ({ server, onClose, onUpdate, onDelete, initialTab =
                   </div>
                 )}
 
-                <div className="emoji-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-                  {serverEmojis.map(emoji => (
-                    <div key={emoji.id} className="emoji-card" style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                      background: 'var(--bg-secondary, #1a1d24)', borderRadius: 8, border: '1px solid var(--border-color, #2a2d35)'
-                    }}>
-                      <img
-                        src={emoji.url}
-                        alt={emoji.name}
-                        style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4 }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>:{emoji.name}:</div>
+                {serverEmojisLoading ? (
+                  <div className="loading-state">
+                    <RefreshCw size={18} className="spinning" />
+                    <p>{t('serverSettings.loadingEmojis', 'Loading emojis...')}</p>
+                  </div>
+                ) : (
+                  <div className="emoji-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+                    {serverEmojis.map(emoji => (
+                      <div key={emoji.id} className="emoji-card" style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                        background: 'var(--bg-secondary, #1a1d24)', borderRadius: 8, border: '1px solid var(--border-color, #2a2d35)'
+                      }}>
+                        <img
+                          src={emoji.url}
+                          alt={emoji.name}
+                          style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4 }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>:{emoji.name}:</div>
+                        </div>
+                        {(isAdmin || hasPermission('manage_emojis')) && (
+                          <button className="icon-btn danger" onClick={() => handleDeleteEmoji(emoji.id)} title={t('emoji.deleteEmoji')}>
+                            <TrashIcon size={14} />
+                          </button>
+                        )}
                       </div>
-                      {(isAdmin || hasPermission('manage_emojis')) && (
-                        <button className="icon-btn danger" onClick={() => handleDeleteEmoji(emoji.id)} title={t('emoji.deleteEmoji')}>
-                          <TrashIcon size={14} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
-                {serverEmojis.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted, #888)', fontSize: 14 }}>
+                {!serverEmojisLoading && serverEmojis.length === 0 && (
+                  <div className="empty-state">
                     <FaceSmileIcon size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
                     <p>{t('serverSettings.noCustomEmojis', 'No custom emojis yet. Upload one above!')}</p>
                   </div>

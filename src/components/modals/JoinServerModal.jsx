@@ -11,14 +11,25 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const trimmedInviteInput = inviteCode.trim()
 
   const extractInviteCode = (input) => {
     // Handle full URLs like volt.voltagechat.app/invite/ABC123
-    const urlMatch = input.match(/(?:invite\/|\.gg\/)([a-zA-Z0-9]+)/)
+    const sanitizedInput = input.trim()
+    const urlMatch = sanitizedInput.match(/(?:invite\/|\.gg\/)([a-zA-Z0-9]+)/)
     if (urlMatch) return urlMatch[1]
     // Otherwise just use the raw input (assuming it's a code)
-    return input.trim()
+    return sanitizedInput
   }
+
+  const extractedInviteCode = extractInviteCode(inviteCode)
+  const hasInviteInput = Boolean(trimmedInviteInput)
+  const hasDetectedInviteCode = hasInviteInput && extractedInviteCode !== trimmedInviteInput
+  const inviteInputDescribedBy = [
+    'join-server-invite-hint',
+    error ? 'join-server-error' : null,
+    !error && (loading || hasInviteInput) ? 'join-server-invite-status' : null
+  ].filter(Boolean).join(' ')
 
   const handleJoin = async (e) => {
     e.preventDefault()
@@ -45,53 +56,106 @@ const JoinServerModal = ({ onClose, onSuccess }) => {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="join-server-modal-title"
+    >
       <div className="modal-content join-server-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{t('modals.joinServer')}</h2>
-          <button className="modal-close" onClick={onClose}>
+          <h2 id="join-server-modal-title">{t('modals.joinServer')}</h2>
+          <button type="button" className="modal-close" aria-label={t('modals.close', 'Close')} onClick={onClose}>
             <XMarkIcon size={24} />
           </button>
         </div>
 
-        <form onSubmit={handleJoin}>
-          <div className="modal-body">
-            <div className="join-server-icon">
-              <LinkIcon size={48} />
+        <form onSubmit={handleJoin} aria-busy={loading}>
+          <div className="modal-body join-server-body">
+            <div className="join-server-hero">
+              <div className="join-server-icon">
+                <LinkIcon size={48} />
+              </div>
+              <p className="join-description">
+                {t('modals.enterInvite')}
+              </p>
             </div>
-            
-            <p className="join-description">
-              {t('modals.enterInvite')}
-            </p>
 
-            <div className="form-group">
-              <label>{t('modals.inviteLink')}</label>
+            <div className={`form-group join-server-input-group ${error ? 'has-error' : ''}`}>
+              <label htmlFor="join-server-invite-input">{t('modals.inviteLink')}</label>
               <input
+                id="join-server-invite-input"
+                name="inviteCode"
                 type="text"
-                className="input"
+                className={`input join-server-input ${error ? 'is-invalid' : ''}`}
                 placeholder={t('modals.invitePlaceholder')}
                 value={inviteCode}
-                onChange={e => setInviteCode(e.target.value)}
+                onChange={e => {
+                  setInviteCode(e.target.value)
+                  if (error) setError('')
+                }}
                 autoFocus
+                required
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                inputMode="url"
+                disabled={loading}
+                aria-invalid={Boolean(error)}
+                aria-describedby={inviteInputDescribedBy}
               />
-              <span className="input-hint">
-                {t('modals.inviteHint')}
+              <span id="join-server-invite-hint" className="input-hint">
+                {t('modals.inviteHint')} {t('modals.inviteHintExtra', 'Paste a full invite link or just the code.')}
               </span>
+
+              {!error && (loading || hasInviteInput) && (
+                <div id="join-server-invite-status" className={`join-server-status ${loading ? 'is-loading' : 'is-ready'}`} aria-live="polite">
+                  {loading && (
+                    <>
+                      <span className="join-server-status-dot" aria-hidden="true" />
+                      {t('modals.joiningServer', 'Joining server...')}
+                    </>
+                  )}
+                  {!loading && hasDetectedInviteCode && (
+                    <>
+                      {t('modals.detectedInviteCode', 'Detected invite code:')}
+                      {' '}
+                      <code>{extractedInviteCode}</code>
+                    </>
+                  )}
+                  {!loading && !hasDetectedInviteCode && (
+                    t('modals.inviteReadyToJoin', 'Invite looks ready. Press Join Server to continue.')
+                  )}
+                </div>
+              )}
             </div>
 
-            {error && <div className="error-message">{error}</div>}
+            {error && <div id="join-server-error" className="error-message" role="alert" aria-live="assertive">{error}</div>}
           </div>
 
           <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={loading}>
               {t('common.cancel')}
             </button>
             <button 
               type="submit" 
               className="btn btn-primary"
-              disabled={loading || !inviteCode.trim()}
+              disabled={loading || !trimmedInviteInput}
             >
-              {loading ? t('common.loading') : <>{t('modals.joinServerBtn')} <ArrowRightIcon size={16} /></>}
+              {loading ? (
+                <>
+                  <span className="join-server-btn-spinner" aria-hidden="true" />
+                  {t('modals.joiningServer', 'Joining server...')}
+                </>
+              ) : (
+                <>
+                  {t('modals.joinServerBtn')}
+                  <ArrowRightIcon size={16} />
+                </>
+              )}
             </button>
           </div>
         </form>

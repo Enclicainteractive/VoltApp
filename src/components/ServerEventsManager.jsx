@@ -21,14 +21,17 @@ const ServerEventsManager = ({ serverId, canManage }) => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingEventId, setEditingEventId] = useState(null)
+  const [error, setError] = useState('')
 
   const loadEvents = async () => {
     try {
       setLoading(true)
+      setError('')
       const res = await apiService.getServerEvents(serverId)
       setEvents(Array.isArray(res.data) ? res.data : [])
     } catch (error) {
       console.error('Failed to load server events:', error)
+      setError(t('events.loadError', 'Failed to load events. Please try again.'))
       setEvents([])
     } finally {
       setLoading(false)
@@ -80,8 +83,16 @@ const ServerEventsManager = ({ serverId, canManage }) => {
 
   const handleCreate = async () => {
     if (!form.title.trim() || !form.startAt) return
+    const startTime = new Date(form.startAt)
+    const endTime = form.endAt ? new Date(form.endAt) : null
+    if (endTime && endTime < startTime) {
+      setError(t('events.endBeforeStart', 'End time cannot be before start time.'))
+      return
+    }
+
     try {
       setSaving(true)
+      setError('')
       if (editingEventId) {
         const res = await apiService.updateServerEvent(serverId, editingEventId, form)
         setEvents(prev => prev.map((event) => event.id === editingEventId ? res.data : event).sort((a, b) => new Date(a.startAt) - new Date(b.startAt)))
@@ -93,17 +104,21 @@ const ServerEventsManager = ({ serverId, canManage }) => {
       setEditingEventId(null)
     } catch (error) {
       console.error('Failed to create server event:', error)
+      setError(t('events.saveError', 'Could not save event. Please try again.'))
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (eventId) => {
+    if (!window.confirm(t('events.deleteConfirm', 'Delete this event?'))) return
     try {
+      setError('')
       await apiService.deleteServerEvent(serverId, eventId)
       setEvents(prev => prev.filter(event => event.id !== eventId))
     } catch (error) {
       console.error('Failed to delete server event:', error)
+      setError(t('events.deleteError', 'Could not delete event. Please try again.'))
     }
   }
 
@@ -144,23 +159,25 @@ const ServerEventsManager = ({ serverId, canManage }) => {
 
       {canManage && (
         <div className="server-events-composer">
+          {error ? <div className="server-events-empty" role="alert">{error}</div> : null}
           <div className="server-events-form-grid">
-            <input className="input" placeholder={t('events.title', 'Event title')} value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
-            <input className="input" placeholder={t('events.location', 'Location / link')} value={form.location} onChange={e => setForm(prev => ({ ...prev, location: e.target.value }))} />
-            <input className="input" type="datetime-local" value={form.startAt} onChange={e => setForm(prev => ({ ...prev, startAt: e.target.value }))} />
-            <input className="input" type="datetime-local" value={form.endAt} onChange={e => setForm(prev => ({ ...prev, endAt: e.target.value }))} />
+            <input className="input" disabled={saving} placeholder={t('events.title', 'Event title')} value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+            <input className="input" disabled={saving} placeholder={t('events.location', 'Location / link')} value={form.location} onChange={e => setForm(prev => ({ ...prev, location: e.target.value }))} />
+            <input className="input" disabled={saving} type="datetime-local" value={form.startAt} onChange={e => setForm(prev => ({ ...prev, startAt: e.target.value }))} />
+            <input className="input" disabled={saving} type="datetime-local" value={form.endAt} onChange={e => setForm(prev => ({ ...prev, endAt: e.target.value }))} />
           </div>
-          <textarea className="input" rows={4} placeholder={t('events.description', 'Describe what is happening')} value={form.description} onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))} />
+          <textarea className="input" disabled={saving} rows={4} placeholder={t('events.description', 'Describe what is happening')} value={form.description} onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))} />
           <div className="server-events-actions">
             {editingEventId ? (
               <button className="btn btn-secondary" type="button" onClick={() => {
                 setEditingEventId(null)
                 setForm(emptyForm)
+                setError('')
               }}>
                 {t('common.cancel', 'Cancel')}
               </button>
             ) : null}
-            <button className="btn btn-primary" onClick={handleCreate} disabled={saving || !form.title.trim() || !form.startAt}>
+            <button className="btn btn-primary" type="button" onClick={handleCreate} disabled={saving || !form.title.trim() || !form.startAt}>
             <CalendarPlus2 size={16} />
               {saving ? t('common.saving', 'Saving...') : editingEventId ? t('events.update', 'Update event') : t('events.create', 'Create event')}
             </button>
@@ -169,6 +186,11 @@ const ServerEventsManager = ({ serverId, canManage }) => {
       )}
 
       <div className="server-events-list">
+        {!canManage && error ? (
+          <div className="server-events-empty" role="alert">
+            {error} <button className="btn btn-secondary" type="button" onClick={loadEvents}>{t('common.retry', 'Retry')}</button>
+          </div>
+        ) : null}
         {loading ? (
           <div className="server-events-empty">{t('common.loading', 'Loading...')}</div>
         ) : events.length === 0 ? (
@@ -185,10 +207,10 @@ const ServerEventsManager = ({ serverId, canManage }) => {
             </div>
             {canManage && (
               <div className="server-event-actions">
-                <button className="icon-btn" onClick={() => handleEdit(event)} title={t('common.edit', 'Edit')}>
+                <button type="button" className="icon-btn" onClick={() => handleEdit(event)} title={t('common.edit', 'Edit')}>
                   <Pencil size={16} />
                 </button>
-                <button className="icon-btn danger" onClick={() => handleDelete(event.id)} title={t('common.delete', 'Delete')}>
+                <button type="button" className="icon-btn danger" onClick={() => handleDelete(event.id)} title={t('common.delete', 'Delete')}>
                   <Trash2 size={16} />
                 </button>
               </div>

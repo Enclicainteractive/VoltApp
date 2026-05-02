@@ -39,7 +39,7 @@ const isVideoFile = (url) => {
   try {
     const parsed = new URL(url)
     const path = parsed.pathname.toLowerCase()
-    return ['.mp4', '.webm', '.ogg', '.mov', '.m4v'].some((ext) => path.endsWith(ext))
+    return ['.mp4', '.webm', '.ogv', '.mov', '.m4v'].some((ext) => path.endsWith(ext))
   } catch {
     return false
   }
@@ -80,6 +80,7 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
   const [isLoading, setIsLoading] = useState(true)
   const [showVolumeSlider, setShowVolumeSlider] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
+  const [fitMode, setFitMode] = useState(() => localStorage.getItem('ourvids_fit') || 'contain')
 
   const [serverState, setServerState] = useState({ queue: [], currentVideo: null, hostUserId: null })
   const [localState, setLocalState] = useState({ position: 0, duration: 0, playing: false })
@@ -515,6 +516,14 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
     emitHostEvent('ourvids:next', { video: next, hostUserId })
   }, [isHost, serverState, emitHostEvent, persistServerState, hostUserId])
 
+  // Release video decoder on unmount
+  useEffect(() => () => {
+    if (videoRef.current) {
+      videoRef.current.src = ''
+      videoRef.current.load?.()
+    }
+  }, [])
+
   // Polling keeps the custom slider in sync with YouTube/player state.
   useEffect(() => {
     if (!serverState.currentVideo) return
@@ -588,11 +597,9 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
           break
         case 'ArrowRight':
           if (e.shiftKey) {
-            // Next video - don't loop, just go to next if available
-            const idx = serverState.queue.findIndex(v => v.id === serverState.currentVideo?.id)
-            const next = idx >= 0 ? serverState.queue[idx + 1] : null
+            const next = serverState.queue[0] || null
             if (next) {
-              const nextState = { ...serverState, currentVideo: next }
+              const nextState = { ...serverState, currentVideo: next, queue: serverState.queue.slice(1) }
               setServerState(nextState)
               setLocalState({ position: 0, duration: 0, playing: true })
               setSeekValue(0)
@@ -659,11 +666,9 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
           else containerRef.current.requestFullscreen().catch(() => {})
           break
         case 'n':
-          // Next video - don't loop, just go to next if available
-          const nextIdx = serverState.queue.findIndex(v => v.id === serverState.currentVideo?.id)
-          const nextVid = nextIdx >= 0 ? serverState.queue[nextIdx + 1] : null
+          const nextVid = serverState.queue[0] || null
           if (nextVid) {
-            const nextState = { ...serverState, currentVideo: nextVid }
+            const nextState = { ...serverState, currentVideo: nextVid, queue: serverState.queue.slice(1) }
             setServerState(nextState)
             setLocalState({ position: 0, duration: 0, playing: true })
             setSeekValue(0)
@@ -792,11 +797,10 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
 
   const handleNext = useCallback(() => {
     if (!isHost) return
-    const idx = serverState.queue.findIndex(v => v.id === serverState.currentVideo?.id)
-    const next = idx >= 0 ? serverState.queue[idx + 1] : null
+    const next = serverState.queue[0] || null
     if (!next) return
 
-    const nextState = { ...serverState, currentVideo: next }
+    const nextState = { ...serverState, currentVideo: next, queue: serverState.queue.slice(1) }
     setServerState(nextState)
     setLocalState({ position: 0, duration: 0, playing: true })
     setSeekValue(0)
@@ -853,8 +857,8 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
     height: '100%',
     playerVars: {
       autoplay: 0,
-      controls: 1,
-      disablekb: 0,
+      controls: 0,
+      disablekb: 1,
       modestbranding: 1,
       rel: 0,
       iv_load_policy: 3,
@@ -935,6 +939,18 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
                     className="ourvids-youtube"
                     style={{ flex: 1, width: '100%', height: '100%' }}
                   />
+                  <div
+                    className="ourvids-player-shield"
+                    onClick={() => {
+                      revealControls()
+                      if (isHost) togglePlay()
+                    }}
+                    onDoubleClick={() => {
+                      revealControls()
+                      toggleFullscreen()
+                    }}
+                    aria-hidden="true"
+                  />
                 </>
               ) : (
                 <>
@@ -960,6 +976,7 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
                     src={getPlayableMediaUrl(serverState.currentVideo.url)}
                     autoPlay={localState.playing}
                     className="ourvids-video"
+                    style={{ objectFit: fitMode }}
                     onLoadedMetadata={handleVideoLoadedMetadata}
                     onTimeUpdate={handleVideoTimeUpdate}
                     onEnded={handleVideoEnded}
@@ -1031,6 +1048,19 @@ const OurVidsActivity = ({ sdk, session, currentUser }) => {
                       onChange={e => handleVolumeChange(Number.parseFloat(e.target.value))}
                       style={{ accentColor: '#6366f1', width: '80px', cursor: 'pointer' }}
                     />
+                    <select
+                      value={fitMode}
+                      onChange={(event) => {
+                        const nextFit = event.target.value
+                        setFitMode(nextFit)
+                        localStorage.setItem('ourvids_fit', nextFit)
+                      }}
+                      style={{ background: 'rgba(255,255,255,0.12)', color: 'white', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '6px 8px' }}
+                    >
+                      <option value="contain">Contain</option>
+                      <option value="cover">Cover</option>
+                      <option value="fill">Fill</option>
+                    </select>
                   </div>
 
                   <button

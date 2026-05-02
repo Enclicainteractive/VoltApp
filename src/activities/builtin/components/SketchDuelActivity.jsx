@@ -27,7 +27,9 @@ class SketchSoundManager {
   }
 
   init() {
-    if (this.ready) return
+    // Allow reinit if context was closed (e.g. after GC or page hidden)
+    if (this.ready && this.ctx && this.ctx.state !== 'closed') return
+    this.ready = false
     try {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)()
       this.master = this.ctx.createGain()
@@ -35,6 +37,15 @@ class SketchSoundManager {
       this.master.connect(this.ctx.destination)
       this.ready = true
     } catch { /* silent */ }
+  }
+
+  dispose() {
+    if (this.ctx && this.ctx.state !== 'closed') {
+      this.ctx.close().catch(() => {})
+    }
+    this.ctx = null
+    this.master = null
+    this.ready = false
   }
 
   _tone(freq, dur, type = 'sine', vol = 0.2, delay = 0) {

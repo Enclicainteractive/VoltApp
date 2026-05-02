@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { io } from 'socket.io-client'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useAppStore } from '../store/useAppStore'
 import { soundService } from '../services/soundService'
 import { getStoredServer } from '../services/serverConfig'
 import { apiService } from '../services/apiService'
@@ -12,6 +13,71 @@ import {
 } from '../services/authToken'
 
 const SocketContext = createContext(null)
+const VALID_PRESENCE_STATUSES = new Set(['online', 'idle', 'dnd', 'invisible', 'offline'])
+const PRESENCE_STATUS_ALIASES = {
+  active: 'online',
+  available: 'online',
+  away: 'idle',
+  busy: 'dnd',
+  do_not_disturb: 'dnd',
+  'do-not-disturb': 'dnd'
+}
+const TRANSIENT_DISCONNECT_GRACE_MS = 6000
+const SELF_PRESENCE_STALE_TOLERANCE_MS = 2000
+
+const normalizePresenceStatus = (status, fallback = null) => {
+  if (typeof status !== 'string') return fallback
+  const normalized = status.trim().toLowerCase().replace(/\s+/g, '_')
+  const canonical = PRESENCE_STATUS_ALIASES[normalized] || normalized
+  return VALID_PRESENCE_STATUSES.has(canonical) ? canonical : fallback
+}
+
+const normalizePresenceTimestampMs = (value) => {
+  if (value == null) return null
+  if (value instanceof Date) {
+    const dateValue = value.getTime()
+    return Number.isFinite(dateValue) ? dateValue : null
+  }
+
+  let numeric = null
+  if (typeof value === 'number') {
+    numeric = value
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const numericValue = Number(trimmed)
+    if (Number.isFinite(numericValue)) {
+      numeric = numericValue
+    } else {
+      const parsedDate = Date.parse(trimmed)
+      return Number.isFinite(parsedDate) ? parsedDate : null
+    }
+  } else {
+    return null
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) return null
+  if (numeric >= 1e12) return numeric
+  if (numeric >= 1e9) return numeric * 1000
+  return null
+}
+
+const getPresenceEventTimestampMs = (payload) => {
+  if (!payload || typeof payload !== 'object') return null
+  const candidates = [
+    payload.updatedAt,
+    payload.timestamp,
+    payload.ts,
+    payload.lastSeenAt,
+    payload.lastActiveAt,
+    payload.emittedAt
+  ]
+  for (const candidate of candidates) {
+    const timestampMs = normalizePresenceTimestampMs(candidate)
+    if (timestampMs !== null) return timestampMs
+  }
+  return null
+}
 
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null)
@@ -22,12 +88,71 @@ export const SocketProvider = ({ children }) => {
   const [serverUpdates, setServerUpdates] = useState({})
   const [systemUnreadCount, setSystemUnreadCount] = useState(0)
   const { isAuthenticated, user } = useAuth()
+  const setSelfPresence = useAppStore(state => state.setSelfPresence)
   const navigate = useNavigate()
   const socketRef = useRef(null)
   const serverUrlRef = useRef(null)
   const authTokenRef = useRef(null)
   const recentNotificationKeysRef = useRef(new Set())
   const intentionalDisconnectRef = useRef(false)
+  const connectionStateRef = useRef({ connected: false, reconnecting: false })
+  const transientDisconnectTimerRef = useRef(null)
+  const disconnectStartedAtRef = useRef(null)
+  const lastSelfPresenceEventTsRef = useRef(0)
+  const selfPresenceRef = useRef({
+    status: normalizePresenceStatus(user?.status, 'online'),
+    customStatus: typeof user?.customStatus === 'string' ? user.customStatus : ''
+  })
+  
+  // Performance optimization: debounced connection attempts
+  const connectionRetryTimeoutRef = useRef(null)
+  const maxRetryAttempts = useRef(0)
+  const retryDelays = [1000, 2000, 5000, 10000, 15000] // Progressive delays
+  const heartbeatIntervalRef = useRef(null)
+  const lastHeartbeatRef = useRef(Date.now())
+  
+  // Optimized connection handling with exponential backoff
+  const createOptimizedSocket = useCallback((serverUrl, authToken) => {
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+      socketRef.current = null
+    }
+    
+    const socket = io(serverUrl, {
+      auth: { token: authToken },
+      timeout: 5000,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      maxReconnectionAttempts: 5,
+      transports: ['websocket', 'polling'], // Prefer websocket
+      upgrade: true,
+      forceNew: true
+    })
+    
+    // Heartbeat mechanism for connection health
+    const startHeartbeat = () => {
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (socket.connected) {
+          socket.emit('ping', Date.now())
+          lastHeartbeatRef.current = Date.now()
+        } else if (Date.now() - lastHeartbeatRef.current > 30000) {
+          // Force reconnection if no heartbeat for 30s
+          socket.disconnect()
+          socket.connect()
+        }
+      }, 15000) // Every 15 seconds
+    }
+    
+    const stopHeartbeat = () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current)
+        heartbeatIntervalRef.current = null
+      }
+    }
+    
+    return { socket, startHeartbeat, stopHeartbeat }
+  }, [])
 
   const isServerMuted = useCallback((serverId) => {
     if (!serverId) return false
@@ -35,9 +160,54 @@ export const SocketProvider = ({ children }) => {
     return Boolean(settings?.serverMutes?.[serverId])
   }, [])
 
+  const updateConnectionState = useCallback((patch, reason) => {
+    const previous = connectionStateRef.current
+    const next = {
+      connected: typeof patch?.connected === 'boolean' ? patch.connected : previous.connected,
+      reconnecting: typeof patch?.reconnecting === 'boolean' ? patch.reconnecting : previous.reconnecting
+    }
+
+    if (next.connected === previous.connected && next.reconnecting === previous.reconnecting) {
+      return
+    }
+
+    connectionStateRef.current = next
+    setConnected(next.connected)
+    setReconnecting(next.reconnecting)
+    console.log('[Socket] Connection state transition', { reason, from: previous, to: next })
+  }, [])
+
+  const clearTransientDisconnectTimer = useCallback(() => {
+    if (transientDisconnectTimerRef.current !== null) {
+      clearTimeout(transientDisconnectTimerRef.current)
+      transientDisconnectTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleConnectedDrop = useCallback((reason) => {
+    clearTransientDisconnectTimer()
+    transientDisconnectTimerRef.current = setTimeout(() => {
+      transientDisconnectTimerRef.current = null
+      updateConnectionState({ connected: false }, `disconnect-grace-expired:${reason}`)
+    }, TRANSIENT_DISCONNECT_GRACE_MS)
+  }, [clearTransientDisconnectTimer, updateConnectionState])
+
   // Use refs for user-derived values so they don't cause socket reconnection
   const userRef = useRef(user)
-  useEffect(() => { userRef.current = user }, [user])
+  useEffect(() => {
+    const normalizedStatus = normalizePresenceStatus(user?.status, null)
+    userRef.current = user && normalizedStatus ? { ...user, status: normalizedStatus } : user
+    if (!user) return
+
+    const hasCustomStatus = typeof user.customStatus === 'string'
+
+    if (!normalizedStatus && !hasCustomStatus) return
+
+    selfPresenceRef.current = {
+      status: normalizedStatus || selfPresenceRef.current.status,
+      customStatus: hasCustomStatus ? user.customStatus : selfPresenceRef.current.customStatus
+    }
+  }, [user])
 
   const notificationsBlockedByPresence = useCallback(() => {
     const status = userRef.current?.status
@@ -548,9 +718,10 @@ export const SocketProvider = ({ children }) => {
         socketRef.current.disconnect()
         socketRef.current = null
         setSocket(null)
-        setConnected(false)
-        setReconnecting(false)
       }
+      disconnectStartedAtRef.current = null
+      clearTransientDisconnectTimer()
+      updateConnectionState({ connected: false, reconnecting: false }, 'auth-not-authenticated')
       serverUrlRef.current = null
       authTokenRef.current = null
       return
@@ -600,51 +771,67 @@ export const SocketProvider = ({ children }) => {
       transports: ['websocket', 'polling'], // ✅ Prefer WebSocket first!
       upgrade: true,
       rememberUpgrade: true,
-      // More stable reconnection settings
+      // Bounded reconnection: 15 attempts prevents infinite spin on bad token.
       reconnection: true,
-      reconnectionAttempts: Infinity,
+      reconnectionAttempts: 15,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000,
       randomizationFactor: 0.5,
       timeout: 20000, // Reduced from 30s for faster failure detection
-      // Faster ping/pong for quicker disconnect detection
-      pingTimeout: 60000,
-      pingInterval: 25000,
+      // More reliable ping/pong settings to prevent false disconnects
+      pingTimeout: 120000, // 2 minutes - increased from 60s
+      pingInterval: 30000,  // 30 seconds - increased from 25s
       // Reuse existing connection if possible (helps with session persistence)
       autoConnect: true,
       forceNew: false
     })
 
+    // One-shot 30s stale timer: started on the first connect_error.
+    // If the socket is still not connected after 30s, stop showing the
+    // reconnecting spinner so ProtectedRoute can fall through to its
+    // recoverable error UI (Deadlock C).
+    let staleTimerStarted = false
+    let staleTimerId = null
+
     newSocket.on('connect', () => {
       console.log('[Socket] Connected, id:', newSocket.id)
       intentionalDisconnectRef.current = false
-      setConnected(true)
-      setReconnecting(false)
+      disconnectStartedAtRef.current = null
+      clearTransientDisconnectTimer()
+      updateConnectionState({ connected: true, reconnecting: false }, 'socket-connect')
+
+      // Cancel the stale timer — we connected successfully.
+      if (staleTimerId !== null) {
+        clearTimeout(staleTimerId)
+        staleTimerId = null
+        staleTimerStarted = false
+      }
 
       // Re-authenticate with fresh token on reconnect
       const freshTokens = getAuthTokenCandidates()
-      if (freshTokens.length > 0 && freshTokens[0] !== authTokenRef.current) {
-        authTokenRef.current = freshTokens[0]
-        newSocket.auth = { token: freshTokens[0] }
+      const nextToken = freshTokens[0]?.token || null
+      if (nextToken && nextToken !== authTokenRef.current) {
+        authTokenRef.current = nextToken
+        newSocket.auth = { token: nextToken }
       }
       markLocalTokenAccepted()
     })
 
     newSocket.on('disconnect', (reason) => {
       console.log('[Socket] Disconnected, reason:', reason)
-      
-      // Only set connected to false if it's not an intentional disconnect
-      if (!(reason === 'io client disconnect' && intentionalDisconnectRef.current)) {
-        setConnected(false)
-      }
 
       if (reason === 'io client disconnect' && intentionalDisconnectRef.current) {
-        setReconnecting(false)
+        disconnectStartedAtRef.current = null
+        clearTransientDisconnectTimer()
+        updateConnectionState({ connected: false, reconnecting: false }, `disconnect:${reason}`)
         return
       }
 
-      // Don't trigger reconnection UI too aggressively - wait for actual failure
-      setReconnecting(true)
+      disconnectStartedAtRef.current = Date.now()
+      // Keep connected=true briefly while Socket.IO is reconnecting to avoid
+      // false "offline" states on short network blips.
+      updateConnectionState({ reconnecting: true }, `disconnect:${reason}`)
+      scheduleConnectedDrop(reason)
 
       if (reason === 'io server disconnect') {
         console.log('[Socket] Server disconnected namespace, reconnecting socket manually')
@@ -658,13 +845,14 @@ export const SocketProvider = ({ children }) => {
 
     newSocket.io.on('reconnect', (attemptNumber) => {
       console.log('[Socket] Reconnected after', attemptNumber, 'attempts')
-      setConnected(true)
-      setReconnecting(false)
+      disconnectStartedAtRef.current = null
+      clearTransientDisconnectTimer()
+      updateConnectionState({ connected: true, reconnecting: false }, `reconnect:${attemptNumber}`)
     })
 
     newSocket.io.on('reconnect_attempt', (attemptNumber) => {
       console.log('[Socket] Reconnection attempt', attemptNumber)
-      setReconnecting(true)
+      updateConnectionState({ reconnecting: true }, `reconnect-attempt:${attemptNumber}`)
     })
 
     newSocket.io.on('reconnect_error', (error) => {
@@ -673,27 +861,69 @@ export const SocketProvider = ({ children }) => {
 
     newSocket.io.on('reconnect_failed', () => {
       console.error('[Socket] Reconnection failed after all attempts')
-      setReconnecting(false)
+      disconnectStartedAtRef.current = null
+      clearTransientDisconnectTimer()
+      updateConnectionState({ connected: false, reconnecting: false }, 'reconnect-failed')
     })
 
     newSocket.on('connect_error', (error) => {
       console.error('[Socket] Connection error:', error.message)
       if (error.message?.includes('Authentication') || error.message?.includes('Unauthorized') || error.message?.includes('jwt')) {
         const freshTokens = getAuthTokenCandidates()
-        if (freshTokens.length > 0) {
-          newSocket.auth = { token: freshTokens[0] }
-          authTokenRef.current = freshTokens[0]
+        const nextToken = freshTokens[0]?.token || null
+        if (nextToken) {
+          newSocket.auth = { token: nextToken }
+          authTokenRef.current = nextToken
         }
       }
-      setReconnecting(true)
+      updateConnectionState({ reconnecting: true }, 'connect-error')
+      if (connectionStateRef.current.connected) {
+        scheduleConnectedDrop(`connect-error:${error?.message || 'unknown'}`)
+      }
+
+      // Start the one-shot 30s stale timer on the very first connect_error.
+      if (!staleTimerStarted) {
+        staleTimerStarted = true
+        staleTimerId = setTimeout(() => {
+          if (!newSocket.connected) {
+            console.warn('[Socket] Could not connect within 30s — marking as stale')
+            updateConnectionState({ reconnecting: false }, 'connect-stale-timeout')
+          }
+          staleTimerId = null
+        }, 30000)
+      }
     })
 
     newSocket.on('connected', (data) => {
       console.log('[Socket] Server acknowledged connection:', data)
     })
 
+    // Enhanced heartbeat handling
     newSocket.on('ws:ping', () => {
       newSocket.emit('ws:pong')
+      lastHeartbeatRef.current = Date.now()
+    })
+
+    // Respond to ping with pong and update heartbeat
+    newSocket.on('ping', () => {
+      newSocket.emit('pong')
+      lastHeartbeatRef.current = Date.now()
+    })
+
+    // Additional heartbeat to prevent timeout issues
+    const heartbeatInterval = setInterval(() => {
+      if (newSocket.connected) {
+        newSocket.emit('heartbeat', { 
+          timestamp: Date.now(),
+          clientTime: Date.now() 
+        })
+        lastHeartbeatRef.current = Date.now()
+      }
+    }, 45000) // Every 45 seconds
+
+    // Cleanup heartbeat on disconnect
+    newSocket.on('disconnect', () => {
+      clearInterval(heartbeatInterval)
     })
 
     newSocket.on('notification:mention', (data) => {
@@ -796,7 +1026,125 @@ export const SocketProvider = ({ children }) => {
       }
     })
 
+    const applySelfPresenceEvent = (eventName, payload, fallbackStatus = null) => {
+      if (!payload || typeof payload !== 'object') {
+        console.warn(`[Socket] Ignoring malformed ${eventName} payload`, payload)
+        return
+      }
+
+      const currentUserId = userRef.current?.id
+      const eventUserId = payload.userId || payload.memberId || payload.id
+      if (!eventUserId) {
+        console.warn(`[Socket] Ignoring ${eventName} event without user id`, payload)
+        return
+      }
+      if (!currentUserId || eventUserId !== currentUserId) return
+
+      const nextStatus = normalizePresenceStatus(payload.status, fallbackStatus)
+      if (!nextStatus) {
+        console.warn(`[Socket] Ignoring ${eventName} event with invalid status`, payload)
+        return
+      }
+
+      const eventTimestampMs = getPresenceEventTimestampMs(payload)
+      if (eventTimestampMs !== null) {
+        const lastTimestampMs = lastSelfPresenceEventTsRef.current
+        if (
+          lastTimestampMs > 0 &&
+          eventTimestampMs + SELF_PRESENCE_STALE_TOLERANCE_MS < lastTimestampMs
+        ) {
+          console.log('[Socket] Ignoring stale self presence event', {
+            event: eventName,
+            eventTimestampMs,
+            lastTimestampMs
+          })
+          return
+        }
+      }
+
+      if (nextStatus === 'offline') {
+        const state = connectionStateRef.current
+        const isActiveReconnect =
+          state.connected ||
+          state.reconnecting ||
+          newSocket.connected ||
+          newSocket.active
+        const disconnectStartedAt = disconnectStartedAtRef.current
+        const withinTransientWindow =
+          typeof disconnectStartedAt === 'number' &&
+          Date.now() - disconnectStartedAt < TRANSIENT_DISCONNECT_GRACE_MS
+
+        if (isActiveReconnect || withinTransientWindow) {
+          console.log('[Socket] Ignoring transient self offline presence event', {
+            event: eventName,
+            connected: state.connected,
+            reconnecting: state.reconnecting,
+            socketConnected: newSocket.connected,
+            socketActive: newSocket.active,
+            withinTransientWindow
+          })
+          return
+        }
+      }
+
+      const nextCustomStatus = typeof payload.customStatus === 'string'
+        ? payload.customStatus
+        : selfPresenceRef.current.customStatus
+
+      const previous = selfPresenceRef.current
+      if (previous.status === nextStatus && previous.customStatus === nextCustomStatus) return
+
+      const nextPresence = {
+        status: nextStatus,
+        customStatus: nextCustomStatus
+      }
+
+      selfPresenceRef.current = nextPresence
+      if (userRef.current && userRef.current.id === currentUserId) {
+        userRef.current = {
+          ...userRef.current,
+          ...nextPresence
+        }
+      }
+      if (eventTimestampMs !== null) {
+        lastSelfPresenceEventTsRef.current = Math.max(lastSelfPresenceEventTsRef.current, eventTimestampMs)
+      } else if (lastSelfPresenceEventTsRef.current <= 0) {
+        lastSelfPresenceEventTsRef.current = Date.now()
+      }
+      setSelfPresence(nextPresence)
+      console.log('[Socket] Self presence transition', { event: eventName, from: previous, to: nextPresence })
+    }
+
+    newSocket.on('user:status', (payload) => applySelfPresenceEvent('user:status', payload))
+    newSocket.on('member:online', (payload) => applySelfPresenceEvent('member:online', payload, 'online'))
+    newSocket.on('member:offline', (payload) => {
+      if (!payload || typeof payload !== 'object') {
+        console.warn('[Socket] Ignoring malformed member:offline payload', payload)
+        return
+      }
+
+      const currentUserId = userRef.current?.id
+      const eventUserId = payload.userId || payload.memberId || payload.id
+      if (!eventUserId) {
+        console.warn('[Socket] Ignoring member:offline event without user id', payload)
+        return
+      }
+      if (!currentUserId || eventUserId !== currentUserId) return
+
+      applySelfPresenceEvent('member:offline', { ...payload, status: 'offline' }, 'offline')
+    })
+
     newSocket.on('server:updated', (...args) => handleServerUpdateRef.current(...args))
+    newSocket.on('server:joined', (payload) => {
+      const joinedServer = payload?.server || payload
+      const serverId = joinedServer?.id || payload?.serverId
+      if (!serverId) return
+      handleServerUpdateRef.current({
+        ...joinedServer,
+        id: serverId,
+        __addToList: true
+      })
+    })
     newSocket.on('server:deleted', (...args) => handleServerRemovedRef.current(...args))
     newSocket.on('server:left', (...args) => handleServerRemovedRef.current(...args))
     newSocket.on('channel:created', (...args) => handleChannelCreateRef.current(...args))
@@ -888,15 +1236,22 @@ export const SocketProvider = ({ children }) => {
     setSocket(newSocket)
 
     return () => {
+      // Cancel the stale timer if the effect is re-running (e.g. auth changed).
+      if (staleTimerId !== null) {
+        clearTimeout(staleTimerId)
+        staleTimerId = null
+      }
+      clearTransientDisconnectTimer()
       if (socketRef.current === newSocket) {
         console.log('[Socket] Cleaning up socket connection')
         socketRef.current = null
         intentionalDisconnectRef.current = true
+        disconnectStartedAtRef.current = null
         newSocket.disconnect()
         setSocket(current => current === newSocket ? null : current)
       }
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, clearTransientDisconnectTimer, scheduleConnectedDrop, setSelfPresence, updateConnectionState])
 
   const value = {
     socket,

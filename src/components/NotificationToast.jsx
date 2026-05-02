@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   XMarkIcon, AtSymbolIcon, BellIcon, ChatBubbleLeftRightIcon,
@@ -10,17 +10,26 @@ import { useCall } from '../contexts/CallContext'
 import '../assets/styles/NotificationToast.css'
 
 const AUTO_DISMISS_MS = 6000
+const MAX_VISIBLE_TOASTS = 5
 
 const NotificationToast = () => {
   const { notifications, removeNotification } = useSocket()
   const { activeCall, callStatus, callDuration, endCall, toggleMute, toggleDeafen, isMuted, isDeafened, formatDuration } = useCall?.() ?? {}
   const navigate = useNavigate()
   const timersRef = useRef({})
+  const [pausedIds, setPausedIds] = useState(() => new Set())
+  const visibleNotifications = notifications.slice(0, MAX_VISIBLE_TOASTS)
 
   // Auto-dismiss non-call notifications
   useEffect(() => {
-    notifications.forEach((n) => {
-      if (n.type === 'call') return // call toasts are persistent
+    visibleNotifications.forEach((n) => {
+      if (n.type === 'call' || pausedIds.has(n.id)) {
+        if (timersRef.current[n.id]) {
+          clearTimeout(timersRef.current[n.id])
+          delete timersRef.current[n.id]
+        }
+        return
+      } // call toasts are persistent
       if (timersRef.current[n.id]) return
       timersRef.current[n.id] = setTimeout(() => {
         removeNotification(n.id)
@@ -29,12 +38,12 @@ const NotificationToast = () => {
     })
     // Clean up timers for removed notifications
     Object.keys(timersRef.current).forEach((id) => {
-      if (!notifications.find((n) => n.id === id)) {
+      if (!visibleNotifications.find((n) => String(n.id) === id)) {
         clearTimeout(timersRef.current[id])
         delete timersRef.current[id]
       }
     })
-  }, [notifications, removeNotification])
+  }, [pausedIds, removeNotification, visibleNotifications])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -43,7 +52,25 @@ const NotificationToast = () => {
     }
   }, [])
 
-  if (notifications.length === 0 && !activeCall) return null
+  if (visibleNotifications.length === 0 && !activeCall) return null
+
+  const pauseToastTimer = (id) => {
+    if (id == null) return
+    setPausedIds((prev) => {
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+  }
+
+  const resumeToastTimer = (id) => {
+    if (id == null) return
+    setPausedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }
 
   const openNotification = (notification) => {
     removeNotification(notification.id)
@@ -121,6 +148,7 @@ const NotificationToast = () => {
         </div>
         <div className="call-banner-actions">
           <button
+            type="button"
             className={`call-banner-btn ${isMuted ? 'active danger' : ''}`}
             onClick={(e) => { e.stopPropagation(); toggleMute?.() }}
             title={isMuted ? 'Unmute' : 'Mute'}
@@ -128,6 +156,7 @@ const NotificationToast = () => {
             <MicrophoneIcon width={14} height={14} />
           </button>
           <button
+            type="button"
             className={`call-banner-btn ${isDeafened ? 'active danger' : ''}`}
             onClick={(e) => { e.stopPropagation(); toggleDeafen?.() }}
             title={isDeafened ? 'Undeafen' : 'Deafen'}
@@ -135,6 +164,7 @@ const NotificationToast = () => {
             <SpeakerXMarkIcon width={14} height={14} />
           </button>
           <button
+            type="button"
             className="call-banner-btn end-call"
             onClick={(e) => { e.stopPropagation(); endCall?.() }}
             title="End Call"
@@ -149,7 +179,7 @@ const NotificationToast = () => {
   return (
     <div className="notification-container">
       {renderActiveCallBanner()}
-      {notifications.map((notification) => {
+      {visibleNotifications.map((notification, index) => {
         const titleText = renderNotificationText(notification.title)
         const mentionType = titleText.includes('@everyone') ? 'everyone' : titleText.includes('@here') ? 'here' : 'user'
         const typeClass = getTypeClass(mentionType, notification.type)
@@ -158,7 +188,25 @@ const NotificationToast = () => {
           <div
             key={notification.id}
             className={`notification-toast ${typeClass}`}
+            style={{ '--toast-index': index }}
             onClick={() => openNotification(notification)}
+            onMouseEnter={() => pauseToastTimer(notification.id)}
+            onMouseLeave={() => resumeToastTimer(notification.id)}
+            onFocusCapture={() => pauseToastTimer(notification.id)}
+            onBlurCapture={() => resumeToastTimer(notification.id)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                openNotification(notification)
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                removeNotification(notification.id)
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label={`${getMetaLabel(notification)}: ${titleText || 'VoltChat'}`}
           >
             <div className="notification-icon">
               {getIcon(mentionType, notification.type)}
@@ -175,17 +223,33 @@ const NotificationToast = () => {
               <div className="notification-message">{renderNotificationText(notification.message)}</div>
             </div>
             <button
+              type="button"
               className="notification-close"
               onClick={(e) => {
                 e.stopPropagation()
                 removeNotification(notification.id)
               }}
+              aria-label="Dismiss notification"
+              title="Dismiss notification"
             >
               <XMarkIcon width={14} height={14} />
             </button>
           </div>
         )
       })}
+      {notifications.length > MAX_VISIBLE_TOASTS && (
+        <div className="notification-toast default" role="status" aria-live="polite">
+          <div className="notification-icon">
+            <BellIcon width={18} height={18} />
+          </div>
+          <div className="notification-content">
+            <div className="notification-title">More notifications</div>
+            <div className="notification-message">
+              {notifications.length - MAX_VISIBLE_TOASTS} additional notification{notifications.length - MAX_VISIBLE_TOASTS === 1 ? '' : 's'}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

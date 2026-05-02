@@ -32,7 +32,7 @@
  i left it here to remind myself that sanity is a privilage.
  */
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { TrophyIcon, ShieldCheckIcon, UserIcon, ChatBubbleLeftRightIcon, UserPlusIcon, UserMinusIcon, NoSymbolIcon, SpeakerWaveIcon, SpeakerXMarkIcon, XMarkIcon, ClockIcon, PhoneXMarkIcon } from '@heroicons/react/24/outline'
 import { useTranslation } from '../hooks/useTranslation'
 import { useSocket } from '../contexts/SocketContext'
@@ -43,7 +43,32 @@ import { preloadHostMetadata, getImageBaseForHostSync } from '../services/hostMe
 import ContextMenu from './ContextMenu'
 import Avatar from './Avatar'
 import GuildTagBadge from './GuildTagBadge'
+import { useResetScrollOnChange } from '../hooks/useResetScrollOnChange'
 import '../assets/styles/MemberSidebar.css'
+
+const PRESENCE_STATUS_ALIASES = {
+  active: 'online',
+  available: 'online',
+  away: 'idle',
+  busy: 'dnd',
+  do_not_disturb: 'dnd'
+}
+
+const PRESENCE_STATUSES = new Set(['online', 'idle', 'dnd', 'invisible', 'offline'])
+
+const normalizePresenceStatus = (status, fallback = null) => {
+  if (typeof status !== 'string') return fallback
+  const raw = status.trim().toLowerCase()
+  if (!raw) return fallback
+  const normalized = PRESENCE_STATUS_ALIASES[raw] || raw
+  return PRESENCE_STATUSES.has(normalized) ? normalized : fallback
+}
+
+const normalizePresenceUserId = (value) => {
+  if (value === null || value === undefined) return null
+  const normalized = String(value).trim()
+  return normalized.length ? normalized : null
+}
 
 const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBan, onAddFriend, visible = true, isMobile = false, channelId = null, onClose }) => {
   const { t } = useTranslation()
@@ -59,12 +84,22 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
    const [memberStatuses, setMemberStatuses] = useState(() => {
      const seed = {}
      for (const m of (Array.isArray(members) ? members : [])) {
-       if (m.id) seed[m.id] = { status: m.status || 'offline', customStatus: m.customStatus || null }
+       const memberId = normalizePresenceUserId(m.id)
+       if (memberId) {
+         seed[memberId] = {
+           status: normalizePresenceStatus(m.status, 'offline'),
+           customStatus: m.customStatus ?? null,
+           updatedAt: 0
+         }
+       }
      }
      return seed
    })
   const [extraBotMembers, setExtraBotMembers] = useState([])
   const [contextMenu, setContextMenu] = useState(null)
+  const pendingOfflineTimersRef = useRef(new Map())
+  const latestPresenceEventAtRef = useRef(new Map())
+  const sidebarRef = useResetScrollOnChange([server?.id, channelId, visible])
 
   // Voice channel state - track who's in voice and speaking
   const [voiceParticipants, setVoiceParticipants] = useState(new Map()) // userId -> { channelId, muted, speaking, deafened }
@@ -105,16 +140,37 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
   const isAdmin = hasPermission('ban_members')
   const isModerator = hasPermission('kick_members')
 
+  useEffect(() => {
+    const timers = pendingOfflineTimersRef.current
+    return () => {
+      for (const timeoutId of timers.values()) {
+        clearTimeout(timeoutId)
+      }
+      timers.clear()
+    }
+  }, [])
+
    // Re-seed the status overlay whenever the members list itself changes
    // (e.g. when the user navigates to a different server).
    useEffect(() => {
      setMemberStatuses(prev => {
        const next = { ...prev }
        for (const m of (Array.isArray(members) ? members : [])) {
-         if (m.id) {
-           next[m.id] = { status: m.status || 'offline', customStatus: m.customStatus || null }
-         }
-       }
+       const memberId = normalizePresenceUserId(m.id)
+       if (memberId) {
+          const incomingStatus = normalizePresenceStatus(m.status, 'offline')
+          const previous = next[memberId]
+          const hasFreshRealtimeState = Number(previous?.updatedAt) > 0
+          const previousStatus = normalizePresenceStatus(previous?.status, 'offline')
+          const shouldPreserveRealtimeOnline = hasFreshRealtimeState && incomingStatus === 'offline' && previousStatus !== 'offline'
+
+          next[memberId] = {
+            status: shouldPreserveRealtimeOnline ? previousStatus : incomingStatus,
+            customStatus: hasFreshRealtimeState && m.customStatus === undefined ? (previous?.customStatus ?? null) : (m.customStatus ?? null),
+            updatedAt: previous?.updatedAt || 0
+          }
+        }
+      }
        return next
      })
     // Warm the host metadata cache for any federated members
@@ -248,46 +304,124 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
 
   useEffect(() => {
     if (!socket || !connected) return
+    const timers = pendingOfflineTimersRef.current
 
-    // Realtime status changes (online/idle/dnd/offline + customStatus)
-    const handleStatusUpdate = ({ userId, status, customStatus }) => {
-      setMemberStatuses(prev => ({
-        ...prev,
-        [userId]: {
-          // Preserve existing customStatus if the event doesn't include it
-          ...(prev[userId] || {}),
-          status,
-          ...(customStatus !== undefined ? { customStatus } : {})
-        }
-      }))
+    const clearPendingOffline = (userId) => {
+      const normalizedUserId = normalizePresenceUserId(userId)
+      if (!normalizedUserId) return
+      const timeoutId = timers.get(normalizedUserId)
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timers.delete(normalizedUserId)
+      }
     }
 
-    // Server emits member:offline when a user's socket disconnects
-    const handleMemberOffline = ({ userId }) => {
-      if (!userId) return
-      setMemberStatuses(prev => ({
-        ...prev,
-        [userId]: { ...(prev[userId] || {}), status: 'offline' }
-      }))
-      setVoiceParticipants(prev => {
-        if (!prev.has(userId)) return prev
-        const next = new Map(prev)
-        next.delete(userId)
-        return next
+    const getEventTime = (payload) => {
+      const raw = payload?.updatedAt ?? payload?.timestamp ?? payload?.at ?? payload?.lastSeenAt
+      const parsed = raw ? new Date(raw).getTime() : NaN
+      return Number.isFinite(parsed) ? parsed : Date.now()
+    }
+
+    const markEventIfFresh = (userId, payload) => {
+      const normalizedUserId = normalizePresenceUserId(userId)
+      if (!normalizedUserId) return { eventAt: null, normalizedUserId: null }
+      const eventAt = getEventTime(payload)
+      const lastEventAt = latestPresenceEventAtRef.current.get(normalizedUserId) || 0
+      if (eventAt < lastEventAt) return { eventAt: null, normalizedUserId }
+      latestPresenceEventAtRef.current.set(normalizedUserId, eventAt)
+      return { eventAt, normalizedUserId }
+    }
+
+    const applyMemberPresence = (userId, status, customStatus, hasCustomStatus = false, eventAt = Date.now()) => {
+      const normalizedUserId = normalizePresenceUserId(userId)
+      if (!normalizedUserId) return
+      setMemberStatuses(prev => {
+        const current = prev[normalizedUserId] || {}
+        const currentEventAt = Number(current?.updatedAt) || 0
+        if (currentEventAt > eventAt) return prev
+        const nextEntry = { ...current }
+        let changed = false
+
+        if (status && nextEntry.status !== status) {
+          nextEntry.status = status
+          changed = true
+        }
+
+        if (hasCustomStatus) {
+          const normalizedCustom = customStatus ?? null
+          if (nextEntry.customStatus !== normalizedCustom) {
+            nextEntry.customStatus = normalizedCustom
+            changed = true
+          }
+        }
+
+        if (nextEntry.updatedAt !== eventAt) {
+          nextEntry.updatedAt = eventAt
+          changed = true
+        }
+
+        if (!changed) return prev
+        return { ...prev, [normalizedUserId]: nextEntry }
       })
     }
 
-    // Server emits member:online when a user comes online
-    const handleMemberOnline = ({ userId, status, customStatus }) => {
+    // Realtime status changes (online/idle/dnd/offline + customStatus)
+    const handleStatusUpdate = (payload = {}) => {
+      const userId = normalizePresenceUserId(payload.userId || payload.memberId || payload.user?.id)
       if (!userId) return
-      setMemberStatuses(prev => ({
-        ...prev,
-        [userId]: {
-          ...(prev[userId] || {}),
-          status: status || 'online',
-          ...(customStatus !== undefined ? { customStatus } : {})
-        }
-      }))
+
+      const normalizedStatus = normalizePresenceStatus(payload.status)
+      const hasCustomStatus = payload.customStatus !== undefined
+      if (!normalizedStatus && !hasCustomStatus) return
+
+      const { eventAt, normalizedUserId } = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+
+      clearPendingOffline(normalizedUserId)
+      applyMemberPresence(normalizedUserId, normalizedStatus, payload.customStatus, hasCustomStatus, eventAt)
+    }
+
+    // Server emits member:offline when a user's socket disconnects
+    const handleMemberOffline = (payload = {}) => {
+      const userId = normalizePresenceUserId(payload.userId || payload.memberId || payload.user?.id)
+      if (!userId) return
+
+      const { eventAt, normalizedUserId } = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+
+      clearPendingOffline(normalizedUserId)
+      const timeoutId = setTimeout(() => {
+        const currentTimeout = timers.get(normalizedUserId)
+        if (currentTimeout !== timeoutId) return
+        timers.delete(normalizedUserId)
+
+        const latestEventAt = latestPresenceEventAtRef.current.get(normalizedUserId) || 0
+        if (latestEventAt > eventAt) return
+
+        applyMemberPresence(normalizedUserId, 'offline', undefined, false, eventAt)
+        setVoiceParticipants(prev => {
+          if (!prev.has(normalizedUserId)) return prev
+          const next = new Map(prev)
+          next.delete(normalizedUserId)
+          return next
+        })
+      }, 2200)
+
+      timers.set(normalizedUserId, timeoutId)
+    }
+
+    // Server emits member:online when a user comes online
+    const handleMemberOnline = (payload = {}) => {
+      const userId = normalizePresenceUserId(payload.userId || payload.memberId || payload.user?.id)
+      if (!userId) return
+
+      const normalizedStatus = normalizePresenceStatus(payload.status, 'online')
+      const hasCustomStatus = payload.customStatus !== undefined
+      const { eventAt, normalizedUserId } = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+
+      clearPendingOffline(normalizedUserId)
+      applyMemberPresence(normalizedUserId, normalizedStatus, payload.customStatus, hasCustomStatus, eventAt)
     }
 
     const handleBotAdded = ({ serverId, bot }) => {
@@ -406,15 +540,22 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
       socket.off('voice:user-left', handleVoiceUserLeft)
       socket.off('voice:user-updated', handleVoiceUserUpdated)
       window.removeEventListener('voice:self-left', handleSelfVoiceLeft)
+
+      for (const timeoutId of timers.values()) {
+        clearTimeout(timeoutId)
+      }
+      timers.clear()
     }
   }, [socket, connected, server?.id])
 
   const getMemberStatus = (member) => {
-    return memberStatuses[member.id]?.status || member.status || 'offline'
+    const memberId = normalizePresenceUserId(member?.id)
+    return normalizePresenceStatus((memberId ? memberStatuses[memberId]?.status : null) || member.status, 'offline')
   }
 
   const getMemberCustomStatus = (member) => {
-    const live = memberStatuses[member.id]
+    const memberId = normalizePresenceUserId(member?.id)
+    const live = memberId ? memberStatuses[memberId] : null
     if (live && live.customStatus !== undefined) return live.customStatus || null
     return member.customStatus || null
   }
@@ -589,7 +730,7 @@ const MemberSidebar = ({ members, onMemberClick, server, onStartDM, onKick, onBa
   if (!visible && !isMobile) return null
 
   return (
-    <div className={`member-sidebar${isMobile ? (visible ? ' visible' : '') : ''}`}>
+    <div ref={sidebarRef} className={`member-sidebar${isMobile ? (visible ? ' visible' : '') : ''}`}>
       {isMobile && (
         <div className="member-sidebar-mobile-header">
           <div className="member-sidebar-mobile-title">

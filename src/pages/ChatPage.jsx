@@ -1,33 +1,66 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { MessageSquare, Lock, Menu, ChevronLeft, Users, Maximize2, Minimize2, PhoneCall, Search, X, Settings, Hash } from 'lucide-react'
-import ServerSidebar from '../components/ServerSidebar'
-import ChannelSidebar from '../components/ChannelSidebar'
-import ChatArea from '../components/ChatArea'
-import MemberSidebar from '../components/MemberSidebar'
-import FriendsPage from '../components/FriendsPage'
-import Discovery from '../components/Discovery'
-import HomeEventsHub from '../components/HomeEventsHub'
-import DMList from '../components/DMList'
-import SystemMessagePanel from '../components/SystemMessagePanel'
-import DMChat from '../components/DMChat'
-import VoiceChannel from '../components/VoiceChannel'
-import VoiceChannelPreview from '../components/VoiceChannelPreview'
-import SettingsModal from '../components/modals/SettingsModal'
-import ServerSettingsModal from '../components/modals/ServerSettingsModal'
-import ProfileModal from '../components/modals/ProfileModal'
-import CreateServerModal from '../components/modals/CreateServerModal'
-import JoinServerModal from '../components/modals/JoinServerModal'
-import AgeVerificationModal from '../components/modals/AgeVerificationModal'
-import AdminPanel from '../components/AdminPanel'
-import NotificationToast from '../components/NotificationToast'
-import VoiceInfoModal from '../components/VoiceInfoModal'
-import MobileNav from '../components/MobileNav'
-import Avatar from '../components/Avatar'
-import { EncryptionFallback } from '../components/EncryptionFallback'
-import AnnouncementChannel from '../components/channels/AnnouncementChannel'
-import ForumChannel from '../components/channels/ForumChannel'
-import MediaChannel from '../components/channels/MediaChannel'
+import ProgressivePage, { PageTemplates } from '../components/ProgressivePage'
+import LazyComponent from '../components/LazyComponent'
+import SegmentedModal from '../components/SegmentedModal'
+import lazyLoadingService from '../services/lazyLoadingService'
+
+// Lazy load components for better performance
+const loadServerSidebar = () => import('../components/ServerSidebar')
+const ServerSidebar = lazy(loadServerSidebar)
+const loadChannelSidebar = () => import('../components/ChannelSidebar')
+const ChannelSidebar = lazy(loadChannelSidebar)
+const loadChatArea = () => import('../components/ChatArea')
+const ChatArea = lazy(loadChatArea)
+const loadMemberSidebar = () => import('../components/MemberSidebar')
+const MemberSidebar = lazy(loadMemberSidebar)
+const loadFriendsPage = () => import('../components/FriendsPage')
+const FriendsPage = lazy(loadFriendsPage)
+const loadDiscovery = () => import('../components/Discovery')
+const Discovery = lazy(loadDiscovery)
+const loadHomeEventsHub = () => import('../components/HomeEventsHub')
+const HomeEventsHub = lazy(loadHomeEventsHub)
+const loadDMList = () => import('../components/DMList')
+const DMList = lazy(loadDMList)
+const loadSystemMessagePanel = () => import('../components/SystemMessagePanel')
+const SystemMessagePanel = lazy(loadSystemMessagePanel)
+const loadDMChat = () => import('../components/DMChat')
+const DMChat = lazy(loadDMChat)
+const loadVoiceChannel = () => import('../components/VoiceChannel')
+const VoiceChannel = lazy(loadVoiceChannel)
+const loadVoiceChannelPreview = () => import('../components/VoiceChannelPreview')
+const VoiceChannelPreview = lazy(loadVoiceChannelPreview)
+const loadSettingsModal = () => import('../components/modals/SettingsModal')
+const SettingsModal = lazy(loadSettingsModal)
+const loadServerSettingsModal = () => import('../components/modals/ServerSettingsModal')
+const ServerSettingsModal = lazy(loadServerSettingsModal)
+const loadProfileModal = () => import('../components/modals/ProfileModal')
+const ProfileModal = lazy(loadProfileModal)
+const loadCreateServerModal = () => import('../components/modals/CreateServerModal')
+const CreateServerModal = lazy(loadCreateServerModal)
+const loadJoinServerModal = () => import('../components/modals/JoinServerModal')
+const JoinServerModal = lazy(loadJoinServerModal)
+const loadAgeVerificationModal = () => import('../components/modals/AgeVerificationModal')
+const AgeVerificationModal = lazy(loadAgeVerificationModal)
+const loadAdminPanel = () => import('../components/AdminPanel')
+const AdminPanel = lazy(loadAdminPanel)
+const loadNotificationToast = () => import('../components/NotificationToast')
+const NotificationToast = lazy(loadNotificationToast)
+const loadVoiceInfoModal = () => import('../components/VoiceInfoModal')
+const VoiceInfoModal = lazy(loadVoiceInfoModal)
+const loadMobileNav = () => import('../components/MobileNav')
+const MobileNav = lazy(loadMobileNav)
+const loadAvatar = () => import('../components/Avatar')
+const Avatar = lazy(loadAvatar)
+const loadEncryptionFallback = () => import('../components/EncryptionFallback')
+const EncryptionFallback = lazy(loadEncryptionFallback)
+const loadAnnouncementChannel = () => import('../components/channels/AnnouncementChannel')
+const AnnouncementChannel = lazy(loadAnnouncementChannel)
+const loadForumChannel = () => import('../components/channels/ForumChannel')
+const ForumChannel = lazy(loadForumChannel)
+const loadMediaChannel = () => import('../components/channels/MediaChannel')
+const MediaChannel = lazy(loadMediaChannel)
 import { useSocket } from '../contexts/SocketContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useE2e } from '../contexts/E2eContext'
@@ -44,7 +77,86 @@ import { soundService } from '../services/soundService'
 import { settingsService } from '../services/settingsService'
 import '../assets/styles/ChatPage.css'
 
+const PRESENCE_STATUS_ALIASES = {
+  active: 'online',
+  available: 'online',
+  away: 'idle',
+  busy: 'dnd',
+  do_not_disturb: 'dnd'
+}
 
+const VALID_PRESENCE_STATUSES = new Set(['online', 'idle', 'dnd', 'invisible', 'offline'])
+
+const normalizePresenceStatus = (status, fallback = null) => {
+  if (typeof status !== 'string') return fallback
+  const raw = status.trim().toLowerCase()
+  if (!raw) return fallback
+  const normalized = PRESENCE_STATUS_ALIASES[raw] || raw
+  return VALID_PRESENCE_STATUSES.has(normalized) ? normalized : fallback
+}
+
+const readPresenceEventTime = (payload) => {
+  const raw = payload?.updatedAt ?? payload?.timestamp ?? payload?.at ?? payload?.lastSeenAt
+  const parsed = raw ? new Date(raw).getTime() : NaN
+  return Number.isFinite(parsed) ? parsed : Date.now()
+}
+
+const CHUNK_PRELOADERS = {
+  ServerSidebar: loadServerSidebar,
+  ChannelSidebar: loadChannelSidebar,
+  ChatArea: loadChatArea,
+  MemberSidebar: loadMemberSidebar,
+  FriendsPage: loadFriendsPage,
+  Discovery: loadDiscovery,
+  HomeEventsHub: loadHomeEventsHub,
+  DMList: loadDMList,
+  SystemMessagePanel: loadSystemMessagePanel,
+  DMChat: loadDMChat,
+  VoiceChannel: loadVoiceChannel,
+  VoiceChannelPreview: loadVoiceChannelPreview,
+  SettingsModal: loadSettingsModal,
+  ServerSettingsModal: loadServerSettingsModal,
+  ProfileModal: loadProfileModal,
+  CreateServerModal: loadCreateServerModal,
+  JoinServerModal: loadJoinServerModal,
+  AgeVerificationModal: loadAgeVerificationModal,
+  AdminPanel: loadAdminPanel,
+  NotificationToast: loadNotificationToast,
+  VoiceInfoModal: loadVoiceInfoModal,
+  MobileNav: loadMobileNav,
+  Avatar: loadAvatar,
+  EncryptionFallback: loadEncryptionFallback,
+  AnnouncementChannel: loadAnnouncementChannel,
+  ForumChannel: loadForumChannel,
+  MediaChannel: loadMediaChannel
+}
+
+const chunkPreloadPromises = new Map()
+
+const preloadChunkByName = (chunkName) => {
+  const loader = CHUNK_PRELOADERS[chunkName]
+  if (!loader) return Promise.resolve(null)
+  if (chunkPreloadPromises.has(chunkName)) {
+    return chunkPreloadPromises.get(chunkName)
+  }
+  const request = Promise.resolve()
+    .then(() => loader())
+    .catch((error) => {
+      chunkPreloadPromises.delete(chunkName)
+      console.warn('[ChatPage] Failed to preload chunk:', chunkName, error)
+      return null
+    })
+  chunkPreloadPromises.set(chunkName, request)
+  return request
+}
+
+const preloadChunkGroup = (chunkNames = []) => {
+  const names = Array.isArray(chunkNames) ? chunkNames : [chunkNames]
+  names.forEach((name) => {
+    if (!name) return
+    preloadChunkByName(name)
+  })
+}
 
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
@@ -59,6 +171,62 @@ const useIsMobile = () => {
   
   return isMobile
 }
+
+const InlineSuspenseFallback = ({ className = '', label = 'Loading...', announce = false }) => (
+  <div
+    className={className ? `loading-inline ${className}` : 'loading-inline'}
+    role={announce ? 'status' : undefined}
+    aria-live={announce ? 'polite' : undefined}
+  >
+    <span className="loading-inline-dot" aria-hidden="true" />
+    <span>{label}</span>
+  </div>
+)
+
+const PaneSuspenseFallback = ({ className = '', label = 'Loading panel...' }) => (
+  <div
+    className={className ? `${className} pane-suspense-fallback` : 'pane-suspense-fallback'}
+    role="status"
+    aria-live="polite"
+  >
+    <div className="pane-suspense-blocks" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+    <InlineSuspenseFallback className="pane-suspense-inline" label={label} />
+  </div>
+)
+
+const ModalSuspenseFallback = ({ label = 'Loading panel...' }) => (
+  <div className="modal-overlay modal-suspense-fallback" role="status" aria-live="polite">
+    <div className="modal-content modal-suspense-content">
+      <div className="pane-suspense-blocks modal-suspense-blocks" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+      <InlineSuspenseFallback className="pane-suspense-inline" label={label} />
+    </div>
+  </div>
+)
+
+const AvatarSuspenseFallback = ({ size = 40 }) => (
+  <span
+    className="avatar-suspense-fallback"
+    style={{ width: `${size}px`, height: `${size}px` }}
+    aria-hidden="true"
+  />
+)
+
+const FriendsPageFallback = ({ isMobile = false }) => (
+  <div className={isMobile ? 'mobile-mode-shell pane-suspense-shell' : 'friends-page pane-suspense-shell'}>
+    <PaneSuspenseFallback
+      className={isMobile ? 'mobile-mode-shell' : 'friends-page'}
+      label="Loading friends..."
+    />
+  </div>
+)
 
 const buildEmptyChannelDiagnostic = (response, channelId) => {
   const headerValue = response?.headers?.['x-volt-diagnostics']
@@ -135,6 +303,9 @@ const ChatPage = () => {
   const encryptionEnsureInFlightRef = useRef(new Map())
   const serverLoadInFlightRef = useRef(new Map())
   const lastPresenceRefreshRef = useRef(new Map())
+  const presenceSnapshotLoadedRef = useRef(new Map())
+  const latestPresenceEventByServerRef = useRef(new Map())
+  const pendingPresenceOfflineTimersRef = useRef(new Map())
   const lastLoadedServerIdRef = useRef(null)
   const retryDecryptRef = useRef(null)
   const loadMessagesRef = useRef(null)
@@ -168,6 +339,12 @@ const ChatPage = () => {
   })
   const [showVoiceInfo, setShowVoiceInfo] = useState(false)
   const [voiceJoinKey, setVoiceJoinKey] = useState(0)
+
+  const openUserProfile = useCallback((targetUserId) => {
+    if (!targetUserId) return
+    loadProfileModal()
+    setShowUserProfile(targetUserId)
+  }, [])
   const [selectedDM, setSelectedDM] = useState(null)
   const [themeStyles, setThemeStyles] = useState({})
   const [pendingAgeChannel, setPendingAgeChannel] = useState(null)
@@ -190,6 +367,7 @@ const ChatPage = () => {
   const notificationsRetryTimerRef = useRef(null)
   const notificationsThrottleTimerRef = useRef(null)
   const notificationsLastLoadedAtRef = useRef(0)
+  const reconnectResyncAtRef = useRef(0)
   const PRESENCE_REFRESH_TTL = 30000
   
   const [mobileTab, setMobileTab] = useState('home')
@@ -280,6 +458,118 @@ const ChatPage = () => {
 
     return meta
   }, [upcomingEvents])
+
+  const preloadCoreSurfaces = useCallback((idle = true) => {
+    lazyLoadingService.preloadComponents(['ChatArea', 'MessageList', 'ChannelSidebar', 'ServerSidebar', 'MemberSidebar'], { idle })
+    preloadChunkGroup([
+      'ChatArea',
+      'ChannelSidebar',
+      'ServerSidebar',
+      'MemberSidebar',
+      'MobileNav',
+      'Avatar',
+      'NotificationToast'
+    ])
+  }, [])
+
+  const preloadDMSurfaces = useCallback((idle = true) => {
+    lazyLoadingService.preloadComponents(['DMList', 'DMChat'], { idle })
+    preloadChunkGroup(['DMList', 'DMChat', 'SystemMessagePanel'])
+  }, [])
+
+  const preloadFriendsSurfaces = useCallback((idle = true) => {
+    lazyLoadingService.preloadComponents(['FriendsPage', 'DMList', 'DMChat'], { idle })
+    preloadChunkGroup(['FriendsPage', 'DMList', 'DMChat'])
+  }, [])
+
+  const preloadDiscoverySurfaces = useCallback((idle = true) => {
+    lazyLoadingService.preloadComponents(['Discovery'], { idle })
+    preloadChunkGroup(['Discovery'])
+  }, [])
+
+  const preloadSettingsSurface = useCallback((idle = true) => {
+    lazyLoadingService.preloadRouteChunks(['route:settings-modal'], { idle })
+    lazyLoadingService.preloadComponents(['SettingsModal'], { idle })
+    preloadChunkGroup(['SettingsModal'])
+  }, [])
+
+  const preloadServerSettingsSurface = useCallback((idle = true) => {
+    lazyLoadingService.preloadRouteChunks(['route:settings-modal', 'route:invite'], { idle })
+    preloadChunkGroup(['ServerSettingsModal'])
+  }, [])
+
+  const preloadCreateServerSurface = useCallback(() => {
+    preloadChunkGroup(['CreateServerModal'])
+  }, [])
+
+  const preloadJoinServerSurface = useCallback((idle = true) => {
+    lazyLoadingService.preloadRouteChunks(['route:invite'], { idle })
+    preloadChunkGroup(['JoinServerModal'])
+  }, [])
+
+  const preloadAdminSurface = useCallback((idle = true) => {
+    lazyLoadingService.preloadRouteChunks(['route:admin-panel'], { idle })
+    lazyLoadingService.preloadComponents(['AdminPanel'], { idle })
+    preloadChunkGroup(['AdminPanel'])
+  }, [])
+
+  const preloadVoiceSurfaces = useCallback((idle = true) => {
+    lazyLoadingService.preloadComponents(['VoiceChannel', 'VoiceChannelPreview'], { idle })
+    preloadChunkGroup(['VoiceChannel', 'VoiceChannelPreview', 'VoiceInfoModal'])
+  }, [])
+
+  useEffect(() => {
+    lazyLoadingService.preloadRouteChunks(['route:settings-modal', 'route:admin-panel', 'route:invite'], { idle: true })
+    preloadCoreSurfaces(true)
+    preloadSettingsSurface(true)
+    preloadAdminSurface(true)
+    preloadJoinServerSurface(true)
+
+    if (typeof lazyLoadingService.scheduleIdleTask === 'function') {
+      lazyLoadingService.scheduleIdleTask(() => {
+        preloadChunkGroup([
+          'HomeEventsHub',
+          'CreateServerModal',
+          'JoinServerModal',
+          'ServerSettingsModal',
+          'ProfileModal',
+          'AgeVerificationModal'
+        ])
+      }, { timeout: 2200, delay: 240 })
+    }
+  }, [preloadAdminSurface, preloadCoreSurfaces, preloadJoinServerSurface, preloadSettingsSurface])
+
+  useEffect(() => {
+    if (viewMode === 'friends' || mobileTab === 'friends') {
+      preloadFriendsSurfaces(false)
+      return
+    }
+    if (viewMode === 'discovery' || mobileTab === 'discovery') {
+      preloadDiscoverySurfaces(false)
+      return
+    }
+    if (viewMode === 'dms' || mobileTab === 'dms' || viewMode === 'system') {
+      preloadDMSurfaces(false)
+      return
+    }
+    preloadCoreSurfaces(true)
+  }, [mobileTab, preloadCoreSurfaces, preloadDMSurfaces, preloadDiscoverySurfaces, preloadFriendsSurfaces, viewMode])
+
+  useEffect(() => {
+    if (!currentServer?.id) return
+    lazyLoadingService.preloadComponents(['MemberSidebar', 'VoiceChannelPreview'], { idle: true })
+    preloadChunkGroup(['ChannelSidebar', 'MemberSidebar', 'VoiceChannelPreview', 'ServerSettingsModal'])
+  }, [currentServer?.id])
+
+  useEffect(() => {
+    if (!channelId || channelId === 'null') return
+    preloadChunkGroup(['ChatArea', 'AnnouncementChannel', 'ForumChannel', 'MediaChannel'])
+  }, [channelId])
+
+  useEffect(() => {
+    if (!activeVoiceChannel) return
+    preloadVoiceSurfaces(false)
+  }, [activeVoiceChannel, preloadVoiceSurfaces])
   const safeChannels = useMemo(() => {
     if (Array.isArray(channels)) return channels
     if (channels && typeof channels === 'object') return Object.values(channels)
@@ -293,15 +583,70 @@ const ChatPage = () => {
   const isAnnouncementChannel = currentChannel?.type === 'announcement'
   const isForumChannel = currentChannel?.type === 'forum'
   const isMediaChannel = currentChannel?.type === 'media'
+  const selectedDMStatusText = useMemo(() => {
+    const recipient = selectedDM?.recipient
+    if (!recipient || typeof recipient !== 'object') return null
+
+    const normalizedStatus = normalizePresenceStatus(recipient.status, null)
+    if (normalizedStatus) return normalizedStatus
+
+    const customStatus = typeof recipient.customStatus === 'string' ? recipient.customStatus.trim() : ''
+    if (customStatus) return customStatus
+
+    return t('presence.offline', 'offline')
+  }, [selectedDM, t])
+
+  const withIntentPreload = useCallback((preloadFn) => ({
+    onMouseEnter: preloadFn,
+    onFocus: preloadFn,
+    onTouchStart: preloadFn
+  }), [])
+
+  const openSettingsModal = useCallback((initialTab = null) => {
+    preloadSettingsSurface(false)
+    if (initialTab) {
+      setSettingsInitialTab(initialTab)
+    }
+    setShowSettings(true)
+  }, [preloadSettingsSurface])
+
+  const openServerSettingsModal = useCallback((tab = 'overview', closeDrawer = false) => {
+    preloadServerSettingsSurface(false)
+    setServerSettingsTab(tab)
+    setShowServerSettings(true)
+    if (closeDrawer) {
+      setShowChannelDrawer(false)
+    }
+  }, [preloadServerSettingsSurface])
+
+  const openCreateServerModal = useCallback(() => {
+    preloadCreateServerSurface()
+    setShowCreateServer(true)
+  }, [preloadCreateServerSurface])
+
+  const openJoinServerModal = useCallback(() => {
+    preloadJoinServerSurface(false)
+    setShowJoinServer(true)
+  }, [preloadJoinServerSurface])
+
+  const openAdminPanelModal = useCallback(() => {
+    preloadAdminSurface(false)
+    setShowAdminPanel(true)
+  }, [preloadAdminSurface])
+
+  const openVoiceInfoModal = useCallback(() => {
+    preloadVoiceSurfaces(false)
+    setShowVoiceInfo(true)
+  }, [preloadVoiceSurfaces])
 
   // Listen for global keyboard shortcut to open settings
   useEffect(() => {
     const handleOpenSettings = () => {
-      setShowSettings(true)
+      openSettingsModal()
     }
     window.addEventListener('volt:open-settings', handleOpenSettings)
     return () => window.removeEventListener('volt:open-settings', handleOpenSettings)
-  }, [])
+  }, [openSettingsModal])
 
   // Update document title when server or channel changes
   useEffect(() => {
@@ -534,10 +879,14 @@ const ChatPage = () => {
   const buildPresenceMap = useCallback((onlineRows = []) => {
     const map = {}
     for (const row of (onlineRows || [])) {
-      if (!row?.userId) continue
-      map[row.userId] = {
-        status: row.status || 'online',
-        customStatus: row.customStatus ?? null
+      const rawUserId = row?.userId
+      if (rawUserId === undefined || rawUserId === null) continue
+      const userId = typeof rawUserId === 'number' ? String(rawUserId) : String(rawUserId).trim()
+      if (!userId) continue
+      map[userId] = {
+        status: normalizePresenceStatus(row.status, 'online'),
+        customStatus: row.customStatus ?? null,
+        _updatedAt: readPresenceEventTime(row)
       }
     }
     return map
@@ -554,6 +903,7 @@ const ChatPage = () => {
     try {
       const res = await apiService.getOnlineMembers(sid)
       const freshPresence = buildPresenceMap(res.data || [])
+      presenceSnapshotLoadedRef.current.set(sid, true)
       lastPresenceRefreshRef.current.set(sid, Date.now())
       setPresenceByServer(prev => ({
         ...prev,
@@ -565,13 +915,18 @@ const ChatPage = () => {
     }
   }, [buildPresenceMap, presenceByServer, PRESENCE_REFRESH_TTL])
 
-  const applyPresenceToMembers = useCallback((memberList = [], serverPresence = {}) => {
+  const applyPresenceToMembers = useCallback((memberList = [], serverPresence = {}, { hasFullSnapshot = false } = {}) => {
     return (memberList || []).map(member => {
       const live = serverPresence?.[member.id]
-      if (!live) return { ...member, status: 'offline' }
+      if (!live) {
+        if (!hasFullSnapshot) return { ...member }
+        return { ...member, status: 'offline' }
+      }
+
+      const normalizedStatus = normalizePresenceStatus(live.status, normalizePresenceStatus(member.status, 'offline') || 'offline')
       return {
         ...member,
-        status: live.status || 'online',
+        status: normalizedStatus,
         customStatus: live.customStatus ?? member.customStatus ?? null
       }
     })
@@ -835,6 +1190,21 @@ const ChatPage = () => {
       console.error('Failed to check admin status:', err)
     }
   }
+
+  useEffect(() => {
+    if (!isAuthenticated || !connected) return
+
+    const now = Date.now()
+    if (now - reconnectResyncAtRef.current < 2500) return
+    reconnectResyncAtRef.current = now
+
+    // After backend restarts, initial fetches can race startup and return empty/error.
+    // Rehydrate critical lists as soon as realtime transport is confirmed back.
+    loadServers()
+    loadUpcomingEvents()
+    checkAdminStatus()
+    loadNotifications()
+  }, [isAuthenticated, connected])
 
   useEffect(() => {
     console.log('[ChatPage] ServerId changed to:', serverId)
@@ -1449,77 +1819,131 @@ const ChatPage = () => {
   // reload.  We patch status + customStatus directly on the member objects
   // so the sidebar's initial-seed logic also gets fresh data.
   useEffect(() => {
-    if (!socket || !connected) return
+    const sid = currentServer?.id
+    if (!socket || !connected || !sid) return
 
-    const handleUserStatus = ({ userId, status, customStatus }) => {
-      setPresenceByServer(prev => {
-        const sid = currentServer?.id
-        if (!sid) return prev
-        const serverPresence = prev[sid] || {}
-        return {
-          ...prev,
-          [sid]: {
-            ...serverPresence,
-            [userId]: {
-              status: status || 'online',
-              customStatus: customStatus ?? serverPresence[userId]?.customStatus ?? null
-            }
-          }
-        }
-      })
-      setMembers(prev => prev.map(m =>
-        m.id === userId
-          ? {
-              ...m,
-              status,
-              ...(customStatus !== undefined ? { customStatus } : {})
-            }
-          : m
-      ))
+    const readUserIdFromPayload = (payload) => {
+      if (!payload || typeof payload !== 'object') return null
+      const rawUserId = payload.userId ?? payload.memberId ?? payload.id
+      if (rawUserId === undefined || rawUserId === null) return null
+      const trimmed = String(rawUserId).trim()
+      return trimmed || null
     }
 
-    const handleMemberOffline = ({ userId }) => {
-      if (!userId) return
-      setPresenceByServer(prev => {
-        const sid = currentServer?.id
-        if (!sid) return prev
-        const serverPresence = prev[sid] || {}
-        return {
-          ...prev,
-          [sid]: {
-            ...serverPresence,
-            [userId]: {
-              ...(serverPresence[userId] || {}),
-              status: 'offline'
-            }
-          }
-        }
-      })
-      setMembers(prev => prev.map(m =>
-        m.id === userId ? { ...m, status: 'offline' } : m
-      ))
+    const readStatusFromPayload = (payload) => {
+      if (!payload || typeof payload !== 'object') return null
+      return normalizePresenceStatus(payload.status, null)
     }
 
-    const handleMemberOnline = ({ userId, status, customStatus }) => {
-      if (!userId) return
-      setPresenceByServer(prev => {
-        const sid = currentServer?.id
-        if (!sid) return prev
+    const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key)
+    const offlineTimers = pendingPresenceOfflineTimersRef.current
+    const eventClock = latestPresenceEventByServerRef.current
+    const makePresenceKey = (userId) => `${sid}:${userId}`
+
+    const clearPendingOffline = (userId) => {
+      const timerKey = makePresenceKey(userId)
+      const timeoutId = offlineTimers.get(timerKey)
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        offlineTimers.delete(timerKey)
+      }
+    }
+
+    const markEventIfFresh = (userId, payload) => {
+      const eventAt = readPresenceEventTime(payload)
+      const key = makePresenceKey(userId)
+      const lastEventAt = eventClock.get(key) || 0
+      if (eventAt < lastEventAt) return null
+      eventClock.set(key, eventAt)
+      return eventAt
+    }
+
+    const applyPresencePatch = (userId, { status, customStatus, hasCustomStatus = false, eventAt = Date.now() }) => {
+      const normalizedStatus = status ? normalizePresenceStatus(status, null) : null
+
+      setPresenceByServer((prev) => {
         const serverPresence = prev[sid] || {}
+        const existing = serverPresence[userId] || {}
+        const existingEventAt = Number(existing?._updatedAt) || 0
+        if (existingEventAt > eventAt) return prev
+
+        const nextEntry = {
+          ...existing,
+          _updatedAt: eventAt
+        }
+
+        if (normalizedStatus) {
+          nextEntry.status = normalizedStatus
+        }
+        if (hasCustomStatus) {
+          nextEntry.customStatus = customStatus ?? null
+        }
+
         return {
           ...prev,
           [sid]: {
             ...serverPresence,
-            [userId]: {
-              status: status || 'online',
-              customStatus: customStatus ?? serverPresence[userId]?.customStatus ?? null
-            }
+            [userId]: nextEntry
           }
         }
       })
-      setMembers(prev => prev.map(m =>
-        m.id === userId ? { ...m, status: status || 'online', ...(customStatus !== undefined ? { customStatus } : {}) } : m
-      ))
+
+      setMembers((prev) => prev.map((member) => {
+        const memberId = member?.id === undefined || member?.id === null ? '' : String(member.id).trim()
+        if (memberId !== userId) return member
+
+        const nextStatus = normalizedStatus || normalizePresenceStatus(member.status, 'offline') || 'offline'
+        return {
+          ...member,
+          status: nextStatus,
+          ...(hasCustomStatus ? { customStatus: customStatus ?? null } : {})
+        }
+      }))
+    }
+
+    const handleUserStatus = (payload) => {
+      const userId = readUserIdFromPayload(payload)
+      if (!userId) return
+      const nextStatus = readStatusFromPayload(payload)
+      const hasCustomStatus = hasOwn(payload || {}, 'customStatus')
+      const nextCustomStatus = hasCustomStatus ? (payload.customStatus ?? null) : undefined
+      if (!nextStatus && !hasCustomStatus) return
+      const eventAt = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+      clearPendingOffline(userId)
+      applyPresencePatch(userId, { status: nextStatus, customStatus: nextCustomStatus, hasCustomStatus, eventAt })
+    }
+
+    const handleMemberOffline = (payload) => {
+      const userId = readUserIdFromPayload(payload)
+      if (!userId) return
+      const eventAt = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+      clearPendingOffline(userId)
+
+      const timerKey = makePresenceKey(userId)
+      const timeoutId = setTimeout(() => {
+        const activeTimeout = offlineTimers.get(timerKey)
+        if (activeTimeout !== timeoutId) return
+        offlineTimers.delete(timerKey)
+        const latestEventAt = eventClock.get(timerKey) || 0
+        if (latestEventAt > eventAt) return
+        applyPresencePatch(userId, { status: 'offline', eventAt })
+      }, 2200)
+
+      offlineTimers.set(timerKey, timeoutId)
+    }
+
+    const handleMemberOnline = (payload) => {
+      const userId = readUserIdFromPayload(payload)
+      if (!userId) return
+      const nextStatus = readStatusFromPayload(payload) || 'online'
+      const hasCustomStatus = hasOwn(payload || {}, 'customStatus')
+      const nextCustomStatus = hasCustomStatus ? (payload.customStatus ?? null) : undefined
+      const eventAt = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+      clearPendingOffline(userId)
+      applyPresencePatch(userId, { status: nextStatus, customStatus: nextCustomStatus, hasCustomStatus, eventAt })
     }
 
     socket.on('user:status',   handleUserStatus)
@@ -1530,8 +1954,14 @@ const ChatPage = () => {
       socket.off('user:status',   handleUserStatus)
       socket.off('member:offline', handleMemberOffline)
       socket.off('member:online', handleMemberOnline)
+      for (const [key, timeoutId] of offlineTimers.entries()) {
+        if (key.startsWith(`${sid}:`)) {
+          clearTimeout(timeoutId)
+          offlineTimers.delete(key)
+        }
+      }
     }
-  }, [socket, connected, currentServer?.id])
+  }, [socket, connected, currentServer?.id, setPresenceByServer])
 
   // Load global emojis on mount and listen for emoji updates
   useEffect(() => {
@@ -1637,7 +2067,8 @@ const ChatPage = () => {
 
         const resolvedServerId = serverRes.data.id
         const effectivePresence = presenceByServer[resolvedServerId] || {}
-        const membersWithStatus = applyPresenceToMembers(serverRes.data.members || [], effectivePresence)
+        const hasFullSnapshot = !!presenceSnapshotLoadedRef.current.get(resolvedServerId)
+        const membersWithStatus = applyPresenceToMembers(serverRes.data.members || [], effectivePresence, { hasFullSnapshot })
         setMembers(membersWithStatus)
         primeServerUpdate({
           ...serverRes.data,
@@ -1672,7 +2103,8 @@ const ChatPage = () => {
     if (!sid || !members?.length) return
     const serverPresence = presenceByServer[sid]
     if (!serverPresence) return
-    setMembers(prev => applyPresenceToMembers(prev, serverPresence))
+    const hasFullSnapshot = !!presenceSnapshotLoadedRef.current.get(sid)
+    setMembers(prev => applyPresenceToMembers(prev, serverPresence, { hasFullSnapshot }))
   }, [currentServer?.id, presenceByServer, applyPresenceToMembers])
 
   const loadMessages = async (cId) => {
@@ -2042,21 +2474,24 @@ const ChatPage = () => {
   }
 
   const openSystemInbox = useCallback(() => {
+    preloadDMSurfaces(false)
     setViewMode('system')
     navigate('/chat/dms')
-  }, [navigate])
+  }, [navigate, preloadDMSurfaces])
 
   const openDMList = useCallback(() => {
+    preloadDMSurfaces(false)
     setSelectedDM(null)
     setViewMode('dms')
     navigate('/chat/dms')
-  }, [navigate])
+  }, [navigate, preloadDMSurfaces])
 
   const openDMConversation = useCallback((conv) => {
+    preloadDMSurfaces(false)
     setSelectedDM(conv)
     setViewMode('dms')
     navigate('/chat/dms')
-  }, [navigate])
+  }, [navigate, preloadDMSurfaces])
 
   useEffect(() => {
     if (currentServer) {
@@ -2100,7 +2535,12 @@ const ChatPage = () => {
           nextById.delete(updated.id)
           return
         }
-        if (!nextById.has(updated.id)) return
+        if (!nextById.has(updated.id)) {
+          if (updated.__addToList) {
+            nextById.set(updated.id, { ...updated })
+          }
+          return
+        }
         const existing = nextById.get(updated.id) || {}
         nextById.set(updated.id, {
           ...existing,
@@ -2157,7 +2597,9 @@ const ChatPage = () => {
     }
 
     if (updated.members) {
-      setMembers(applyPresenceToMembers(updated.members, presenceByServer[currentServer.id] || {}))
+      const serverPresence = presenceByServer[currentServer.id] || {}
+      const hasFullSnapshot = !!presenceSnapshotLoadedRef.current.get(currentServer.id)
+      setMembers(applyPresenceToMembers(updated.members, serverPresence, { hasFullSnapshot }))
       return
     }
 
@@ -2246,14 +2688,19 @@ const ChatPage = () => {
       setMobileServerSearch('')
     }
     if (tab === 'home') {
+      preloadChunkGroup(['HomeEventsHub'])
       handleServerChange('home')
     } else if (tab === 'servers') {
+      preloadCoreSurfaces(false)
       setShowMobileServerSelector(true)
     } else if (tab === 'dms') {
+      preloadDMSurfaces(false)
       openDMList()
     } else if (tab === 'friends') {
+      preloadFriendsSurfaces(false)
       handleServerChange('friends')
     } else if (tab === 'discovery') {
+      preloadDiscoverySurfaces(false)
       handleServerChange('discovery')
     }
   }
@@ -2270,42 +2717,46 @@ const ChatPage = () => {
   return (
     <div className="chat-page" style={themeStyles}>
       {!isMobile && (
-        <ServerSidebar 
-          servers={servers} 
-          currentServerId={serverId}
-          onServerChange={handleServerChange}
-          onCreateServer={loadServers}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenCreate={() => setShowCreateServer(true)}
-          onOpenJoin={() => setShowJoinServer(true)}
-          onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true) }}
-          onLeaveServer={handleLeaveServer}
-          onOpenAdmin={() => setShowAdminPanel(true)}
-          isAdmin={isAdmin}
-          friendRequestCount={friendRequestCount}
-          dmNotifications={dmNotifications}
-          serverUnreadCounts={serverUnreadCounts}
-          serverMentionCounts={serverMentionCounts}
-          serverEventsMeta={serverEventsMeta}
-          onDMClick={handleDMClick}
-        />
+        <Suspense fallback={<PaneSuspenseFallback className="server-sidebar" />}>
+          <ServerSidebar 
+            servers={servers} 
+            currentServerId={serverId}
+            onServerChange={handleServerChange}
+            onCreateServer={loadServers}
+            onOpenSettings={() => openSettingsModal()}
+            onOpenCreate={openCreateServerModal}
+            onOpenJoin={openJoinServerModal}
+            onOpenServerSettings={() => openServerSettingsModal('overview')}
+            onLeaveServer={handleLeaveServer}
+            onOpenAdmin={openAdminPanelModal}
+            isAdmin={isAdmin}
+            friendRequestCount={friendRequestCount}
+            dmNotifications={dmNotifications}
+            serverUnreadCounts={serverUnreadCounts}
+            serverMentionCounts={serverMentionCounts}
+            serverEventsMeta={serverEventsMeta}
+            onDMClick={handleDMClick}
+          />
+        </Suspense>
       )}
 
       {isMobile && (
-        <MobileNav
-          currentTab={getCurrentMobileTab()}
-          onTabChange={handleMobileTabChange}
-          onCreateServer={() => setShowCreateServer(true)}
-          onJoinServer={() => setShowJoinServer(true)}
-          onOpenSettings={() => setShowSettings(true)}
-          friendRequestCount={friendRequestCount}
-          dmNotifications={dmNotifications.length}
-          serverUnreadCounts={serverUnreadCounts}
-          servers={servers}
-          onDMClick={handleDMClick}
-          hasActiveVoice={!!activeVoiceChannel && !selectedVoiceChannelId}
-          onReturnToVoice={handleReturnToVoice}
-        />
+        <Suspense fallback={<PaneSuspenseFallback className="mobile-nav-suspense" label="Loading navigation..." />}>
+          <MobileNav
+            currentTab={getCurrentMobileTab()}
+            onTabChange={handleMobileTabChange}
+            onCreateServer={openCreateServerModal}
+            onJoinServer={openJoinServerModal}
+            onOpenSettings={() => openSettingsModal()}
+            friendRequestCount={friendRequestCount}
+            dmNotifications={dmNotifications.length}
+            serverUnreadCounts={serverUnreadCounts}
+            servers={servers}
+            onDMClick={handleDMClick}
+            hasActiveVoice={!!activeVoiceChannel && !selectedVoiceChannelId}
+            onReturnToVoice={handleReturnToVoice}
+          />
+        </Suspense>
       )}
       
       {isMobile && showMobileServerSelector ? (
@@ -2339,10 +2790,18 @@ const ChatPage = () => {
               />
             </label>
             <div className="mobile-server-selector-actions">
-              <button className="btn btn-secondary" onClick={() => setShowJoinServer(true)}>
+              <button
+                className="btn btn-secondary"
+                {...withIntentPreload(openJoinServerModal)}
+                onClick={openJoinServerModal}
+              >
                 {t('app.joinServer', 'Join Server')}
               </button>
-              <button className="btn btn-primary" onClick={() => setShowCreateServer(true)}>
+              <button
+                className="btn btn-primary"
+                {...withIntentPreload(openCreateServerModal)}
+                onClick={openCreateServerModal}
+              >
                 {t('app.createServer', 'Create Server')}
               </button>
             </div>
@@ -2358,18 +2817,22 @@ const ChatPage = () => {
                   <button
                     key={server.id}
                     className={`mobile-server-selector-item ${isActive ? 'active' : ''}`}
+                    {...withIntentPreload(() => preloadCoreSurfaces(false))}
                     onClick={() => {
+                      preloadCoreSurfaces(false)
                       setShowMobileServerSelector(false)
                       setMobileServerSearch('')
                       handleServerChange(server.id)
                     }}
                   >
-                    <Avatar
-                      src={server.icon}
-                      fallback={server.name}
-                      size={40}
-                      userId={server.id}
-                    />
+                    <Suspense fallback={<AvatarSuspenseFallback size={40} />}>
+                      <Avatar
+                        src={server.icon}
+                        fallback={server.name}
+                        size={40}
+                        userId={server.id}
+                      />
+                    </Suspense>
                     <span className="mobile-server-selector-name">{server.name}</span>
                     {unread > 0 && (
                       <span className="mobile-server-selector-badge">{unread > 99 ? '99+' : unread}</span>
@@ -2386,21 +2849,27 @@ const ChatPage = () => {
         </div>
       ) : viewMode === 'friends' ? (
         isMobile ? (
-          <div className="mobile-mode-shell">
-            <FriendsPage key="friends-mobile" onStartDM={(conv) => {
-              openDMConversation(conv)
-            }} />
-          </div>
+          <Suspense fallback={<FriendsPageFallback isMobile={true} />}>
+            <div className="mobile-mode-shell">
+              <FriendsPage key="friends-mobile" onStartDM={(conv) => {
+                openDMConversation(conv)
+              }} />
+            </div>
+          </Suspense>
         ) : (
           <>
-            <DMList type="friends"
-              onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
-              onClose={() => {}}
-              onOpenSystemInbox={openSystemInbox}
-            />
-            <FriendsPage key="friends-desktop" onStartDM={(conv) => {
-              openDMConversation(conv)
-            }} />
+            <Suspense fallback={<PaneSuspenseFallback className="dm-list" />}>
+              <DMList type="friends"
+                onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
+                onClose={() => {}}
+                onOpenSystemInbox={openSystemInbox}
+              />
+            </Suspense>
+            <Suspense fallback={<FriendsPageFallback />}>
+              <FriendsPage key="friends-desktop" onStartDM={(conv) => {
+                openDMConversation(conv)
+              }} />
+            </Suspense>
           </>
         )
       ) : viewMode === 'system' ? (
@@ -2415,18 +2884,24 @@ const ChatPage = () => {
                 <ChevronLeft size={20} />
               </button>
             </div>
-            <SystemMessagePanel key="system-mobile" onClose={openDMList} />
+            <Suspense fallback={<PaneSuspenseFallback className="mobile-mode-shell" />}>
+              <SystemMessagePanel key="system-mobile" onClose={openDMList} />
+            </Suspense>
           </div>
         ) : (
           <>
-            <DMList
-              type="dms"
-              onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
-              selectedConversation={null}
-              onClose={(convId) => {}}
-              onOpenSystemInbox={openSystemInbox}
-            />
-            <SystemMessagePanel key="system-desktop" onClose={openDMList} />
+            <Suspense fallback={<PaneSuspenseFallback className="dm-list" />}>
+              <DMList
+                type="dms"
+                onSelectConversation={(conv) => { setSelectedDM(conv); setViewMode('dms') }}
+                selectedConversation={null}
+                onClose={(convId) => {}}
+                onOpenSystemInbox={openSystemInbox}
+              />
+            </Suspense>
+            <Suspense fallback={<PaneSuspenseFallback className="chat-area" />}>
+              <SystemMessagePanel key="system-desktop" onClose={openDMList} />
+            </Suspense>
           </>
         )
       ) : viewMode === 'dms' ? (
@@ -2442,43 +2917,51 @@ const ChatPage = () => {
                     <span className="mobile-server-name">
                       {selectedDM?.recipient?.displayName || selectedDM?.recipient?.username || t('dm.title', 'Direct Messages')}
                     </span>
-                    {selectedDM?.recipient?.status && (
-                      <span className="mobile-channel-name">{selectedDM.recipient.status}</span>
+                    {selectedDMStatusText && (
+                      <span className="mobile-channel-name">{selectedDMStatusText}</span>
                     )}
                   </div>
                   <button className="mobile-header-btn" onClick={openSystemInbox}>
                     <MessageSquare size={18} />
                   </button>
                 </div>
-                <DMChat key={`dm-mobile-${selectedDM.id}`} conversation={selectedDM} onShowProfile={(userId) => setShowUserProfile(userId)} />
+                <Suspense fallback={<PaneSuspenseFallback className="mobile-mode-shell" />}>
+                  <DMChat key={`dm-mobile-${selectedDM.id}`} conversation={selectedDM} onShowProfile={openUserProfile} />
+                </Suspense>
               </>
             ) : (
-              <DMList
-                key="dm-list-mobile"
-                type="dms"
-                onSelectConversation={openDMConversation}
+              <Suspense fallback={<PaneSuspenseFallback className="mobile-mode-shell" />}>
+                <DMList
+                  key="dm-list-mobile"
+                  type="dms"
+                  onSelectConversation={openDMConversation}
+                  selectedConversation={selectedDM}
+                  onClose={(convId) => {
+                    if (selectedDM?.id === convId) setSelectedDM(null)
+                  }}
+                  onOpenSystemInbox={openSystemInbox}
+                />
+              </Suspense>
+            )}
+          </div>
+        ) : (
+          <>
+            <Suspense fallback={<PaneSuspenseFallback className="dm-list" />}>
+              <DMList 
+                key="dm-list-desktop"
+                type="dms" 
+                onSelectConversation={setSelectedDM}
                 selectedConversation={selectedDM}
                 onClose={(convId) => {
                   if (selectedDM?.id === convId) setSelectedDM(null)
                 }}
                 onOpenSystemInbox={openSystemInbox}
               />
-            )}
-          </div>
-        ) : (
-          <>
-            <DMList 
-              key="dm-list-desktop"
-              type="dms" 
-              onSelectConversation={setSelectedDM}
-              selectedConversation={selectedDM}
-              onClose={(convId) => {
-                if (selectedDM?.id === convId) setSelectedDM(null)
-              }}
-              onOpenSystemInbox={openSystemInbox}
-            />
+            </Suspense>
             {selectedDM ? (
-              <DMChat key={`dm-desktop-${selectedDM.id}`} conversation={selectedDM} onShowProfile={(userId) => setShowUserProfile(userId)} />
+              <Suspense fallback={<PaneSuspenseFallback className="chat-area" />}>
+                <DMChat key={`dm-desktop-${selectedDM.id}`} conversation={selectedDM} onShowProfile={openUserProfile} />
+              </Suspense>
             ) : (
               <div className="empty-state">
                 <MessageSquare size={48} className="empty-state-icon" />
@@ -2490,11 +2973,13 @@ const ChatPage = () => {
         )
       ) : viewMode === 'discovery' ? (
         <>
-          <Discovery key="discovery-view"
-            onJoinServer={(serverId) => {
-              loadServers()
-            }}
-          />
+          <Suspense fallback={<PaneSuspenseFallback className="chat-area" />}>
+            <Discovery key="discovery-view"
+              onJoinServer={(serverId) => {
+                loadServers()
+              }}
+            />
+          </Suspense>
         </>
       ) : viewMode === 'home' ? (
         <>
@@ -2506,22 +2991,41 @@ const ChatPage = () => {
                   <h2>{user?.displayName || user?.username || 'VoltChat'}</h2>
                   <p>{t('app.createOrJoin')}</p>
                   <div className="mobile-home-actions">
-                    <button className="btn btn-primary" onClick={() => setShowCreateServer(true)}>
+                    <button
+                      className="btn btn-primary"
+                      {...withIntentPreload(openCreateServerModal)}
+                      onClick={openCreateServerModal}
+                    >
                       {t('app.createServer', 'Create Server')}
                     </button>
-                    <button className="btn btn-secondary" onClick={() => setShowJoinServer(true)}>
+                    <button
+                      className="btn btn-secondary"
+                      {...withIntentPreload(openJoinServerModal)}
+                      onClick={openJoinServerModal}
+                    >
                       {t('app.joinServer', 'Join Server')}
                     </button>
                   </div>
                 </section>
 
                 <section className="mobile-home-stats">
-                  <button className="mobile-home-stat-card" onClick={() => setShowMobileServerSelector(true)}>
+                  <button
+                    className="mobile-home-stat-card"
+                    {...withIntentPreload(() => preloadCoreSurfaces(false))}
+                    onClick={() => setShowMobileServerSelector(true)}
+                  >
                     <strong>{servers.length}</strong>
                     <span>{t('servers.title', 'Servers')}</span>
                     <small>{totalServerUnread > 0 ? `${totalServerUnread} unread` : 'All caught up'}</small>
                   </button>
-                  <button className="mobile-home-stat-card" onClick={openDMList}>
+                  <button
+                    className="mobile-home-stat-card"
+                    {...withIntentPreload(() => preloadDMSurfaces(false))}
+                    onClick={() => {
+                      preloadDMSurfaces(false)
+                      openDMList()
+                    }}
+                  >
                     <strong>{dmNotifications.length}</strong>
                     <span>{t('mobileNav.messages', 'Messages')}</span>
                     <small>{friendRequestCount > 0 ? `${friendRequestCount} requests` : 'Open inbox'}</small>
@@ -2529,28 +3033,53 @@ const ChatPage = () => {
                 </section>
 
                 <section className="mobile-home-shortcuts">
-                  <button className="mobile-home-shortcut" onClick={() => setShowMobileServerSelector(true)}>
+                  <button
+                    className="mobile-home-shortcut"
+                    {...withIntentPreload(() => preloadCoreSurfaces(false))}
+                    onClick={() => setShowMobileServerSelector(true)}
+                  >
                     <Hash size={18} />
                     <div>
                       <strong>{t('mobileNav.servers', 'Servers')}</strong>
                       <span>{t('servers.search', 'Browse and switch')}</span>
                     </div>
                   </button>
-                  <button className="mobile-home-shortcut" onClick={openDMList}>
+                  <button
+                    className="mobile-home-shortcut"
+                    {...withIntentPreload(() => preloadDMSurfaces(false))}
+                    onClick={() => {
+                      preloadDMSurfaces(false)
+                      openDMList()
+                    }}
+                  >
                     <MessageSquare size={18} />
                     <div>
                       <strong>{t('mobileNav.messages', 'Messages')}</strong>
                       <span>{t('dm.chooseConversation', 'Open conversations')}</span>
                     </div>
                   </button>
-                  <button className="mobile-home-shortcut" onClick={() => handleServerChange('friends')}>
+                  <button
+                    className="mobile-home-shortcut"
+                    {...withIntentPreload(() => preloadFriendsSurfaces(false))}
+                    onClick={() => {
+                      preloadFriendsSurfaces(false)
+                      handleServerChange('friends')
+                    }}
+                  >
                     <Users size={18} />
                     <div>
                       <strong>{t('mobileNav.friends', 'Friends')}</strong>
                       <span>{friendRequestCount > 0 ? `${friendRequestCount} pending requests` : 'Manage your people'}</span>
                     </div>
                   </button>
-                  <button className="mobile-home-shortcut" onClick={() => handleServerChange('discovery')}>
+                  <button
+                    className="mobile-home-shortcut"
+                    {...withIntentPreload(() => preloadDiscoverySurfaces(false))}
+                    onClick={() => {
+                      preloadDiscoverySurfaces(false)
+                      handleServerChange('discovery')
+                    }}
+                  >
                     <Search size={18} />
                     <div>
                       <strong>{t('mobileNav.discover', 'Discover')}</strong>
@@ -2558,7 +3087,11 @@ const ChatPage = () => {
                     </div>
                   </button>
                   {activeVoiceChannel && (
-                    <button className="mobile-home-shortcut accent" onClick={handleReturnToVoice}>
+                    <button
+                      className="mobile-home-shortcut accent"
+                      {...withIntentPreload(() => preloadVoiceSurfaces(false))}
+                      onClick={handleReturnToVoice}
+                    >
                       <PhoneCall size={18} />
                       <div>
                         <strong>{t('voicePreview.returnToVoice', 'Return to voice')}</strong>
@@ -2572,7 +3105,11 @@ const ChatPage = () => {
                   <section className="mobile-home-recent">
                     <div className="mobile-home-section-head">
                       <h3>{t('servers.title', 'Servers')}</h3>
-                      <button type="button" onClick={() => setShowMobileServerSelector(true)}>
+                      <button
+                        type="button"
+                        {...withIntentPreload(() => preloadCoreSurfaces(false))}
+                        onClick={() => setShowMobileServerSelector(true)}
+                      >
                         {t('common.viewAll', 'View all')}
                       </button>
                     </div>
@@ -2583,9 +3120,15 @@ const ChatPage = () => {
                           <button
                             key={server.id}
                             className="mobile-home-server-item"
-                            onClick={() => handleServerChange(server.id)}
+                            {...withIntentPreload(() => preloadCoreSurfaces(false))}
+                            onClick={() => {
+                              preloadCoreSurfaces(false)
+                              handleServerChange(server.id)
+                            }}
                           >
-                            <Avatar src={server.icon} fallback={server.name} size={42} userId={server.id} />
+                            <Suspense fallback={<AvatarSuspenseFallback size={42} />}>
+                              <Avatar src={server.icon} fallback={server.name} size={42} userId={server.id} />
+                            </Suspense>
                             <div className="mobile-home-server-copy">
                               <strong>{server.name}</strong>
                               <span>{unread > 0 ? `${unread} unread` : 'Open server'}</span>
@@ -2597,7 +3140,9 @@ const ChatPage = () => {
                   </section>
                 )}
 
-                <HomeEventsHub events={upcomingEvents} onOpenServer={handleServerChange} />
+                <Suspense fallback={<PaneSuspenseFallback className="mobile-home-hub" />}>
+                  <HomeEventsHub events={upcomingEvents} onOpenServer={handleServerChange} />
+                </Suspense>
               </div>
             </div>
           ) : (
@@ -2606,14 +3151,24 @@ const ChatPage = () => {
                 <h2>{t('app.welcome')}</h2>
                 <p>{t('app.createOrJoin')}</p>
                 <div className="simple-actions">
-                  <button className="btn btn-primary btn-lg" onClick={() => setShowCreateServer(true)}>
+                  <button
+                    className="btn btn-primary btn-lg"
+                    {...withIntentPreload(openCreateServerModal)}
+                    onClick={openCreateServerModal}
+                  >
                     {t('app.createServer', 'Create Server')}
                   </button>
-                  <button className="btn btn-secondary btn-lg" onClick={() => setShowJoinServer(true)}>
+                  <button
+                    className="btn btn-secondary btn-lg"
+                    {...withIntentPreload(openJoinServerModal)}
+                    onClick={openJoinServerModal}
+                  >
                     {t('app.joinServer', 'Join Server')}
                   </button>
                 </div>
-                <HomeEventsHub events={upcomingEvents} onOpenServer={handleServerChange} />
+                <Suspense fallback={<PaneSuspenseFallback className="simple-welcome" />}>
+                  <HomeEventsHub events={upcomingEvents} onOpenServer={handleServerChange} />
+                </Suspense>
               </div>
             </div>
           )}
@@ -2623,7 +3178,14 @@ const ChatPage = () => {
           {isMobile && (
             <div className="mobile-header-shell">
               <div className="mobile-header">
-                <button className="mobile-header-btn" onClick={() => setShowChannelDrawer(true)}>
+                <button
+                  className="mobile-header-btn"
+                  {...withIntentPreload(() => preloadCoreSurfaces(false))}
+                  onClick={() => {
+                    preloadCoreSurfaces(false)
+                    setShowChannelDrawer(true)
+                  }}
+                >
                   <Menu size={20} />
                 </button>
                 <div className="mobile-header-title">
@@ -2634,7 +3196,11 @@ const ChatPage = () => {
                     </span>
                   )}
                 </div>
-                <button className="mobile-header-btn" onClick={() => setShowMembers(prev => !prev)}>
+                <button
+                  className="mobile-header-btn"
+                  {...withIntentPreload(() => preloadChunkGroup(['MemberSidebar']))}
+                  onClick={() => setShowMembers(prev => !prev)}
+                >
                   <Users size={20} />
                 </button>
                 {activeVoiceChannel && !selectedVoiceChannelId && (
@@ -2648,23 +3214,46 @@ const ChatPage = () => {
                 )}
               </div>
               <div className="mobile-utility-strip">
-                <button className="mobile-utility-chip active" onClick={() => setShowChannelDrawer(true)}>
+                <button
+                  className="mobile-utility-chip active"
+                  {...withIntentPreload(() => preloadCoreSurfaces(false))}
+                  onClick={() => {
+                    preloadCoreSurfaces(false)
+                    setShowChannelDrawer(true)
+                  }}
+                >
                   <Menu size={16} />
                   <span>{t('chat.channels', 'Channels')}</span>
                 </button>
-                <button className={`mobile-utility-chip ${showMembers ? 'active' : ''}`} onClick={() => setShowMembers(prev => !prev)}>
+                <button
+                  className={`mobile-utility-chip ${showMembers ? 'active' : ''}`}
+                  {...withIntentPreload(() => preloadChunkGroup(['MemberSidebar']))}
+                  onClick={() => setShowMembers(prev => !prev)}
+                >
                   <Users size={16} />
                   <span>{members.length} {t('common.members', 'Members')}</span>
                 </button>
-                <button className="mobile-utility-chip" onClick={() => { setServerSettingsTab('overview'); setShowServerSettings(true) }}>
+                <button
+                  className="mobile-utility-chip"
+                  {...withIntentPreload(() => preloadServerSettingsSurface(false))}
+                  onClick={() => openServerSettingsModal('overview')}
+                >
                   <Lock size={16} />
                   <span>{t('server.settings', 'Server')}</span>
                 </button>
-                <button className="mobile-utility-chip" onClick={() => { setServerSettingsTab('invites'); setShowServerSettings(true) }}>
+                <button
+                  className="mobile-utility-chip"
+                  {...withIntentPreload(() => preloadServerSettingsSurface(false))}
+                  onClick={() => openServerSettingsModal('invites')}
+                >
                   <MessageSquare size={16} />
                   <span>{t('common.invite', 'Invite')}</span>
                 </button>
-                <button className="mobile-utility-chip" onClick={() => setShowSettings(true)}>
+                <button
+                  className="mobile-utility-chip"
+                  {...withIntentPreload(() => preloadSettingsSurface(false))}
+                  onClick={() => openSettingsModal()}
+                >
                   <Settings size={16} />
                   <span>{t('nav.settings', 'Settings')}</span>
                 </button>
@@ -2689,76 +3278,82 @@ const ChatPage = () => {
                   </div>
                   <button
                     className="mobile-header-btn"
+                    {...withIntentPreload(() => preloadServerSettingsSurface(false))}
                     onClick={() => {
-                      setServerSettingsTab('overview')
-                      setShowServerSettings(true)
-                      setShowChannelDrawer(false)
+                      openServerSettingsModal('overview', true)
                     }}
                   >
                     <Settings size={18} />
                   </button>
                 </div>
                 <div className="mobile-channel-drawer-body">
-                <ChannelSidebar 
-                  className="open"
-                  server={currentServer}
-                  channels={channels}
-                  categories={categories}
-                  currentChannelId={channelId}
-                  unreadChannelIds={unreadChannelsByServer[currentServer?.id] || []}
-                  selectedVoiceChannelId={selectedVoiceChannelId}
-                  onChannelChange={(id, isVoice) => {
-                    handleChannelChange(id, isVoice)
-                    setShowChannelDrawer(false)
-                  }}
-                  onCreateChannel={() => loadServerData(serverId)}
-                  onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true); setShowChannelDrawer(false) }}
-                  onOpenSettings={() => { setShowSettings(true); setShowChannelDrawer(false) }}
-                  onVoicePreview={handleVoicePreview}
-                  activeVoiceChannel={activeVoiceChannel}
-                  voiceParticipantsByChannel={voiceParticipantsByChannel}
-                  leavingVoiceChannelId={leavingVoiceChannelId}
-                  onDeleteChannel={handleChannelDeleted}
-                  onRefreshChannels={() => loadServerData(serverId)}
-                  onInvite={() => { setServerSettingsTab('invites'); setShowServerSettings(true); setShowChannelDrawer(false) }}
-                  onReturnToVoice={() => { handleReturnToVoice(); setShowChannelDrawer(false) }}
-                  onLeaveVoice={() => { handleLeaveVoice(); setShowChannelDrawer(false) }}
-                  isMuted={isMuted}
-                  isDeafened={isDeafened}
-                  onToggleMute={() => setIsMuted(!isMuted)}
-                  onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-                />
+                  <Suspense fallback={<PaneSuspenseFallback className="mobile-channel-drawer-body" />}>
+                    <ChannelSidebar 
+                      className="open"
+                      server={currentServer}
+                      channels={channels}
+                      categories={categories}
+                      currentChannelId={channelId}
+                      unreadChannelIds={unreadChannelsByServer[currentServer?.id] || []}
+                      selectedVoiceChannelId={selectedVoiceChannelId}
+                      onChannelChange={(id, isVoice) => {
+                        handleChannelChange(id, isVoice)
+                        setShowChannelDrawer(false)
+                      }}
+                      onCreateChannel={() => loadServerData(serverId)}
+                      onOpenServerSettings={() => openServerSettingsModal('overview', true)}
+                      onOpenSettings={() => {
+                        openSettingsModal()
+                        setShowChannelDrawer(false)
+                      }}
+                      onVoicePreview={handleVoicePreview}
+                      activeVoiceChannel={activeVoiceChannel}
+                      voiceParticipantsByChannel={voiceParticipantsByChannel}
+                      leavingVoiceChannelId={leavingVoiceChannelId}
+                      onDeleteChannel={handleChannelDeleted}
+                      onRefreshChannels={() => loadServerData(serverId)}
+                      onInvite={() => openServerSettingsModal('invites', true)}
+                      onReturnToVoice={() => { handleReturnToVoice(); setShowChannelDrawer(false) }}
+                      onLeaveVoice={() => { handleLeaveVoice(); setShowChannelDrawer(false) }}
+                      isMuted={isMuted}
+                      isDeafened={isDeafened}
+                      onToggleMute={() => setIsMuted(!isMuted)}
+                      onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
+                    />
+                  </Suspense>
                 </div>
               </div>
             </>
           )}
 
           {!isMobile && (
-            <ChannelSidebar 
-              server={currentServer}
-              channels={channels}
-              categories={categories}
-              currentChannelId={channelId}
-              unreadChannelIds={unreadChannelsByServer[currentServer?.id] || []}
-              selectedVoiceChannelId={selectedVoiceChannelId}
-              onChannelChange={handleChannelChange}
-              onCreateChannel={() => loadServerData(serverId)}
-              onOpenServerSettings={() => { setServerSettingsTab('overview'); setShowServerSettings(true) }}
-              onOpenSettings={() => setShowSettings(true)}
-              onVoicePreview={handleVoicePreview}
-              activeVoiceChannel={activeVoiceChannel}
-              voiceParticipantsByChannel={voiceParticipantsByChannel}
-              leavingVoiceChannelId={leavingVoiceChannelId}
-              onDeleteChannel={handleChannelDeleted}
-              onRefreshChannels={() => loadServerData(serverId)}
-              onInvite={() => { setServerSettingsTab('invites'); setShowServerSettings(true) }}
-              onReturnToVoice={handleReturnToVoice}
-              onLeaveVoice={handleLeaveVoice}
-              isMuted={isMuted}
-              isDeafened={isDeafened}
-              onToggleMute={() => setIsMuted(!isMuted)}
-              onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
-            />
+            <Suspense fallback={<PaneSuspenseFallback className="channel-sidebar" />}>
+              <ChannelSidebar 
+                server={currentServer}
+                channels={channels}
+                categories={categories}
+                currentChannelId={channelId}
+                unreadChannelIds={unreadChannelsByServer[currentServer?.id] || []}
+                selectedVoiceChannelId={selectedVoiceChannelId}
+                onChannelChange={handleChannelChange}
+                onCreateChannel={() => loadServerData(serverId)}
+                onOpenServerSettings={() => openServerSettingsModal('overview')}
+                onOpenSettings={() => openSettingsModal()}
+                onVoicePreview={handleVoicePreview}
+                activeVoiceChannel={activeVoiceChannel}
+                voiceParticipantsByChannel={voiceParticipantsByChannel}
+                leavingVoiceChannelId={leavingVoiceChannelId}
+                onDeleteChannel={handleChannelDeleted}
+                onRefreshChannels={() => loadServerData(serverId)}
+                onInvite={() => openServerSettingsModal('invites')}
+                onReturnToVoice={handleReturnToVoice}
+                onLeaveVoice={handleLeaveVoice}
+                isMuted={isMuted}
+                isDeafened={isDeafened}
+                onToggleMute={() => setIsMuted(!isMuted)}
+                onToggleDeafen={() => { setIsDeafened(!isDeafened); if (!isDeafened) setIsMuted(true) }}
+              />
+            </Suspense>
           )}
           {/* When voice channel is selected as main view, show placeholder or ChatArea behind the mini bar */}
           {channelId && channelId !== 'null' ? (
@@ -2787,43 +3382,50 @@ const ChatPage = () => {
                 <>
                   {!contentCollapsed && (
                   isAnnouncementChannel ? (
-                    <AnnouncementChannel
-                      key={`channel-${channelId}`}
-                      channelId={channelId}
-                      serverId={serverId}
-                      channel={currentChannel}
-                      isAdmin={isAdmin}
-                    />
+                    <Suspense fallback={<PaneSuspenseFallback className="chat-area" />}>
+                      <AnnouncementChannel
+                        key={`channel-${channelId}`}
+                        channelId={channelId}
+                        serverId={serverId}
+                        channel={currentChannel}
+                        isAdmin={isAdmin}
+                      />
+                    </Suspense>
                   ) : isForumChannel ? (
-                    <ForumChannel
-                      key={`channel-${channelId}`}
-                      channelId={channelId}
-                      serverId={serverId}
-                      channel={currentChannel}
-                    />
+                    <Suspense fallback={<PaneSuspenseFallback className="chat-area" />}>
+                      <ForumChannel
+                        key={`channel-${channelId}`}
+                        channelId={channelId}
+                        serverId={serverId}
+                        channel={currentChannel}
+                      />
+                    </Suspense>
                   ) : isMediaChannel ? (
-                    <MediaChannel
-                      key={`channel-${channelId}`}
-                      channelId={channelId}
-                      serverId={serverId}
-                      channel={currentChannel}
-                    />
+                    <Suspense fallback={<PaneSuspenseFallback className="chat-area" />}>
+                      <MediaChannel
+                        key={`channel-${channelId}`}
+                        channelId={channelId}
+                        serverId={serverId}
+                        channel={currentChannel}
+                      />
+                    </Suspense>
                   ) : (
-                  <ChatArea
-                    key={`channel-${channelId}`}
-                    channelId={channelId}
-                    serverId={serverId}
-                    channels={channels}
-                    messages={messages}
-                    channelDiagnostic={activeChannelDiagnostic}
-                    initialMembers={members}
-                    initialServer={currentServer}
-                    isAdmin={isAdmin}
-                    isLoading={channelLoading}
-                    onMessageSent={handleOptimisticChannelMessage}
-                    onMessageFailed={handleChannelSendFailed}
-                    onMessageAck={handleChannelMessageAck}
-                    onLoadMoreMessages={async (beforeTimestamp) => {
+                    <Suspense fallback={<PaneSuspenseFallback className="chat-area" />}>
+                      <ChatArea
+                        key={`channel-${channelId}`}
+                        channelId={channelId}
+                        serverId={serverId}
+                        channels={channels}
+                        messages={messages}
+                        channelDiagnostic={activeChannelDiagnostic}
+                        initialMembers={members}
+                        initialServer={currentServer}
+                        isAdmin={isAdmin}
+                        isLoading={channelLoading}
+                        onMessageSent={handleOptimisticChannelMessage}
+                        onMessageFailed={handleChannelSendFailed}
+                        onMessageAck={handleChannelMessageAck}
+                        onLoadMoreMessages={async (beforeTimestamp) => {
                       if (!beforeTimestamp) {
                         // Initial load - call loadMessages directly
                         await loadMessages(channelId)
@@ -2901,7 +3503,7 @@ const ChatPage = () => {
                     }}
                     onSaveScrollPosition={saveCurrentChannelState}
                     scrollPosition={currentScrollPosition}
-                    onShowProfile={(userId) => setShowUserProfile(userId)}
+                    onShowProfile={openUserProfile}
                     onAgeGateTriggered={() => {
                       const target = channels.find(c => c.id === channelId)
                       if (target?.nsfw && !ageVerified) {
@@ -2913,8 +3515,9 @@ const ChatPage = () => {
                         setPendingAgeChannel(target)
                       }
                     }}
-                    onToggleMembers={() => setShowMembers(prev => !prev)}
-                  />
+                        onToggleMembers={() => setShowMembers(prev => !prev)}
+                      />
+                    </Suspense>
                     ))}
                     {encryptionError && (
                     <EncryptionFallback
@@ -2935,32 +3538,36 @@ const ChatPage = () => {
                     />
                   )}
                   {!contentCollapsed && !isMobile && (
-                    <MemberSidebar 
-                      members={members} 
-                      server={currentServer}
-                      visible={showMembers}
-                      onMemberClick={(userId) => setShowUserProfile(userId)}
-                      onStartDM={handleStartDM}
-                      onKick={handleMemberKick}
-                      onBan={handleMemberBan}
-                      onAddFriend={handleAddFriend}
-                    />
-                  )}
-                  {isMobile && showMembers && (
-                    <>
-                      <div className="member-sidebar-overlay" onClick={() => setShowMembers(false)} />
+                    <Suspense fallback={<PaneSuspenseFallback className="member-sidebar" />}>
                       <MemberSidebar 
                         members={members} 
                         server={currentServer}
                         visible={showMembers}
-                        isMobile
-                        onClose={() => setShowMembers(false)}
-                        onMemberClick={(userId) => setShowUserProfile(userId)}
+                        onMemberClick={openUserProfile}
                         onStartDM={handleStartDM}
                         onKick={handleMemberKick}
                         onBan={handleMemberBan}
                         onAddFriend={handleAddFriend}
                       />
+                    </Suspense>
+                  )}
+                  {isMobile && showMembers && (
+                    <>
+                      <div className="member-sidebar-overlay" onClick={() => setShowMembers(false)} />
+                      <Suspense fallback={<PaneSuspenseFallback className="member-sidebar mobile" />}>
+                        <MemberSidebar 
+                          members={members} 
+                          server={currentServer}
+                          visible={showMembers}
+                          isMobile
+                          onClose={() => setShowMembers(false)}
+                          onMemberClick={openUserProfile}
+                          onStartDM={handleStartDM}
+                          onKick={handleMemberKick}
+                          onBan={handleMemberBan}
+                          onAddFriend={handleAddFriend}
+                        />
+                      </Suspense>
                     </>
                   )}
                 </>
@@ -2973,11 +3580,13 @@ const ChatPage = () => {
           )}
           {voicePreviewChannel && !activeVoiceChannel && (
             <div className="voice-preview-overlay" onClick={() => setVoicePreviewChannel(null)}>
-              <VoiceChannelPreview
-                channel={voicePreviewChannel}
-                onJoin={handleJoinFromPreview}
-                onClose={() => setVoicePreviewChannel(null)}
-              />
+              <Suspense fallback={<PaneSuspenseFallback className="voice-preview-overlay" />}>
+                <VoiceChannelPreview
+                  channel={voicePreviewChannel}
+                  onJoin={handleJoinFromPreview}
+                  onClose={() => setVoicePreviewChannel(null)}
+                />
+              </Suspense>
             </div>
           )}
         </>
@@ -2987,14 +3596,24 @@ const ChatPage = () => {
             <h2>{t('app.welcome')}</h2>
             <p>{t('app.createOrJoin')}</p>
             <div className="simple-actions">
-              <button className="btn btn-primary btn-lg" onClick={() => setShowCreateServer(true)}>
+              <button
+                className="btn btn-primary btn-lg"
+                {...withIntentPreload(openCreateServerModal)}
+                onClick={openCreateServerModal}
+              >
                 {t('app.createServer', 'Create Server')}
               </button>
-              <button className="btn btn-secondary btn-lg" onClick={() => setShowJoinServer(true)}>
+              <button
+                className="btn btn-secondary btn-lg"
+                {...withIntentPreload(openJoinServerModal)}
+                onClick={openJoinServerModal}
+              >
                 {t('app.joinServer', 'Join Server')}
               </button>
             </div>
-            <HomeEventsHub events={upcomingEvents} onOpenServer={handleServerChange} />
+            <Suspense fallback={<PaneSuspenseFallback className="simple-welcome" />}>
+              <HomeEventsHub events={upcomingEvents} onOpenServer={handleServerChange} />
+            </Suspense>
           </div>
         </div>
       )}
@@ -3012,103 +3631,123 @@ const ChatPage = () => {
               </button>
             </div>
           </div>
-          <VoiceChannel
-            key={activeVoiceChannel.id}
-            channel={activeVoiceChannel}
-            joinKey={voiceJoinKey}
-            onLeave={() => {
-              handleLeaveVoice()
-              setVoiceExpanded(false)
-            }}
-            viewMode={selectedVoiceChannelId ? 'full' : (voiceFloating ? 'mini' : (viewMode === 'server' ? 'mini' : voiceViewMode))}
-            isMuted={isMuted}
-            isDeafened={isDeafened}
-            onMuteChange={setIsMuted}
-            onDeafenChange={setIsDeafened}
-            onOpenSettings={() => { setSettingsInitialTab('voice'); setShowSettings(true) }}
-            onParticipantsChange={handleVoiceParticipantsChange}
-            onShowConnectionInfo={() => setShowVoiceInfo(true)}
-          />
+          <Suspense fallback={<PaneSuspenseFallback className="voice-container" />}>
+            <VoiceChannel
+              key={activeVoiceChannel.id}
+              channel={activeVoiceChannel}
+              joinKey={voiceJoinKey}
+              onLeave={() => {
+                handleLeaveVoice()
+                setVoiceExpanded(false)
+              }}
+              viewMode={selectedVoiceChannelId ? 'full' : (voiceFloating ? 'mini' : (viewMode === 'server' ? 'mini' : voiceViewMode))}
+              isMuted={isMuted}
+              isDeafened={isDeafened}
+              onMuteChange={setIsMuted}
+              onDeafenChange={setIsDeafened}
+              onOpenSettings={() => openSettingsModal('voice')}
+              onParticipantsChange={handleVoiceParticipantsChange}
+              onShowConnectionInfo={openVoiceInfoModal}
+            />
+          </Suspense>
         </div>
       )}
 
       {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} initialTab={settingsInitialTab} />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <SettingsModal onClose={() => setShowSettings(false)} initialTab={settingsInitialTab} />
+        </Suspense>
       )}
 
       {showServerSettings && currentServer && (
-        <ServerSettingsModal 
-          server={currentServer}
-          initialTab={serverSettingsTab}
-          onClose={() => { setShowServerSettings(false); setServerSettingsTab('overview') }}
-          onUpdate={(updated) => {
-            setCurrentServer(updated)
-            setMembers(updated.members || [])
-          }}
-          onDelete={() => {
-            setCurrentServer(null)
-            loadServers()
-            navigate('/chat')
-          }}
-        />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <ServerSettingsModal 
+            server={currentServer}
+            initialTab={serverSettingsTab}
+            onClose={() => { setShowServerSettings(false); setServerSettingsTab('overview') }}
+            onUpdate={(updated) => {
+              setCurrentServer(updated)
+              setMembers(updated.members || [])
+            }}
+            onDelete={() => {
+              setCurrentServer(null)
+              loadServers()
+              navigate('/chat')
+            }}
+          />
+        </Suspense>
       )}
 
       {showUserProfile && (
-        <ProfileModal 
-          userId={showUserProfile}
-          server={currentServer}
-          members={members}
-          onClose={() => setShowUserProfile(null)}
-          onStartDM={(conv) => {
-            setSelectedDM(conv)
-            setViewMode('dms')
-            navigate('/chat/dms')
-            setShowUserProfile(null)
-          }}
-        />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <ProfileModal 
+            userId={showUserProfile}
+            server={currentServer}
+            members={members}
+            onClose={() => setShowUserProfile(null)}
+            onStartDM={(conv) => {
+              setSelectedDM(conv)
+              setViewMode('dms')
+              navigate('/chat/dms')
+              setShowUserProfile(null)
+            }}
+          />
+        </Suspense>
       )}
 
       {showCreateServer && (
-        <CreateServerModal
-          onClose={() => setShowCreateServer(false)}
-          onSuccess={() => {
-            setShowCreateServer(false)
-            loadServers()
-          }}
-        />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <CreateServerModal
+            onClose={() => setShowCreateServer(false)}
+            onSuccess={() => {
+              setShowCreateServer(false)
+              loadServers()
+            }}
+          />
+        </Suspense>
       )}
 
       {showJoinServer && (
-        <JoinServerModal
-          onClose={() => setShowJoinServer(false)}
-          onSuccess={() => {
-            setShowJoinServer(false)
-            loadServers()
-          }}
-        />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <JoinServerModal
+            onClose={() => setShowJoinServer(false)}
+            onSuccess={() => {
+              setShowJoinServer(false)
+              loadServers()
+            }}
+          />
+        </Suspense>
       )}
 
       {pendingAgeChannel && (
-        <AgeVerificationModal
-          channelName={pendingAgeChannel.name}
-          onClose={() => setPendingAgeChannel(null)}
-          onVerified={handleAgeVerificationSuccess}
-        />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <AgeVerificationModal
+            channelName={pendingAgeChannel.name}
+            onClose={() => setPendingAgeChannel(null)}
+            onVerified={handleAgeVerificationSuccess}
+          />
+        </Suspense>
       )}
 
       {showAdminPanel && (
-        <AdminPanel onClose={() => setShowAdminPanel(false)} onServersChanged={loadServers} />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <AdminPanel onClose={() => setShowAdminPanel(false)} onServersChanged={loadServers} />
+        </Suspense>
       )}
 
       {/* Notification Toast Container */}
-      <NotificationToast />
+      <Suspense fallback={null}>
+        <NotificationToast />
+      </Suspense>
 
       {/* Voice connection info modal */}
       {showVoiceInfo && activeVoiceChannel && (
-        <VoiceInfoModal
-          channel={activeVoiceChannel}
-          onClose={() => setShowVoiceInfo(false)}
-        />
+        <Suspense fallback={<ModalSuspenseFallback />}>
+          <VoiceInfoModal
+            channel={activeVoiceChannel}
+            onClose={() => setShowVoiceInfo(false)}
+          />
+        </Suspense>
       )}
     </div>
   )

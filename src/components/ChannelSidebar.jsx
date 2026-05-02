@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { ChevronDown, ChevronRight, Settings2, Plus, Pencil, Trash, Cog, Folder, UserPlus, Lock, Mic, Volume2, Hash, Megaphone, MessageSquare, Image, Video } from 'lucide-react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { ChevronDown, Plus, Pencil, Trash, Cog, Folder, UserPlus, Lock, Mic, Volume2, Hash, Megaphone, MessageSquare, Image, Video } from 'lucide-react'
 import { ClipboardDocumentIcon, LockClosedIcon, MicrophoneIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../contexts/SocketContext'
@@ -15,6 +15,8 @@ import CategorySettingsModal from './modals/CategorySettingsModal'
 import ContextMenu from './ContextMenu'
 import StatusSelector from './StatusSelector'
 import Avatar from './Avatar'
+import lazyLoadingService from '../services/lazyLoadingService'
+import { useResetScrollOnChange } from '../hooks/useResetScrollOnChange'
 import '../assets/styles/ChannelSidebar.css'
 
 const ChannelSidebar = ({ 
@@ -55,7 +57,6 @@ const ChannelSidebar = ({
   // Check encryption status when server changes
   useEffect(() => {
     if (server?.id) {
-      console.log('[ChannelSidebar] Checking encryption status for server:', server.id)
       getServerEncryptionStatus(server.id)
     }
   }, [server?.id, getServerEncryptionStatus])
@@ -69,6 +70,7 @@ const ChannelSidebar = ({
     }
     return baseCategories
   }, [categoriesProp, serverUpdates, server?.id])
+  const normalizedChannels = React.useMemo(() => (Array.isArray(channels) ? channels : []), [channels])
   
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false)
@@ -80,6 +82,9 @@ const ChannelSidebar = ({
   const [sidebarParticipants, setSidebarParticipants] = useState({})
   const [draggedChannel, setDraggedChannel] = useState(null)
   const [dragOverCategory, setDragOverCategory] = useState(null)
+  const serverMenuRef = useRef(null)
+  const serverDropdownRef = useRef(null)
+  const channelListRef = useResetScrollOnChange([server?.id, currentChannelId, selectedVoiceChannelId])
 
   // Fetch categories when server changes (only if not provided via props)
   useEffect(() => {
@@ -115,13 +120,13 @@ const ChannelSidebar = ({
     }
     
     fetchCategories()
-  }, [server?.id, categoriesProp])
+  }, [server?.id, categoriesProp, setStoreCategories])
 
   // Voice channel participants handling
   useEffect(() => {
     if (!socket || !connected) return
 
-    const voiceChannels = channels.filter(c => c.type === 'voice')
+    const voiceChannels = normalizedChannels.filter(c => c.type === 'voice')
     voiceChannels.forEach(ch => {
       socket.emit('voice:get-participants', { channelId: ch.id })
     })
@@ -187,7 +192,7 @@ const ChannelSidebar = ({
       socket.off('voice:user-left', handleUserLeft)
       socket.off('voice:user-updated', handleUserUpdated)
     }
-  }, [socket, connected, channels])
+  }, [socket, connected, normalizedChannels])
 
   useEffect(() => {
     if (!leavingVoiceChannelId || !socket || !connected) return
@@ -206,6 +211,86 @@ const ChannelSidebar = ({
       customStatus: user.customStatus || ''
     })
   }, [setSelfPresence, user])
+
+  useEffect(() => {
+    setShowServerMenu(false)
+    setContextMenu(null)
+  }, [server?.id])
+
+  useEffect(() => {
+    if (!showServerMenu) return
+
+    const handlePointerDown = (event) => {
+      if (!serverMenuRef.current?.contains(event.target)) {
+        setShowServerMenu(false)
+      }
+    }
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setShowServerMenu(false)
+        serverMenuRef.current?.querySelector('.server-header')?.focus()
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown, true)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown, true)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [showServerMenu])
+
+  // Focus first menu item when server dropdown opens
+  useEffect(() => {
+    if (!showServerMenu) return
+    requestAnimationFrame(() => {
+      const firstItem = serverDropdownRef.current?.querySelector('button:not([disabled])')
+      firstItem?.focus()
+    })
+  }, [showServerMenu])
+
+  const openContextMenu = useCallback((x, y, items) => {
+    setShowServerMenu(false)
+    setContextMenu(null)
+    requestAnimationFrame(() => {
+      setContextMenu({ x, y, items })
+    })
+  }, [])
+
+  const openContextMenuForElement = useCallback((target, items) => {
+    const rect = target?.getBoundingClientRect?.()
+    if (!rect) return
+    openContextMenu(rect.left + rect.width / 2, rect.top + Math.min(rect.height - 6, 28), items)
+  }, [openContextMenu])
+
+  const toggleServerMenu = useCallback((event) => {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+    setContextMenu(null)
+    setShowServerMenu((prev) => !prev)
+  }, [])
+
+  const handleServerHeaderKeyDown = useCallback((event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      toggleServerMenu(event)
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setContextMenu(null)
+      setShowServerMenu(true)
+    }
+  }, [toggleServerMenu])
+
+  const handleMenuHotkey = useCallback((event, openMenu) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault()
+      openMenu()
+    }
+  }, [])
 
   const getMergedParticipants = (channelId) => {
     if (activeVoiceChannel?.id === channelId && voiceParticipantsByChannel[channelId]) {
@@ -262,7 +347,26 @@ const ChannelSidebar = ({
     setExpandedCategories(prev => ({ ...prev, [categoryId]: !prev[categoryId] }))
   }
 
+  const prefetchChannelTarget = useCallback((targetType) => {
+    lazyLoadingService.preloadRouteChunks(['route:chat'], { idle: true })
+    if (targetType === 'voice') {
+      lazyLoadingService.preloadComponents(['VoiceChannel', 'VoiceChannelPreview'], { idle: true })
+      return
+    }
+    if (targetType === 'settings') {
+      lazyLoadingService.preloadRouteChunks(['route:settings-modal'], { idle: true })
+      lazyLoadingService.preloadComponents(['SettingsModal'], { idle: true })
+      return
+    }
+    if (targetType === 'invite') {
+      lazyLoadingService.preloadRouteChunks(['route:invite'], { idle: true })
+      return
+    }
+    lazyLoadingService.preloadComponents(['ChatArea', 'MessageList', 'MemberSidebar'], { idle: true })
+  }, [])
+
   const handleChannelClick = (channel, isVoice) => {
+    prefetchChannelTarget(isVoice ? 'voice' : 'text')
     if (isVoice) {
       onVoicePreview?.(channel)
       onChannelChange(channel.id, true)
@@ -280,17 +384,15 @@ const ChannelSidebar = ({
   }
 
   const handleJoinVoice = (channel, e) => {
+    e?.preventDefault?.()
     e?.stopPropagation()
+    prefetchChannelTarget('voice')
     soundService.prime()
     onChannelChange(channel.id, true)
     onVoicePreview?.(channel, true)
   }
 
-  const handleChannelContextMenu = (e, channel) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
-    const items = [
+  const buildChannelContextMenuItems = (channel) => [
       {
         icon: <Pencil size={16} />,
         label: 'Edit Channel',
@@ -303,9 +405,7 @@ const ChannelSidebar = ({
         onClick: async () => {
           try {
             await navigator.clipboard.writeText(channel.id)
-            console.log('[ChannelSidebar] Copied channel ID:', channel.id)
           } catch (err) {
-            console.error('[ChannelSidebar] Failed to copy channel ID:', err)
             const textArea = document.createElement('textarea')
             textArea.value = channel.id
             document.body.appendChild(textArea)
@@ -332,21 +432,22 @@ const ChannelSidebar = ({
         onClick: () => onRefreshChannels?.()
       }
     ]
-    
-    // Force close any existing menu first, then open new one
-    setContextMenu(null)
-    requestAnimationFrame(() => {
-      setContextMenu({ x: e.clientX, y: e.clientY, items })
+
+  const handleChannelContextMenu = (e, channel) => {
+    e.preventDefault()
+    e.stopPropagation()
+    openContextMenu(e.clientX, e.clientY, buildChannelContextMenuItems(channel))
+  }
+
+  const handleChannelContextMenuHotkey = (event, channel) => {
+    handleMenuHotkey(event, () => {
+      openContextMenuForElement(event.currentTarget, buildChannelContextMenuItems(channel))
     })
   }
 
-  const handleCategoryContextMenu = (e, category) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
+  const buildCategoryContextMenuItems = (category) => {
     const isUncategorized = category.id === 'uncategorized'
-    
-    const items = [
+    return [
       {
         icon: <Pencil size={16} />,
         label: 'Edit Category',
@@ -372,21 +473,46 @@ const ChannelSidebar = ({
         disabled: !isAdmin || isUncategorized
       }
     ]
-    
-    // Force close any existing menu first, then open new one
-    setContextMenu(null)
-    requestAnimationFrame(() => {
-      setContextMenu({ x: e.clientX, y: e.clientY, items })
-    })
+  }
+
+  const handleCategoryContextMenu = (e, category) => {
+    e.preventDefault()
+    e.stopPropagation()
+    openContextMenu(e.clientX, e.clientY, buildCategoryContextMenuItems(category))
   }
 
   const handleDeleteCategory = async (categoryId) => {
     try {
       await apiService.deleteCategory(categoryId)
-      setCategories(categories.filter(c => c.id !== categoryId))
+      setStoreCategories(categories.filter((category) => category.id !== categoryId))
+      onRefreshChannels?.()
     } catch (err) {
       console.error('Failed to delete category:', err)
     }
+  }
+
+  const handleCategoryHeaderKeyDown = (event, categoryId, category, isExpanded) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      toggleCategory(categoryId)
+      return
+    }
+
+    if (event.key === 'ArrowRight' && !isExpanded) {
+      event.preventDefault()
+      setExpandedCategories((prev) => ({ ...prev, [categoryId]: true }))
+      return
+    }
+
+    if (event.key === 'ArrowLeft' && isExpanded) {
+      event.preventDefault()
+      setExpandedCategories((prev) => ({ ...prev, [categoryId]: false }))
+      return
+    }
+
+    handleMenuHotkey(event, () => {
+      openContextMenuForElement(event.currentTarget, buildCategoryContextMenuItems(category))
+    })
   }
 
   // Group channels by category
@@ -403,7 +529,7 @@ const ChannelSidebar = ({
 
     // Deduplicate channels by id before grouping to prevent React duplicate key warnings
     const seenChannelIds = new Set()
-    const uniqueChannels = channels.filter(ch => {
+    const uniqueChannels = normalizedChannels.filter(ch => {
       if (seenChannelIds.has(ch.id)) return false
       seenChannelIds.add(ch.id)
       return true
@@ -436,6 +562,8 @@ const ChannelSidebar = ({
   }
 
   const { grouped: groupedChannels, order: categoryOrder } = channelsByCategory()
+  const isChannelListLoading = Boolean(server?.id) && !Array.isArray(channels)
+  const showChannelListEmptyState = !isChannelListLoading && categoryOrder.length === 0
 
   const getChannelIcon = (channel) => {
     const type = channel.type
@@ -465,29 +593,55 @@ const ChannelSidebar = ({
       const participants = getMergedParticipants(channel.id)
       const isConnected = activeVoiceChannel?.id === channel.id
       const isSelected = selectedVoiceChannelId === channel.id
+      const participantCount = participants.length
       
       return (
         <div key={channel.id} className="voice-channel-group">
           <button
+            type="button"
             className={`channel-item voice ${isConnected ? 'connected' : ''} ${isSelected ? 'selected' : ''} ${hasUnread ? 'unread' : ''}`}
             onClick={() => handleChannelClick(channel, true)}
             onDoubleClick={() => handleChannelDoubleClick(channel, true)}
             onContextMenu={(e) => handleChannelContextMenu(e, channel)}
+            onKeyDown={(event) => handleChannelContextMenuHotkey(event, channel)}
             draggable={isAdmin}
             onDragStart={() => setDraggedChannel(channel)}
             onDragEnd={() => {
               setDraggedChannel(null)
               setDragOverCategory(null)
             }}
+            title={channel.name}
+            aria-label={`${channel.name}${participantCount > 0 ? ` (${participantCount} connected)` : ''}${hasUnread ? ' (unread)' : ''}`}
+            aria-current={isSelected ? 'page' : undefined}
           >
             {getChannelIcon(channel)}
+            {hasUnread && <span className="channel-unread-indicator" aria-hidden="true" />}
             <span className="channel-name">{channel.name}</span>
             {encryptionEnabled && <LockClosedIcon size={12} className="channel-e2ee-lock" title={t('serverSettings.encryptionEnabled', 'Encrypted')} />}
             {isConnected && (
               <span className="voice-connected-badge" title={t('chat.voiceConnected', 'Voice Connected')}>{t('chat.connected', 'Connected')}</span>
             )}
-            {!isConnected && participants.length > 0 && (
-              <span className="voice-count-badge">{participants.length}</span>
+            {!isConnected && participantCount > 0 && (
+              <span className="voice-count-badge" title={t('chat.connected', 'Connected')}>{participantCount}</span>
+            )}
+            {!isConnected && (
+              <span
+                className="voice-quick-join-btn"
+                role="button"
+                tabIndex={0}
+                onClick={(e) => handleJoinVoice(channel, e)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleJoinVoice(channel, e)
+                  }
+                }}
+                title={t('misc.joinVoice', 'Join voice')}
+              >
+                <Mic size={12} />
+                <span>{t('common.join', 'Join')}</span>
+              </span>
             )}
             {isAdmin && (
               <span 
@@ -495,8 +649,17 @@ const ChannelSidebar = ({
                 role="button"
                 tabIndex={0}
                 onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setShowChannelSettings(channel)
+                  }
+                }}
+                title={t('common.settings', 'Settings')}
+                aria-label={`${t('common.settings', 'Settings')} ${channel.name}`}
               >
-<Cog size={14} />
+                <Cog size={14} />
               </span>
             )}
           </button>
@@ -526,18 +689,24 @@ const ChannelSidebar = ({
     
     return (
       <button
+        type="button"
         key={channel.id}
         className={`channel-item ${currentChannelId === channel.id ? 'active' : ''} ${hasUnread ? 'unread' : ''}`}
         onClick={() => handleChannelClick(channel, false)}
         onContextMenu={(e) => handleChannelContextMenu(e, channel)}
+        onKeyDown={(event) => handleChannelContextMenuHotkey(event, channel)}
         draggable={isAdmin}
         onDragStart={() => setDraggedChannel(channel)}
         onDragEnd={() => {
           setDraggedChannel(null)
           setDragOverCategory(null)
         }}
+        title={channel.name}
+        aria-label={`${channel.name}${channel.private ? ' (private)' : ''}${hasUnread ? ' (unread)' : ''}`}
+        aria-current={currentChannelId === channel.id ? 'page' : undefined}
       >
         {getChannelIcon(channel)}
+        {hasUnread && <span className="channel-unread-indicator" aria-hidden="true" />}
         <span className="channel-name">{channel.name}</span>
         {channel.private && <LockClosedIcon size={14} className="channel-lock" />}
         {encryptionEnabled && <LockClosedIcon size={12} className="channel-e2ee-lock" title={t('serverSettings.encryptionEnabled', 'Encrypted')} />}
@@ -547,6 +716,15 @@ const ChannelSidebar = ({
             role="button"
             tabIndex={0}
             onClick={(e) => { e.stopPropagation(); setShowChannelSettings(channel) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                e.stopPropagation()
+                setShowChannelSettings(channel)
+              }
+            }}
+            title={t('common.settings', 'Settings')}
+            aria-label={`${t('common.settings', 'Settings')} ${channel.name}`}
           >
             <Cog size={14} />
           </span>
@@ -575,47 +753,146 @@ const ChannelSidebar = ({
         onRefreshChannels?.()
       } catch (err) {
         console.error('Failed to move channel:', err)
+      } finally {
+        setDraggedChannel(null)
       }
+      return
     }
+    setDraggedChannel(null)
   }
+
+  const renderLoadingState = () => (
+    <div className="channel-list-state loading" role="status" aria-live="polite" aria-label={t('chat.loadingChannels', 'Loading channels')}>
+      <p className="channel-list-state-title">{t('chat.loadingChannels', 'Loading channels')}</p>
+      <div className="channel-list-skeleton" aria-hidden="true">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={`channel-skeleton-${index}`} className={`channel-skeleton-row${index % 3 === 0 ? ' short' : ''}`}>
+            <span className="channel-skeleton-icon" />
+            <span className="channel-skeleton-line" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  const renderEmptyState = () => (
+    <div className="channel-list-state empty" role="status" aria-live="polite">
+      <p className="channel-list-state-title">{t('chat.noChannels', 'No channels')}</p>
+      <p className="channel-list-state-copy">
+        {isAdmin
+          ? t('channel.noChannelsHint', 'Create your first channel from the server menu or the button below.')
+          : t('channel.noChannelsAvailable', 'No channels are available yet.')}
+      </p>
+      {isAdmin && (
+        <button
+          type="button"
+          className="channel-empty-action"
+          onClick={() => setShowCreateModal(true)}
+        >
+          <Plus size={14} />
+          <span>{t('channel.createChannel', 'Create Channel')}</span>
+        </button>
+      )}
+    </div>
+  )
 
   return (
     <>
       <div className={`channel-sidebar ${className}`.trim()} style={backgroundUrl ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}>
-        <div 
-          className="server-header" 
-          style={{ 
-            background: banner 
-              ? `linear-gradient(120deg, ${accent}44, ${accent}22), url(${banner}) center/${bannerPosition}`
-              : `linear-gradient(120deg, ${accent}22, transparent)`
-          }} 
-          onClick={() => setShowServerMenu(!showServerMenu)}
-        >
-          <h2 className="server-name">{server?.name || t('servers.title', 'Server')}</h2>
-          <button className="server-menu-btn" title={t('serverSettings.serverSettings', 'Server Settings')}>
-            <ChevronDown size={20} style={{ transform: showServerMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-          </button>
-        </div>
-        
-        {showServerMenu && (
-          <div className="server-dropdown" onClick={e => e.stopPropagation()}>
-            <button onClick={() => { onOpenServerSettings?.(); setShowServerMenu(false) }}>
-              <Cog size={16} /> {t('serverSettings.serverSettings', 'Server Settings')}
-            </button>
-            <button onClick={() => { setShowCreateModal(true); setShowServerMenu(false) }}>
-              <Plus size={16} /> {t('channel.createChannel', 'Create Channel')}
-            </button>
-            <button onClick={() => { setShowCreateCategoryModal(true); setShowServerMenu(false) }}>
-              <Folder size={16} /> {t('channel.createCategory', 'Create Category')}
-            </button>
-            <button onClick={() => { onInvite?.(); setShowServerMenu(false) }}>
-              <UserPlus size={16} /> {t('serverSettings.invitePeople', 'Invite People')}
-            </button>
+      <div ref={serverMenuRef} className="server-menu-wrapper">
+          <div
+            className="server-header"
+            style={{
+              background: banner
+                ? `linear-gradient(120deg, ${accent}44, ${accent}22), url(${banner}) center/${bannerPosition}`
+                : `linear-gradient(120deg, ${accent}22, transparent)`
+            }}
+            role="button"
+            tabIndex={0}
+            onClick={toggleServerMenu}
+            onMouseEnter={() => prefetchChannelTarget('settings')}
+            onFocus={() => prefetchChannelTarget('settings')}
+            onKeyDown={handleServerHeaderKeyDown}
+            aria-haspopup="true"
+            aria-expanded={showServerMenu}
+            aria-controls="channel-sidebar-server-menu"
+            aria-label={t('serverSettings.serverSettings', 'Server Settings')}
+          >
+            <div className="server-name-wrap">
+              <h2 className="server-name">{server?.name || t('servers.title', 'Server')}</h2>
+              {encryptionEnabled && <Lock size={13} className="server-encrypted-lock" title={t('serverSettings.encryptionEnabled', 'Encrypted')} />}
+            </div>
+            <span className="server-menu-btn" aria-hidden="true">
+              <ChevronDown size={20} style={{ transform: showServerMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+            </span>
           </div>
-        )}
 
-        <div className="channel-list">
-          {categoryOrder.map(categoryId => {
+          {showServerMenu && (
+            <div
+              id="channel-sidebar-server-menu"
+              className="server-dropdown"
+              role="menu"
+              ref={serverDropdownRef}
+              tabIndex={-1}
+              aria-label={t('serverSettings.serverMenu', 'Server menu')}
+              onClick={e => e.stopPropagation()}
+              onKeyDown={(e) => {
+                const menu = serverDropdownRef.current
+                if (!menu) return
+                const items = Array.from(menu.querySelectorAll('button:not([disabled])'))
+                const idx = items.indexOf(document.activeElement)
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  const next = idx < items.length - 1 ? idx + 1 : 0
+                  items[next]?.focus()
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  const prev = idx > 0 ? idx - 1 : items.length - 1
+                  items[prev]?.focus()
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setShowServerMenu(false)
+                  serverMenuRef.current?.querySelector('.server-header')?.focus()
+                } else if (e.key === 'Tab') {
+                  if (idx === items.length - 1 && !e.shiftKey) {
+                    e.preventDefault()
+                    items[0]?.focus()
+                  } else if (idx === 0 && e.shiftKey) {
+                    e.preventDefault()
+                    items[items.length - 1]?.focus()
+                  }
+                }
+              }}
+            >
+              <button type="button" role="menuitem" tabIndex={0} onClick={() => { onOpenServerSettings?.(); setShowServerMenu(false) }}>
+                <Cog size={16} /> {t('serverSettings.serverSettings', 'Server Settings')}
+              </button>
+              <button type="button" role="menuitem" tabIndex={0} onClick={() => { setShowCreateModal(true); setShowServerMenu(false) }}>
+                <Plus size={16} /> {t('channel.createChannel', 'Create Channel')}
+              </button>
+              <button type="button" role="menuitem" tabIndex={0} onClick={() => { setShowCreateCategoryModal(true); setShowServerMenu(false) }}>
+                <Folder size={16} /> {t('channel.createCategory', 'Create Category')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={0}
+                onMouseEnter={() => prefetchChannelTarget('invite')}
+                onFocus={() => prefetchChannelTarget('invite')}
+                onClick={() => { onInvite?.(); setShowServerMenu(false) }}
+              >
+                <UserPlus size={16} /> {t('serverSettings.invitePeople', 'Invite People')}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div ref={channelListRef} className={`channel-list${isChannelListLoading ? ' is-loading' : ''}`}>
+          {isChannelListLoading
+            ? renderLoadingState()
+            : showChannelListEmptyState
+              ? renderEmptyState()
+              : categoryOrder.map(categoryId => {
             const group = groupedChannels[categoryId]
             if (!group) return null
             
@@ -635,24 +912,31 @@ const ChannelSidebar = ({
                   <div 
                     className="category-header"
                     onClick={() => toggleCategory(categoryId)}
+                    onKeyDown={(event) => handleCategoryHeaderKeyDown(event, categoryId, category, isExpanded)}
                     role="button"
                     tabIndex={0}
+                    aria-expanded={isExpanded}
+                    aria-label={`${category.name} (${catChannels.length})`}
+                    title={category.name}
                   >
-<ChevronDown
+                    <ChevronDown
                       size={12} 
                       style={{ transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}
                     />
-                    <span>{category.name.toUpperCase()}</span>
+                    <span className="category-title">{category.name.toUpperCase()}</span>
+                    <span className="category-count">{catChannels.length}</span>
                     {isAdmin && (
                       <button 
+                        type="button"
                         className="category-add-btn"
                         onClick={(e) => {
                           e.stopPropagation()
                           setShowCreateModal(true)
                         }}
                         title={t('channel.createChannel', 'Create Channel')}
+                        aria-label={`${t('channel.createChannel', 'Create Channel')} ${category.name}`}
                       >
-<Plus size={16} />
+                        <Plus size={16} />
                       </button>
                     )}
                   </div>
@@ -660,7 +944,7 @@ const ChannelSidebar = ({
               )
             }
             
-            return (
+                return (
               <div 
                 key={categoryId} 
                 className={`channel-category ${isDragOver ? 'drag-over' : ''}`}
@@ -671,22 +955,29 @@ const ChannelSidebar = ({
                 <div 
                   className="category-header"
                   onClick={() => toggleCategory(categoryId)}
+                  onKeyDown={(event) => handleCategoryHeaderKeyDown(event, categoryId, category, isExpanded)}
                   role="button"
                   tabIndex={0}
+                  aria-expanded={isExpanded}
+                  aria-label={`${category.name} (${catChannels.length})`}
+                  title={category.name}
                 >
                   <ChevronDown 
                     size={12} 
                     style={{ transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}
                   />
-                  <span>{category.name.toUpperCase()}</span>
+                  <span className="category-title">{category.name.toUpperCase()}</span>
+                  <span className="category-count">{catChannels.length}</span>
                   {isAdmin && (
                     <button 
+                      type="button"
                       className="category-add-btn"
                       onClick={(e) => {
                         e.stopPropagation()
                         setShowCreateModal(true)
                       }}
                       title={t('channel.createChannel', 'Create Channel')}
+                      aria-label={`${t('channel.createChannel', 'Create Channel')} ${category.name}`}
                     >
                       <Plus size={16} />
                     </button>
@@ -703,8 +994,8 @@ const ChannelSidebar = ({
                   </div>
                 )}
               </div>
-            )
-          })}
+                )
+              })}
         </div>
 
         {/* Voice Channel Panel */}
@@ -721,6 +1012,7 @@ const ChannelSidebar = ({
               </div>
               <div className="voice-panel-actions">
                 <button 
+                  type="button"
                   className="voice-panel-btn return"
                   onClick={() => onReturnToVoice?.()}
                   title={t('misc.returnToVoice', 'Return to voice')}
@@ -728,6 +1020,7 @@ const ChannelSidebar = ({
                   {t('common.return', 'Return')}
                 </button>
                 <button 
+                  type="button"
                   className="voice-panel-btn leave"
                   onClick={() => onLeaveVoice?.()}
                   title={t('misc.leaveVoice', 'Leave voice')}
@@ -771,20 +1064,33 @@ const ChannelSidebar = ({
           </div>
           <div className="user-controls">
             <button
+              type="button"
               className={`control-btn ${isMuted ? 'active-danger' : ''}`}
+              onMouseEnter={() => prefetchChannelTarget('voice')}
+              onFocus={() => prefetchChannelTarget('voice')}
               title={isMuted ? t('chat.unmute', 'Unmute') : t('chat.mute', 'Mute')}
               onClick={handleToggleMute}
             >
               {isMuted ? <MicrophoneIcon size={16} /> : <MicrophoneIcon size={16} />}
             </button>
             <button
+              type="button"
               className={`control-btn ${isDeafened ? 'active-danger' : ''}`}
+              onMouseEnter={() => prefetchChannelTarget('voice')}
+              onFocus={() => prefetchChannelTarget('voice')}
               title={isDeafened ? t('chat.undeafen', 'Undeafen') : t('chat.deafen', 'Deafen')}
               onClick={handleToggleDeafen}
             >
               <Volume2 size={16} />
             </button>
-            <button className="control-btn" title={t('misc.userSettings', 'User Settings')} onClick={() => onOpenSettings?.()}>
+            <button
+              type="button"
+              className="control-btn"
+              title={t('misc.userSettings', 'User Settings')}
+              onMouseEnter={() => prefetchChannelTarget('settings')}
+              onFocus={() => prefetchChannelTarget('settings')}
+              onClick={() => onOpenSettings?.()}
+            >
               <Cog size={16} />
             </button>
           </div>

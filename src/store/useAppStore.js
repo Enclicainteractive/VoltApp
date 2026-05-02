@@ -46,7 +46,32 @@ export const useAppStore = create((set, get) => ({
     }
   })),
   setMessages: (messages) => set({ messages }),
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) => set((state) => {
+    // Performance optimization: prevent duplicate messages
+    const messageExists = state.messages.some(m => m.id === message.id)
+    if (messageExists) return state
+    
+    // Limit message cache to prevent memory issues
+    const newMessages = [...state.messages, message]
+    if (newMessages.length > 1000) {
+      newMessages.splice(0, newMessages.length - 1000) // Keep last 1000 messages
+    }
+    
+    return { messages: newMessages }
+  }),
+  
+  // Batch message updates for better performance
+  batchUpdateMessages: (messageUpdates) => set((state) => {
+    const messageMap = new Map(state.messages.map(m => [m.id, m]))
+    
+    messageUpdates.forEach(update => {
+      if (messageMap.has(update.id)) {
+        messageMap.set(update.id, { ...messageMap.get(update.id), ...update })
+      }
+    })
+    
+    return { messages: Array.from(messageMap.values()) }
+  }),
   setFriends: (friends) => set({ friends }),
   setDms: (dms) => set({ dms }),
   setActiveNetwork: (network) => set({ activeNetwork: network }),

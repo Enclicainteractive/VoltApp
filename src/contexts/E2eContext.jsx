@@ -1189,7 +1189,9 @@ export const E2eProvider = ({ children }) => {
       }))
       return response?.data
     } catch (err) {
-      console.error('[E2E] Error getting DM full status:', err)
+      if (err?.response?.status !== 404) {
+        console.error('[E2E] Error getting DM full status:', err)
+      }
       return { enabled: false }
     }
   }, [])

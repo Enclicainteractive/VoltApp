@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import {
   X, MessageSquare, UserPlus, UserMinus, Ban, MoreVertical,
   User, Activity, Shield, Clock, Globe,
@@ -182,9 +182,13 @@ const ProfileModal = ({ userId, server, members, onClose, onStartDM, initialTab 
   const [contextMenu, setContextMenu] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [actionFeedback, setActionFeedback] = useState('');
+  const [pendingAction, setPendingAction] = useState('');
 
   const modalRef = useRef(null);
   const moreMenuRef = useRef(null);
+  const tabContentRef = useRef(null);
 
   const isBot = userId?.startsWith('bot_');
   const isOwnProfile = currentUser?.id === userId;
@@ -395,9 +399,16 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
     }
   }, [showMoreMenu]);
 
+  useEffect(() => {
+    if (!actionFeedback) return undefined;
+    const timer = setTimeout(() => setActionFeedback(''), 3000);
+    return () => clearTimeout(timer);
+  }, [actionFeedback]);
+
   const loadProfile = async () => {
     try {
       setLoading(true);
+      setProfileError('');
       if (isBot) {
         const res = await apiService.getBotProfile(userId);
         setProfile({ ...res.data, isBot: true });
@@ -427,6 +438,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
       }
     } catch (err) {
       console.error('Failed to load profile:', err);
+      setProfileError(t('profile.loadFailed', 'Unable to load this profile right now. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -439,75 +451,123 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
 
   // Friend actions
   const handleSendMessage = async () => {
+    if (pendingAction) return;
     try {
+      setPendingAction('dm');
+      setActionFeedback('');
       const res = await apiService.createDirectMessage(userId);
       onStartDM?.(res.data);
       handleClose();
     } catch (err) {
       console.error('Failed to start DM:', err);
+      setActionFeedback(t('profile.dmFailed', 'Could not open a direct message right now.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
   const handleAddFriend = async () => {
+    if (pendingAction) return;
     try {
+      setPendingAction('add-friend');
+      setActionFeedback('');
       await apiService.sendFriendRequestById(userId);
       setProfile(p => ({ ...p, friendRequestSent: true }));
+      setActionFeedback(t('profile.friendRequestSent', 'Friend request sent.'));
     } catch (err) {
       console.error('Failed to send friend request:', err);
+      setActionFeedback(t('profile.friendRequestFailed', 'Failed to send friend request.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
   const handleRemoveFriend = async () => {
+    if (pendingAction) return;
     try {
+      setPendingAction('remove-friend');
+      setActionFeedback('');
       await apiService.removeFriend(userId);
       setProfile(p => ({ ...p, isFriend: false }));
+      setActionFeedback(t('profile.friendRemoved', 'Friend removed.'));
     } catch (err) {
       console.error('Failed to remove friend:', err);
+      setActionFeedback(t('profile.friendRemoveFailed', 'Failed to remove friend.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
   const handleBlock = async () => {
     if (!confirm(t('profile.blockConfirm', 'Are you sure you want to block this user?'))) return;
+    if (pendingAction) return;
     try {
+      setPendingAction('block-user');
+      setActionFeedback('');
       await apiService.blockUser(userId);
       setProfile(p => ({ ...p, isBlocked: true, isFriend: false }));
+      setActionFeedback(t('profile.userBlocked', 'User blocked.'));
     } catch (err) {
       console.error('Failed to block user:', err);
+      setActionFeedback(t('profile.blockFailed', 'Failed to block user.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
   const handleUnblock = async () => {
+    if (pendingAction) return;
     try {
+      setPendingAction('unblock-user');
+      setActionFeedback('');
       await apiService.unblockUser(userId);
       setProfile(p => ({ ...p, isBlocked: false }));
+      setActionFeedback(t('profile.userUnblocked', 'User unblocked.'));
     } catch (err) {
       console.error('Failed to unblock user:', err);
+      setActionFeedback(t('profile.unblockFailed', 'Failed to unblock user.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
   // Bio handling
   const handleSaveBio = async () => {
+    if (pendingAction) return;
     try {
+      setPendingAction('save-bio');
+      setActionFeedback('');
       await apiService.updateProfile({ bio: bioDraft });
       setProfile(p => ({ ...p, bio: bioDraft }));
       setEditingBio(false);
+      setActionFeedback(t('profile.bioSaved', 'Bio saved.'));
     } catch (err) {
       console.error('Failed to save bio:', err);
+      setActionFeedback(t('profile.bioSaveFailed', 'Failed to save bio.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
   // Socials handling
   const handleSaveSocials = async () => {
+    if (pendingAction) return;
     const cleaned = {};
     Object.entries(socialDraft).forEach(([k, v]) => {
       if (v.trim()) cleaned[k] = v.trim();
     });
     try {
+      setPendingAction('save-socials');
+      setActionFeedback('');
       await apiService.updateProfile({ socialLinks: cleaned });
       setProfile(p => ({ ...p, socialLinks: cleaned }));
       setEditingSocials(false);
+      setActionFeedback(t('profile.connectionsSaved', 'Connections saved.'));
     } catch (err) {
       console.error('Failed to save socials:', err);
+      setActionFeedback(t('profile.connectionsSaveFailed', 'Failed to save connections.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
@@ -533,11 +593,18 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
 
   // Privacy settings
   const handlePrivacyToggle = async (key, value) => {
+    if (pendingAction) return;
     try {
+      setPendingAction(`privacy-${key}`);
+      setActionFeedback('');
       await apiService.updateProfile({ [key]: value });
       setProfile(p => ({ ...p, [key]: value }));
+      setActionFeedback(t('profile.privacyUpdated', 'Privacy setting updated.'));
     } catch (err) {
       console.error('Failed to update privacy setting:', err);
+      setActionFeedback(t('profile.privacyUpdateFailed', 'Failed to update privacy setting.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
@@ -546,6 +613,12 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
     if (activeTab === 'comments' && userId && !isBot) {
       loadComments();
     }
+  }, [activeTab, userId]);
+
+  useLayoutEffect(() => {
+    const container = tabContentRef.current;
+    if (!container) return;
+    container.scrollTop = 0;
   }, [activeTab, userId]);
 
   const loadComments = async () => {
@@ -581,11 +654,17 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
   };
 
   const handleDeleteComment = async (commentId) => {
+    if (pendingAction) return;
     try {
+      setPendingAction(`delete-comment-${commentId}`);
+      setCommentError('');
       await apiService.deleteProfileComment(commentId, userId);
       setComments(prev => prev.filter(c => c.id !== commentId));
     } catch (err) {
       console.error('Failed to delete comment:', err);
+      setCommentError(t('profile.commentDeleteFailed', 'Failed to delete comment.'));
+    } finally {
+      setPendingAction('');
     }
   };
 
@@ -623,17 +702,17 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
           {commentsDisabled && !isOwnProfile ? (
             <p className="empty-state">This user has disabled profile comments.</p>
           ) : commentsLoading ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--volt-text-muted)' }}>
-              <div className="loading-spinner" style={{ margin: '0 auto 8px' }} />
-              Loading comments...
+            <div className="profile-inline-loading" role="status" aria-live="polite">
+              <div className="loading-spinner loading-spinner-sm" />
+              <span>Loading comments...</span>
             </div>
           ) : (
             <>
               {commentError && !commentsLoading && (
-                <p className="empty-state" style={{ color: 'var(--volt-danger)', marginBottom: 12 }}>{commentError}</p>
+                <p className="empty-state empty-state-danger" role="alert" aria-live="assertive">{commentError}</p>
               )}
               {comments.length === 0 && !commentError ? (
-                <p className="empty-state" style={{ marginBottom: 12 }}>No comments yet. Be the first!</p>
+                <p className="empty-state empty-state-spaced">No comments yet. Be the first!</p>
               ) : (
                 <div className="profile-comments-list">
                   {comments.map(comment => {
@@ -657,18 +736,24 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                           <p className="profile-comment-text">{comment.content}</p>
                           <div className="profile-comment-actions">
                             <button
+                              type="button"
                               className={`profile-comment-like-btn ${liked ? 'liked' : ''}`}
                               onClick={() => handleLikeComment(comment)}
                               title={liked ? 'Unlike' : 'Like'}
+                              aria-label={liked ? 'Unlike comment' : 'Like comment'}
+                              aria-pressed={liked}
                             >
                               <Heart size={13} fill={liked ? 'currentColor' : 'none'} />
                               {comment.likes?.length > 0 && <span>{comment.likes.length}</span>}
                             </button>
                             {(isAuthor || isOwnProfile) && (
                               <button
+                                type="button"
                                 className="profile-comment-delete-btn"
                                 onClick={() => handleDeleteComment(comment.id)}
                                 title="Delete comment"
+                                disabled={pendingAction === `delete-comment-${comment.id}`}
+                                aria-label="Delete comment"
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -682,7 +767,13 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
               )}
 
               {canComment && (
-                <div className="profile-comment-input-area">
+                <form
+                  className="profile-comment-input-area"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }}
+                >
                   <Avatar
                     src={currentUser?.avatar}
                     fallback={currentUser?.displayName || currentUser?.username}
@@ -690,11 +781,19 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   />
                   <div className="profile-comment-input-wrap">
                     <textarea
+                      id="profile-comment-input"
+                      name="profileComment"
                       className="profile-comment-input"
                       placeholder="Leave a comment..."
                       value={commentDraft}
-                      onChange={e => setCommentDraft(e.target.value.slice(0, 500))}
+                      onChange={e => {
+                        setCommentDraft(e.target.value.slice(0, 500));
+                        if (commentError) setCommentError('');
+                      }}
                       rows={2}
+                      disabled={commentSubmitting}
+                      aria-label="Profile comment"
+                      aria-describedby="profile-comment-input-hint"
                       onKeyDown={e => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
@@ -703,20 +802,21 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                       }}
                     />
                     <div className="profile-comment-input-footer">
+                      <span id="profile-comment-input-hint" className="char-count">Press Enter to post, Shift+Enter for a new line.</span>
                       <span className="char-count">{commentDraft.length}/500</span>
                       <button
+                        type="submit"
                         className="btn btn-primary btn-sm"
-                        onClick={handleSubmitComment}
                         disabled={!commentDraft.trim() || commentSubmitting}
                       >
                         <Send size={13} /> {commentSubmitting ? 'Posting...' : 'Post'}
                       </button>
                     </div>
                   </div>
-                </div>
+                </form>
               )}
               {isOwnProfile && (
-                <p className="empty-state" style={{ marginTop: 8, fontSize: 11 }}>
+                <p className="empty-state empty-state-note">
                   Manage comment permissions in the Privacy tab.
                 </p>
               )}
@@ -728,13 +828,18 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
   };
 
   const handleReportUser = async () => {
-    if (!userId || isOwnProfile || isReporting) return;
+    if (!userId || isOwnProfile || isReporting || pendingAction) return;
 
     const reason = window.prompt(t('profile.reportPrompt', 'Report this user. What happened?'));
-    if (!reason || reason.trim().length < 3) return;
+    if (!reason || reason.trim().length < 3) {
+      setActionFeedback(t('profile.reportReasonShort', 'Please include a short reason before submitting your report.'));
+      return;
+    }
 
     try {
+      setPendingAction('report-user');
       setIsReporting(true);
+      setActionFeedback('');
       await apiService.submitUserSafetyReport({
         contextType: 'profile',
         reportType: 'user_report',
@@ -745,11 +850,26 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
         reason: reason.trim()
       });
       window.alert(t('profile.reportSubmitted', 'Report sent. Thanks for helping moderate the community.'));
+      setActionFeedback(t('profile.reportSubmitted', 'Report sent. Thanks for helping moderate the community.'));
     } catch (err) {
       console.error('Failed to submit user profile report:', err);
       window.alert(err?.response?.data?.error || t('profile.reportFailed', 'Failed to submit report'));
+      setActionFeedback(err?.response?.data?.error || t('profile.reportFailed', 'Failed to submit report'));
     } finally {
       setIsReporting(false);
+      setPendingAction('');
+    }
+  };
+
+  const handleCopyUserId = async () => {
+    if (!userId) return;
+    try {
+      await navigator.clipboard.writeText(userId);
+      setActionFeedback(t('profile.copyIdSuccess', 'User ID copied.'));
+      setShowMoreMenu(false);
+    } catch (err) {
+      console.error('Failed to copy user ID:', err);
+      setActionFeedback(t('profile.copyIdFailed', 'Failed to copy user ID.'));
     }
   };
 
@@ -761,7 +881,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
         <div className="section-header">
           <h3><User size={16} /> {isBot ? 'Description' : t('profile.aboutMe', 'About Me')}</h3>
           {isOwnProfile && !editingBio && (
-            <button className="section-edit-btn" onClick={() => { setBioDraft(profile?.bio || ''); setEditingBio(true); }}>
+            <button type="button" className="section-edit-btn" onClick={() => { setBioDraft(profile?.bio || ''); setEditingBio(true); }} aria-label={t('profile.editBio', 'Edit bio')}>
               <Pencil size={14} />
             </button>
           )}
@@ -773,12 +893,13 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
               onChange={(e) => setBioDraft(e.target.value.slice(0, 500))}
               placeholder="Write something about yourself..."
               rows={4}
+              disabled={pendingAction === 'save-bio'}
             />
             <div className="bio-edit-actions">
               <span className="char-count">{bioDraft.length}/500</span>
-              <button className="btn btn-secondary btn-sm" onClick={() => setEditingBio(false)}>Cancel</button>
-              <button className="btn btn-primary btn-sm" onClick={handleSaveBio}>
-                <Check size={14} /> Save
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingBio(false)} disabled={pendingAction === 'save-bio'}>Cancel</button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveBio} disabled={pendingAction === 'save-bio'}>
+                <Check size={14} /> {pendingAction === 'save-bio' ? t('common.saving', 'Saving...') : 'Save'}
               </button>
             </div>
           </div>
@@ -813,7 +934,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
           <div className="section-header">
             <h3><Link2 size={16} /> {t('profile.connections', 'Connections')}</h3>
             {isOwnProfile && !editingSocials && (
-              <button className="section-edit-btn" onClick={() => { setSocialDraft(profile?.socialLinks || {}); setEditingSocials(true); }}>
+              <button type="button" className="section-edit-btn" onClick={() => { setSocialDraft(profile?.socialLinks || {}); setEditingSocials(true); }} aria-label={t('profile.editConnections', 'Edit connections')}>
                 <Pencil size={14} />
               </button>
             )}
@@ -828,13 +949,14 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                     placeholder={p.label}
                     value={socialDraft[p.key] || ''}
                     onChange={e => setSocialDraft(prev => ({ ...prev, [p.key]: e.target.value }))}
+                    disabled={pendingAction === 'save-socials'}
                   />
                 </div>
               ))}
               <div className="social-edit-actions">
-                <button className="btn btn-secondary btn-sm" onClick={() => setEditingSocials(false)}>Cancel</button>
-                <button className="btn btn-primary btn-sm" onClick={handleSaveSocials}>
-                  <Check size={14} /> Save
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingSocials(false)} disabled={pendingAction === 'save-socials'}>Cancel</button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveSocials} disabled={pendingAction === 'save-socials'}>
+                  <Check size={14} /> {pendingAction === 'save-socials' ? t('common.saving', 'Saving...') : 'Save'}
                 </button>
               </div>
             </div>
@@ -1007,6 +1129,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   type="checkbox"
                   checked={profile?.showActivity !== false}
                   onChange={(e) => handlePrivacyToggle('showActivity', e.target.checked)}
+                  disabled={pendingAction.startsWith('privacy-')}
                 />
               </label>
               <label className="privacy-option">
@@ -1018,6 +1141,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   type="checkbox"
                   checked={profile?.showMutualFriends !== false}
                   onChange={(e) => handlePrivacyToggle('showMutualFriends', e.target.checked)}
+                  disabled={pendingAction.startsWith('privacy-')}
                 />
               </label>
               <label className="privacy-option">
@@ -1029,6 +1153,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   type="checkbox"
                   checked={profile?.showMutualServers !== false}
                   onChange={(e) => handlePrivacyToggle('showMutualServers', e.target.checked)}
+                  disabled={pendingAction.startsWith('privacy-')}
                 />
               </label>
               <label className="privacy-option">
@@ -1040,6 +1165,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   type="checkbox"
                   checked={profile?.showVoiceChannel !== false}
                   onChange={(e) => handlePrivacyToggle('showVoiceChannel', e.target.checked)}
+                  disabled={pendingAction.startsWith('privacy-')}
                 />
               </label>
               <label className="privacy-option">
@@ -1051,6 +1177,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   type="checkbox"
                   checked={profile?.showKlipy !== false}
                   onChange={(e) => handlePrivacyToggle('showKlipy', e.target.checked)}
+                  disabled={pendingAction.startsWith('privacy-')}
                 />
               </label>
             </div>
@@ -1070,6 +1197,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   type="checkbox"
                   checked={profile?.allowComments === true}
                   onChange={(e) => handlePrivacyToggle('allowComments', e.target.checked)}
+                  disabled={pendingAction.startsWith('privacy-')}
                 />
               </label>
             </div>
@@ -1081,7 +1209,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
             <h3><Flag size={16} /> Report User</h3>
           </div>
           <p className="privacy-desc">If you believe this user is violating our Terms of Service, you can report them.</p>
-          <button className="btn btn-danger" onClick={handleReportUser} disabled={isReporting}>
+          <button type="button" className="btn btn-danger" onClick={handleReportUser} disabled={isReporting || pendingAction === 'report-user'}>
             <Flag size={16} /> {isReporting ? t('profile.reporting', 'Reporting...') : t('profile.reportUser', 'Report User')}
           </button>
         </section>
@@ -1091,11 +1219,51 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
 
   if (loading) {
     return (
-      <div className="profile-modal-overlay" onClick={handleClose}>
+      <div
+        className="profile-modal-overlay"
+        onClick={handleClose}
+        onKeyDown={(e) => { if (e.key === 'Escape') handleClose(); }}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('profile.profileDetails', 'Profile details')}
+      >
         <div className="profile-modal-container" onClick={e => e.stopPropagation()}>
-          <div className="profile-loading">
+          <div className="profile-loading" role="status" aria-live="polite">
             <div className="loading-spinner" />
-            <span>{t('common.loading', 'Loading...')}</span>
+            <p className="profile-loading-title">{t('profile.loadingProfile', 'Loading profile')}</p>
+            <p className="profile-loading-subtitle">{t('profile.loadingProfileHint', 'Fetching profile details, activity, and connections...')}</p>
+            <div className="profile-loading-skeleton" aria-hidden="true">
+              <span className="loading-skeleton-line loading-skeleton-line-lg" />
+              <span className="loading-skeleton-line loading-skeleton-line-md" />
+              <span className="loading-skeleton-line loading-skeleton-line-sm" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div
+        className="profile-modal-overlay"
+        onClick={handleClose}
+        onKeyDown={(e) => { if (e.key === 'Escape') handleClose(); }}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('profile.profileDetails', 'Profile details')}
+      >
+        <div className="profile-modal-container" onClick={e => e.stopPropagation()}>
+          <div className="profile-loading profile-loading-error" role="alert" aria-live="assertive">
+            <p className="profile-loading-title">{profileError || t('profile.loadFailed', 'Unable to load this profile right now. Please try again.')}</p>
+            <div className="profile-loading-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleClose}>
+                {t('common.close', 'Close')}
+              </button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={loadProfile}>
+                {t('common.retry', 'Retry')}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1108,7 +1276,14 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
   return (
     <AnimatePresence>
       {!isClosing && (
-        <div className="profile-modal-overlay" onClick={handleClose}>
+        <div
+          className="profile-modal-overlay"
+          onClick={handleClose}
+          onKeyDown={(e) => { if (e.key === 'Escape') handleClose(); }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-modal-title"
+        >
           <motion.div
             ref={modalRef}
             className="profile-modal-container"
@@ -1127,7 +1302,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
             onClick={e => e.stopPropagation()}
           >
             {/* Close Button */}
-            <button className="profile-modal-close" onClick={handleClose}>
+            <button type="button" className="profile-modal-close" onClick={handleClose} aria-label={t('modals.close', 'Close')}>
               <X size={20} />
             </button>
 
@@ -1163,7 +1338,7 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
             {/* User Info Section */}
             <div className="profile-info-area">
               <div className="profile-names-area">
-                <h2 className="profile-display-name">
+                <h2 id="profile-modal-title" className="profile-display-name">
                   {displayName}
                   {isBot && <span className="profile-bot-tag"><Sparkles size={12} /> Bot</span>}
                   {profile?.ageVerification?.riskLevel === 'self_attested_adult' && (
@@ -1181,6 +1356,17 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                     />
                   )}
                 </p>
+                {!isBot && (
+                  <div className="profile-meta-row">
+                    <span className={`profile-presence-pill status-${profile?.status || 'offline'}`}>
+                      <span className="profile-presence-dot" style={{ backgroundColor: getStatusColor(profile?.status) }} />
+                      {getStatusText(profile?.status)}
+                    </span>
+                    {profile?.customStatus && (
+                      <span className="profile-meta-custom-status">"{profile.customStatus}"</span>
+                    )}
+                  </div>
+                )}
                 {profile?.ageVerification?.riskLevel === 'self_attested_adult' && (
                   <p className="profile-risk-note">
                     Adult access was granted by self-attestation. Use extra caution until full verification is completed.
@@ -1190,43 +1376,51 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
 
               {/* Action Buttons */}
               {!isBot && (
-                <div className="profile-actions-area">
+                <div className={`profile-actions-area${pendingAction ? ' is-busy' : ''}`} aria-busy={!!pendingAction}>
                   {!isOwnProfile ? (
                     <>
-                      <button className="btn btn-primary" onClick={handleSendMessage}>
-                        <MessageSquare size={16} /> Message
+                      <button type="button" className="btn btn-primary" onClick={handleSendMessage} disabled={pendingAction === 'dm' || !!pendingAction}>
+                        <MessageSquare size={16} /> {pendingAction === 'dm' ? t('common.loading', 'Loading...') : 'Message'}
                       </button>
                       {!profile?.isFriend && !profile?.friendRequestSent && !profile?.isBlocked && (
-                        <button className="btn btn-secondary" onClick={handleAddFriend}>
-                          <UserPlus size={16} /> Add Friend
+                        <button type="button" className="btn btn-secondary" onClick={handleAddFriend} disabled={pendingAction === 'add-friend' || !!pendingAction}>
+                          <UserPlus size={16} /> {pendingAction === 'add-friend' ? t('common.loading', 'Loading...') : 'Add Friend'}
                         </button>
                       )}
                       {profile?.friendRequestSent && (
-                        <button className="btn btn-secondary" disabled>
-                          <Clock size={16} /> Pending
+                        <button type="button" className="btn btn-secondary" disabled>
+                          <Clock size={16} /> Request Sent
                         </button>
                       )}
                       {profile?.isFriend && (
-                        <button className="btn btn-secondary" onClick={handleRemoveFriend}>
-                          <UserMinus size={16} /> Remove
+                        <button type="button" className="btn btn-secondary" onClick={handleRemoveFriend} disabled={pendingAction === 'remove-friend' || !!pendingAction}>
+                          <UserMinus size={16} /> {pendingAction === 'remove-friend' ? t('common.loading', 'Loading...') : 'Remove Friend'}
                         </button>
                       )}
                       <div className="more-menu-wrapper" ref={moreMenuRef}>
-                        <button className="btn btn-icon" onClick={() => setShowMoreMenu(!showMoreMenu)}>
+                        <button
+                          type="button"
+                          className="btn btn-icon"
+                          onClick={() => setShowMoreMenu(!showMoreMenu)}
+                          aria-label={t('profile.moreActions', 'More actions')}
+                          aria-expanded={showMoreMenu}
+                          aria-haspopup="menu"
+                        >
                           <MoreVertical size={18} />
+                          <span className="more-menu-label">More</span>
                         </button>
                         {showMoreMenu && (
-                          <div className="more-menu">
+                          <div className="more-menu" role="menu" aria-label={t('profile.moreActions', 'More actions')}>
                             {profile?.isBlocked ? (
-                              <button onClick={handleUnblock}>
-                                <Check size={14} /> Unblock
+                              <button type="button" role="menuitem" onClick={handleUnblock} disabled={pendingAction === 'unblock-user' || !!pendingAction}>
+                                <Check size={14} /> {pendingAction === 'unblock-user' ? t('common.loading', 'Loading...') : 'Unblock'}
                               </button>
                             ) : (
-                              <button className="danger" onClick={handleBlock}>
-                                <Ban size={14} /> Block
+                              <button type="button" role="menuitem" className="danger" onClick={handleBlock} disabled={pendingAction === 'block-user' || !!pendingAction}>
+                                <Ban size={14} /> {pendingAction === 'block-user' ? t('common.loading', 'Loading...') : 'Block'}
                               </button>
                             )}
-                            <button onClick={() => navigator.clipboard.writeText(userId)}>
+                            <button type="button" role="menuitem" onClick={handleCopyUserId}>
                               <Copy size={14} /> Copy ID
                             </button>
                           </div>
@@ -1236,17 +1430,29 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
                   ) : null}
                 </div>
               )}
+              {actionFeedback && (
+                <p className="profile-action-feedback" role="status" aria-live="polite">
+                  {actionFeedback}
+                </p>
+              )}
             </div>
 
             {/* Tabs Navigation */}
-            <div className="profile-tabs-nav">
+            <div className="profile-tabs-nav" role="tablist" aria-label={t('profile.sections', 'Profile sections')}>
               {TABS.map(tab => {
                 const Icon = tab.icon;
                 return (
                   <button
+                    type="button"
                     key={tab.id}
                     className={`profile-tab-btn ${activeTab === tab.id ? 'active' : ''}`}
                     onClick={() => setActiveTab(tab.id)}
+                    role="tab"
+                    id={`profile-tab-${tab.id}`}
+                    aria-selected={activeTab === tab.id}
+                    aria-controls={`profile-panel-${tab.id}`}
+                    aria-label={tab.label}
+                    tabIndex={activeTab === tab.id ? 0 : -1}
                   >
                     <Icon size={18} />
                     <span>{tab.label}</span>
@@ -1256,10 +1462,13 @@ ${scope} .profile-status-badge { border-color: ${profileBackground} !important; 
             </div>
 
             {/* Tab Content */}
-            <div className="profile-tabs-content">
+            <div ref={tabContentRef} className="profile-tabs-content">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeTab}
+                  id={`profile-panel-${activeTab}`}
+                  role="tabpanel"
+                  aria-labelledby={`profile-tab-${activeTab}`}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}

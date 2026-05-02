@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { UsersIcon, CheckIcon, XMarkIcon, ArrowPathIcon, GlobeAltIcon, LinkIcon } from '@heroicons/react/24/outline'
 import { apiService } from '../services/apiService'
 import { useAuth } from '../contexts/AuthContext'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from '../hooks/useTranslation'
+import lazyLoadingService from '../services/lazyLoadingService'
 import Avatar from '../components/Avatar'
 import '../assets/styles/InvitePage.css'
+
+const normalizeHostInput = (hostValue = '') => hostValue.trim().replace(/\/+$/, '')
 
 const InvitePage = () => {
   const { code } = useParams()
@@ -23,14 +26,54 @@ const InvitePage = () => {
   const [joined, setJoined] = useState(false)
   const [externalHost, setExternalHost] = useState(searchParams.get('host') || '')
   const [showHostInput, setShowHostInput] = useState(false)
-  
-  useEffect(() => {
-    resolveInvite()
-  }, [code])
+  const [resolvingStage, setResolvingStage] = useState('local')
+  const [lookupLoading, setLookupLoading] = useState(false)
 
-  const resolveInvite = async () => {
+  useEffect(() => {
+    lazyLoadingService.preloadRouteChunks(['route:chat', 'route:login'], { idle: true })
+  }, [])
+  
+  const resolveExternal = useCallback(async (host, options = {}) => {
+    const { inline = false } = options
+    if (inline) {
+      setLookupLoading(true)
+    } else {
+      setLoading(true)
+    }
+    setError(null)
+    setResolvingStage('external')
+    try {
+      const res = await apiService.resolveExternalInvite(host, code)
+      if (res.data) {
+        setInvite(res.data)
+        setInviteType('external')
+        setShowHostInput(false)
+        return true
+      }
+      setShowHostInput(true)
+      setError(t('invitePage.resolveExternalError', 'Could not resolve invite from that host'))
+      return false
+    } catch (err) {
+      setShowHostInput(true)
+      setError(err.response?.data?.error || t('invitePage.resolveExternalError', 'Could not resolve invite from that host'))
+      return false
+    } finally {
+      if (inline) {
+        setLookupLoading(false)
+      } else {
+        setLoading(false)
+      }
+    }
+  }, [code, t])
+
+  const resolveInvite = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setResolvingStage('local')
+    setInvite(null)
+    setInviteType(null)
+    setJoined(false)
+    setShowHostInput(false)
 
     // 1) Try local invite
     try {
@@ -44,6 +87,7 @@ const InvitePage = () => {
     } catch { /* not a local invite */ }
 
     // 2) Try cross-host encoded invite
+    setResolvingStage('cross-host')
     try {
       const res = await apiService.getCrossHostInvite(code)
       if (res.data) {
@@ -64,37 +108,28 @@ const InvitePage = () => {
     // 3) Try external if host is provided
     const hostParam = searchParams.get('host')
     if (hostParam) {
-      await resolveExternal(hostParam)
+      await resolveExternal(normalizeHostInput(hostParam))
       return
     }
 
     // No match - show host input to let user specify the remote host
     setShowHostInput(true)
     setLoading(false)
-  }
+  }, [code, resolveExternal, searchParams])
 
-  const resolveExternal = async (host) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await apiService.resolveExternalInvite(host, code)
-      if (res.data) {
-        setInvite(res.data)
-        setInviteType('external')
-        setShowHostInput(false)
-        setLoading(false)
-        return
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || t('invitePage.resolveExternalError', 'Could not resolve invite from that host'))
-    }
-    setLoading(false)
-  }
+  useEffect(() => {
+    resolveInvite()
+  }, [resolveInvite])
 
   const handleExternalLookup = (e) => {
     e.preventDefault()
-    if (!externalHost.trim()) return
-    resolveExternal(externalHost.trim())
+    const normalizedHost = normalizeHostInput(externalHost)
+    if (!normalizedHost) {
+      setError(t('invitePage.hostRequired', 'Enter a host to continue'))
+      return
+    }
+    setExternalHost(normalizedHost)
+    resolveExternal(normalizedHost, { inline: true })
   }
 
   const handleJoin = async () => {
@@ -102,6 +137,7 @@ const InvitePage = () => {
       const pendingData = { code, type: inviteType }
       if (inviteType === 'external' && invite?.host) pendingData.host = invite.hostUrl || invite.host
       sessionStorage.setItem('pending_invite', JSON.stringify(pendingData))
+      lazyLoadingService.preloadRouteChunks(['route:login'], { idle: false })
       navigate('/login')
       return
     }
@@ -128,6 +164,8 @@ const InvitePage = () => {
       }
       
       // Navigate immediately - ChatPage will load fresh server list
+      lazyLoadingService.preloadRouteChunks(['route:chat'], { idle: false })
+      lazyLoadingService.preloadComponents(['ServerSidebar', 'ChannelSidebar', 'ChatArea'], { idle: false })
       navigate(serverId ? `/chat/${serverId}` : '/chat')
     } catch (err) {
       setError(err.response?.data?.error || t('invitePage.joinServerError', 'Failed to join server'))
@@ -147,12 +185,24 @@ const InvitePage = () => {
     return invite?.server?.name || invite?.name || t('invitePage.defaultServerName', 'Server')
   }
 
+  const resolveStatusLabel = resolvingStage === 'cross-host'
+    ? t('invitePage.checkingFederation', 'Checking federated invite...')
+    : resolvingStage === 'external'
+      ? t('invitePage.connectingRemoteHost', 'Connecting to remote host...')
+      : t('invitePage.loadingInvite', 'Loading invite...')
+
+  const inviteSourceLabel = inviteType === 'cross-host'
+    ? t('invitePage.federatedSource', 'Federated invite')
+    : inviteType === 'external'
+      ? t('invitePage.externalSource', 'External host invite')
+      : t('invitePage.localSource', 'Local invite')
+
   if (authLoading || loading) {
     return (
       <div className="invite-page">
-        <div className="invite-card loading">
+        <div className="invite-card loading" role="status" aria-live="polite">
           <ArrowPathIcon size={48} className="spin" />
-          <p>{t('invitePage.loadingInvite', 'Loading invite...')}</p>
+          <p>{resolveStatusLabel}</p>
         </div>
       </div>
     )
@@ -161,29 +211,39 @@ const InvitePage = () => {
   if (showHostInput && !invite) {
     return (
       <div className="invite-page">
-        <div className="invite-card">
-          <div className="invite-icon" style={{ background: 'rgba(31,182,255,0.1)', color: 'var(--volt-primary)' }}>
+        <div className="invite-card invite-card-host-lookup">
+          <div className="invite-icon host-lookup">
             <GlobeAltIcon size={48} />
           </div>
-          <h1>{t('invitePage.externalInviteTitle', 'External Invite')}</h1>
-          <p style={{ color: 'var(--volt-text-secondary)', marginBottom: 16 }}>
+          <h1 className="invite-title">{t('invitePage.externalInviteTitle', 'External Invite')}</h1>
+          <p className="invite-description">
             {t('invitePage.externalInviteDescription', "This invite code wasn't found locally. Enter the host it came from to connect.")}
           </p>
-          <form onSubmit={handleExternalLookup} style={{ width: '100%', maxWidth: 340, margin: '0 auto' }}>
+          <p className="invite-code-chip">
+            {t('invitePage.inviteCodeLabel', 'Invite code')}: <strong>{code}</strong>
+          </p>
+          <form onSubmit={handleExternalLookup} className="invite-host-form" aria-busy={lookupLoading}>
             <input
               type="text"
               placeholder={t('invitePage.hostPlaceholder', 'e.g. chat.example.com')}
               value={externalHost}
-              onChange={e => setExternalHost(e.target.value)}
+              disabled={lookupLoading}
+              onChange={e => {
+                setExternalHost(e.target.value)
+                if (error) setError(null)
+              }}
               className="invite-host-input"
+              aria-label={t('invitePage.hostPlaceholder', 'e.g. chat.example.com')}
+              aria-invalid={Boolean(error)}
               autoFocus
             />
-            <button type="submit" className="btn btn-primary btn-large" style={{ marginTop: 10, width: '100%' }}>
-              <LinkIcon size={18} /> {t('invitePage.lookUpInvite', 'Look Up Invite')}
+            <button type="submit" className="btn btn-primary btn-large invite-primary-action" disabled={lookupLoading || !externalHost.trim()}>
+              {lookupLoading ? <ArrowPathIcon size={18} className="spin" /> : <LinkIcon size={18} />}
+              {lookupLoading ? t('invitePage.searchingInvite', 'Searching...') : t('invitePage.lookUpInvite', 'Look Up Invite')}
             </button>
           </form>
-          {error && <div className="error-message" style={{ marginTop: 12 }}>{error}</div>}
-          <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => navigate('/chat')}>
+          {error && <div className="error-message host-lookup-error" role="alert">{error}</div>}
+          <button type="button" className="btn btn-secondary invite-secondary-action" onClick={() => navigate('/chat')}>
             {t('invitePage.goToVoltChat', 'Go to VoltChat')}
           </button>
         </div>
@@ -199,8 +259,12 @@ const InvitePage = () => {
             <XMarkIcon size={48} />
           </div>
           <h1>{t('invitePage.invalidInviteTitle', 'Invalid Invite')}</h1>
-          <p>{error}</p>
-          <button className="btn btn-secondary" onClick={() => navigate('/chat')}>
+          <p role="alert">{error}</p>
+          <button type="button" className="btn btn-primary btn-large invite-primary-action" onClick={resolveInvite}>
+            <ArrowPathIcon size={18} />
+            {t('invitePage.tryAgain', 'Try Again')}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/chat')}>
             {t('invitePage.goToVoltChat', 'Go to VoltChat')}
           </button>
         </div>
@@ -244,6 +308,10 @@ const InvitePage = () => {
             )}
           </div>
           <h1 className="server-name">{serverName}</h1>
+
+          <div className="invite-source-badge">
+            {inviteSourceLabel}
+          </div>
           
           {isExternal && remoteHost && (
             <div className="invite-federation-badge">
@@ -256,13 +324,13 @@ const InvitePage = () => {
             {onlineCount > 0 && (
               <div className="stat">
                 <span className="stat-dot online"></span>
-              <span>{t('invitePage.onlineCount', '{count} Online', { count: onlineCount })}</span>
-            </div>
-          )}
-          <div className="stat">
-            <UsersIcon size={16} />
+                <span>{t('invitePage.onlineCount', '{count} Online', { count: onlineCount })}</span>
+              </div>
+            )}
+            <div className="stat">
+              <UsersIcon size={16} />
               <span>{t('invitePage.memberCount', '{count} Members', { count: memberCount })}</span>
-          </div>
+            </div>
           </div>
 
           {invite?.server?.description && (
@@ -293,9 +361,11 @@ const InvitePage = () => {
         {error && <div className="error-message">{error}</div>}
 
         <button 
+          type="button"
           className="btn btn-primary btn-large"
           onClick={handleJoin}
           disabled={joining}
+          aria-busy={joining}
         >
           {joining ? (
             <>
@@ -310,7 +380,7 @@ const InvitePage = () => {
         </button>
 
         {!isAuthenticated && (
-          <p className="login-hint">{t('common.loginRequired')}</p>
+          <p className="login-hint">{t('invitePage.loginHint', 'You will sign in first, then automatically return to this invite.')}</p>
         )}
       </div>
     </div>

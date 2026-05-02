@@ -1,0 +1,299 @@
+/* Performance optimizations CSS */
+
+/* Hardware acceleration for smooth animations */
+.message-item,
+.avatar-container,
+.reaction-button,
+.chat-input,
+.sidebar,
+.activity-panel {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform;
+}
+
+/* Optimized transitions for better performance */
+.message-item {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.message-item.entering {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.message-item.entered {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Smooth scrolling with momentum for mobile */
+.message-list,
+.virtualized-message-list,
+.sidebar {
+  -webkit-overflow-scrolling: touch;
+  overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Optimized reaction button animations */
+.reaction-button {
+  transition: all 0.15s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transform: scale(1);
+}
+
+.reaction-button:hover {
+  transform: scale(1.05);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.reaction-button:active {
+  transform: scale(0.95);
+}
+
+.reaction-button.reacted {
+  background-color: rgba(88, 101, 242, 0.3);
+  border-color: rgb(88, 101, 242);
+}
+
+/* Avatar optimizations */
+.avatar-container {
+  contain: layout style paint;
+  transition: transform 0.2s ease;
+}
+
+.avatar-container:hover {
+  transform: scale(1.05);
+}
+
+.avatar-loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.avatar-status {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* Optimized input styles */
+.debounced-search .search-input {
+  transition: all 0.2s ease;
+  will-change: border-color, box-shadow;
+}
+
+.debounced-search .search-input:focus {
+  outline: none;
+  border-color: rgba(88, 101, 242, 0.8);
+  box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.1);
+}
+
+.search-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Message list optimizations */
+.virtualized-message-list {
+  contain: strict;
+  overflow: hidden;
+}
+
+.virtualized-message-list.scrolling .message-item {
+  pointer-events: none; /* Disable interactions during scroll for performance */
+}
+
+.message-skeleton {
+  background: linear-gradient(90deg, 
+    rgba(255,255,255,0.1) 25%, 
+    rgba(255,255,255,0.2) 50%, 
+    rgba(255,255,255,0.1) 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+  height: 60px;
+  border-radius: 8px;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Scroll optimizations */
+.scroll-to-bottom-btn {
+  position: fixed;
+  bottom: 100px;
+  right: 20px;
+  background: rgba(88, 101, 242, 0.9);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  transform: translateY(0);
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+}
+
+.scroll-to-bottom-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
+}
+
+.scroll-to-bottom-btn.hidden {
+  transform: translateY(60px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Loading states */
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.loading-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: loading-dots 1.4s infinite ease-in-out;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes loading-dots {
+  0%, 80%, 100% { 
+    transform: scale(0);
+  } 40% { 
+    transform: scale(1);
+  }
+}
+
+/* Performance hints for browsers */
+.message-item,
+.avatar-container,
+.reaction-button {
+  contain: layout style paint;
+  isolation: isolate;
+}
+
+/* Reduce paint operations for frequently changing elements */
+.typing-indicator,
+.voice-indicator,
+.status-indicator {
+  will-change: opacity, transform;
+  transform: translateZ(0);
+}
+
+/* Optimize text rendering */
+.message-content,
+.username,
+.timestamp {
+  text-rendering: optimizeSpeed;
+  font-smooth: never;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* High contrast mode optimizations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print optimizations */
+@media print {
+  .sidebar,
+  .activity-panel,
+  .reaction-button,
+  .scroll-to-bottom-btn {
+    display: none !important;
+  }
+  
+  .message-list {
+    overflow: visible !important;
+    height: auto !important;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .message-item {
+    padding: 8px 12px;
+  }
+  
+  .avatar-container {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+  
+  .reaction-button {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+}
+
+/* Reduce animations on low-end devices */
+@media (prefers-reduced-motion: reduce) {
+  .avatar-container:hover,
+  .reaction-button:hover,
+  .message-item {
+    transform: none;
+  }
+  
+  .loading-spinner,
+  .avatar-loading-spinner,
+  .search-spinner {
+    animation: none;
+  }
+}
+
+/* GPU acceleration for smooth scrolling */
+.message-list-container {
+  position: relative;
+  transform: translate3d(0, 0, 0);
+}
+
+/* Optimize for dark mode */
+@media (prefers-color-scheme: dark) {
+  .message-skeleton {
+    background: linear-gradient(90deg, 
+      rgba(255,255,255,0.05) 25%, 
+      rgba(255,255,255,0.1) 50%, 
+      rgba(255,255,255,0.05) 75%);
+  }
+}

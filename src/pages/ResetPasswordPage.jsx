@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { authService } from '../services/authService'
+import lazyLoadingService from '../services/lazyLoadingService'
 import { ArrowPathIcon, KeyIcon } from '@heroicons/react/24/outline'
+import { VoltageLogo } from '../components/LoadingScreen'
 import '../assets/styles/LoginPage.css'
 
 const ResetPasswordPage = () => {
@@ -18,6 +20,12 @@ const ResetPasswordPage = () => {
   const [success, setSuccess] = useState(false)
   const [validating, setValidating] = useState(true)
   const [validToken, setValidToken] = useState(false)
+  const [redirectSeconds, setRedirectSeconds] = useState(3)
+  const minPasswordLength = 8
+
+  useEffect(() => {
+    lazyLoadingService.preloadRouteChunks(['route:login', 'route:chat'], { idle: true })
+  }, [])
 
   useEffect(() => {
     const verifyToken = async () => {
@@ -44,12 +52,20 @@ const ResetPasswordPage = () => {
     verifyToken()
   }, [token, userId])
 
+  useEffect(() => {
+    if (!success) return undefined
+    const intervalId = window.setInterval(() => {
+      setRedirectSeconds(prev => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => window.clearInterval(intervalId)
+  }, [success])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     
-    if (!newPassword || newPassword.length < 8) {
-      setError('Password must be at least 8 characters')
+    if (!newPassword || newPassword.length < minPasswordLength) {
+      setError(`Password must be at least ${minPasswordLength} characters`)
       return
     }
     
@@ -63,6 +79,7 @@ const ResetPasswordPage = () => {
     try {
       await authService.resetPassword(token, userId, newPassword)
       setSuccess(true)
+      setRedirectSeconds(3)
       setTimeout(() => {
         navigate('/login')
       }, 3000)
@@ -73,106 +90,141 @@ const ResetPasswordPage = () => {
     }
   }
 
-  if (validating) {
-    return (
-      <div className="login-page">
-        <div className="login-card">
-          <div className="login-header">
-            <div className="logo">V</div>
-            <h1 className="brand-name">VoltChat</h1>
+  const passwordTooShort = newPassword.length > 0 && newPassword.length < minPasswordLength
+  const passwordMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword
+  const canSubmit = !loading && !passwordTooShort && !passwordMismatch && newPassword.length >= minPasswordLength && confirmPassword.length > 0
+  const passwordStrength = newPassword.length >= 14
+    ? 'Strong'
+    : newPassword.length >= 10
+      ? 'Good'
+      : newPassword.length >= minPasswordLength
+        ? 'Valid'
+        : 'Too short'
+  const helperMessage = passwordTooShort
+    ? `Password must be at least ${minPasswordLength} characters`
+    : passwordMismatch
+      ? 'Passwords do not match'
+      : `Password strength: ${passwordStrength}`
+  const helperInvalid = passwordTooShort || passwordMismatch
+
+  const renderShell = (content) => (
+    <div className="login-page">
+      <div className="login-background">
+        <div className="login-background-image" />
+        <div className="login-background-overlay" />
+        <div className="login-background-gradient" />
+        <div className="grid-overlay" />
+      </div>
+
+      <div className="login-container reset-shell-container">
+        <div className="login-content reset-password-content">
+          <div className="login-branding">
+            <div className="logo">
+              <VoltageLogo size={48} />
+            </div>
+            <h1 className="brand-name">Volt</h1>
+            <p className="brand-tagline">Secure account recovery</p>
           </div>
-          <p style={{ textAlign: 'center', color: 'var(--volt-text-secondary)' }}>
-            Verifying reset link...
-          </p>
+          {content}
+          <p className="login-footer">Reset links expire automatically for account safety</p>
         </div>
+      </div>
+    </div>
+  )
+
+  if (validating) {
+    return renderShell(
+      <div className="login-loading" role="status" aria-live="polite">
+        <ArrowPathIcon size={18} className="spin" />
+        <span>Verifying reset link...</span>
       </div>
     )
   }
 
   if (!validToken) {
-    return (
-      <div className="login-page">
-        <div className="login-card">
-          <div className="login-header">
-            <div className="logo">V</div>
-            <h1 className="brand-name">VoltChat</h1>
-          </div>
-          <p className="login-error">{error || 'Invalid reset link'}</p>
-          <button className="login-button account" onClick={() => navigate('/login')}>
+    return renderShell(
+      <div className="reset-status-panel">
+          <p className="login-error login-error-inline" role="alert">{error || 'Invalid reset link'}</p>
+          <button type="button" className="login-button account reset-action-button" onClick={() => navigate('/login')}>
             Back to Login
           </button>
-        </div>
       </div>
     )
   }
 
   if (success) {
-    return (
-      <div className="login-page">
-        <div className="login-card">
-          <div className="login-header">
-            <div className="logo">V</div>
-            <h1 className="brand-name">VoltChat</h1>
-          </div>
-          <div style={{ textAlign: 'center' }}>
+    return renderShell(
+          <div className="reset-status-panel reset-success-panel">
             <div className="reset-sent-icon">✓</div>
-            <h2>Password Reset!</h2>
-            <p style={{ color: 'var(--volt-text-secondary)', marginBottom: 20 }}>
+            <h2 className="reset-title">Password Reset!</h2>
+            <p className="reset-description">
               Your password has been reset successfully.
             </p>
-            <p style={{ color: 'var(--volt-text-secondary)', fontSize: 14 }}>
-              Redirecting to login...
+            <p className="reset-redirect-text" role="status" aria-live="polite">
+              Redirecting to login in {redirectSeconds}s...
             </p>
           </div>
-        </div>
-      </div>
     )
   }
 
-  return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="login-header">
-          <div className="logo">V</div>
-          <h1 className="brand-name">VoltChat</h1>
-        </div>
+  return renderShell(
+      <>
+        <h2 className="reset-title">Reset Password</h2>
+        <p className="reset-description">
+          Create a new password for your account.
+        </p>
         
-        <h2 style={{ textAlign: 'center', marginBottom: 24 }}>Reset Password</h2>
+        {error && <p className="login-error login-error-inline" role="alert">{error}</p>}
         
-        {error && <p className="login-error">{error}</p>}
-        
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="login-form" aria-busy={loading}>
           <input
             className="login-input"
             type="password"
             autoComplete="new-password"
-            placeholder="New password (min 8 chars)"
+            placeholder={`New password (min ${minPasswordLength} chars)`}
+            aria-label="New password"
+            aria-invalid={passwordTooShort || Boolean(error)}
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            disabled={loading}
+            onChange={(e) => {
+              setNewPassword(e.target.value)
+              if (error) setError('')
+            }}
+            autoFocus
+            required
           />
           <input
             className="login-input"
             type="password"
             autoComplete="new-password"
             placeholder="Confirm new password"
+            aria-label="Confirm new password"
+            aria-invalid={passwordMismatch || Boolean(error)}
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            disabled={loading}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value)
+              if (error) setError('')
+            }}
+            required
           />
-          <button className="login-button account" type="submit" disabled={loading}>
+          <p role="status" aria-live="polite" className={`login-form-helper ${helperInvalid ? 'invalid' : ''}`}>
+            {helperMessage}
+          </p>
+          <button className="login-button account reset-action-button" type="submit" disabled={!canSubmit} aria-busy={loading}>
             {loading ? <ArrowPathIcon size={18} className="spin" /> : <KeyIcon size={18} />}
             <span>{loading ? 'Resetting...' : 'Reset Password'}</span>
           </button>
         </form>
-        
-        <button 
-          className="forgot-password-link" 
+
+        <button
+          type="button"
+          className="forgot-password-link reset-back-link"
           onClick={() => navigate('/login')}
-          style={{ display: 'block', textAlign: 'center', marginTop: 16 }}
         >
           Back to Login
         </button>
-      </div>
-    </div>
+      </>
   )
 }
 

@@ -214,7 +214,7 @@ export const authService = {
     if (!response.ok) {
       const error = await response.json()
       console.error('Token exchange failed:', error)
-      throw new Error(error.message || 'Token exchange failed')
+      throw new Error(error.error || error.message || 'Token exchange failed')
     }
 
     const data = await response.json()
@@ -239,7 +239,7 @@ export const authService = {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
-      throw new Error(error.message || 'Token refresh failed')
+      throw new Error(error.error || error.message || 'Token refresh failed')
     }
 
     const data = await response.json()

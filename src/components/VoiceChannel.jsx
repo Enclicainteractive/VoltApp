@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { MicrophoneIcon, MusicalNoteIcon, SpeakerXMarkIcon, Cog6ToothIcon, CogIcon, SpeakerWaveIcon, VideoCameraIcon, VideoCameraSlashIcon, ComputerDesktopIcon, SparklesIcon, PhoneXMarkIcon, LockClosedIcon, ShieldCheckIcon, ShieldExclamationIcon, RocketLaunchIcon, XMarkIcon, ChatBubbleLeftRightIcon } from "@heroicons/react/24/outline";
-import { Mic, Music, VolumeX, PhoneOff, Settings, Volume2, Video, VideoOff, Monitor, Sparkles, Lock, Shield, ShieldAlert, ShieldCheck, ShieldQuestion, Layers3 } from 'lucide-react'
+import { MicrophoneIcon, SpeakerXMarkIcon, Cog6ToothIcon, CogIcon, SpeakerWaveIcon, VideoCameraIcon, VideoCameraSlashIcon, ComputerDesktopIcon, SparklesIcon, PhoneXMarkIcon, LockClosedIcon, ShieldCheckIcon, ShieldExclamationIcon, RocketLaunchIcon, XMarkIcon, ChatBubbleLeftRightIcon } from "@heroicons/react/24/outline";
+import { Mic, MicOff, Music, VolumeX, PhoneOff, Settings, Volume2, Video, VideoOff, Monitor, Sparkles, Lock, Shield, ShieldAlert, ShieldCheck, ShieldQuestion, Layers3 } from 'lucide-react'
 import { useTranslation } from '../hooks/useTranslation'
 import { useSocket } from '../contexts/SocketContext'
 import { useAppStore, clearFocusedActivity } from '../store/useAppStore'
@@ -5997,6 +5997,21 @@ socket.on('voice:force-reconnect', (data) => {
     error:      t('voice.connectionError', 'Connection Error'),
   }[overallStatus] ?? t('voice.connectingStatus', 'Connecting…')
 
+  const activeVoiceActivitiesCount = activeActivities.filter(
+    (activity) => activity.contextType === 'voice' && activity.contextId === channel?.id
+  ).length
+
+  const showParticipantsLoadingState = overallStatus === 'connecting' && displayParticipants.length === 0
+  const showParticipantsEmptyState = !showParticipantsLoadingState && displayParticipants.length === 0
+  const isSoloInChannel = displayParticipants.length === 1 && displayParticipants[0]?.id === user?.id
+  const getPeerStateBadgeSymbol = (peerState) => (
+    peerState === 'connecting'
+      ? '⟳'
+      : peerState === 'failed'
+        ? '✕'
+        : '!'
+  )
+
   const visibleVoiceIssues = useMemo(() => {
     const derived = [...voiceIssues]
 
@@ -6672,6 +6687,25 @@ socket.on('voice:force-reconnect', (data) => {
               </div>
             )}
           </div>
+        ) : showParticipantsLoadingState ? (
+          <div className="voice-empty-state loading-state" role="status" aria-live="polite">
+            <div className="voice-loading-spinner" aria-hidden="true" />
+            <h3>{t('voice.joiningChannel', 'Joining voice channel…')}</h3>
+            <p>{t('voice.syncingParticipants', 'Setting up audio and syncing participants.')}</p>
+            <div className="voice-loading-placeholders" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        ) : showParticipantsEmptyState ? (
+          <div className="voice-empty-state" role="status" aria-live="polite">
+            <div className="ghost-container">
+              <SpeakerWaveIcon size={36} className="ghost-icon" />
+            </div>
+            <h3>{t('voice.emptyTitle', 'No participants yet')}</h3>
+            <p>{t('voice.emptyHint', 'Invite people to this channel to start talking together.')}</p>
+          </div>
         ) : (
           <div className="voice-participants-grid" data-count={displayParticipants?.length || 0}>
             {(() => {
@@ -6689,77 +6723,108 @@ socket.on('voice:force-reconnect', (data) => {
                     }
                     const isSelf = participant.id === user?.id
                     const isMuted = participant.muted || (isSelf && currentMuted)
+                    const isDeafened = participant.deafened || (isSelf && currentDeafened)
                     const isSpeaking = !!speaking[participant.id]
+                    const peerState = isSelf ? 'connected' : (peerStates[participant.id] ?? 'connecting')
+                    const localSetting = localUserSettings[participant.id] || { muted: false, volume: 100 }
+                    const isLocalMuted = !isSelf && localSetting.muted
 
                     const participantCameraStream = getCameraStream(participant)
                     const participantScreenStream = getScreenShareStream(participant)
                     const participantHasVideo = !!participantCameraStream || !!participantScreenStream
 
                     return (
-                <div
-                  key={participant.id}
-                  className={[
-                    'participant-grid-tile',
-                    isSpeaking ? 'speaking' : '',
-                    isMuted ? 'muted' : '',
-                    participantHasVideo ? 'has-video' : '',
-                    participant.isReconnecting ? 'reconnecting' : '',
-                  ].filter(Boolean).join(' ')}
-                  onContextMenu={(e) => openParticipantMenu(participant, e)}
-                >
-                  {participantHasVideo ? (
-                    <video
-                      autoPlay
-                      playsInline
-                      muted={isSelf}
-                      className="participant-grid-video"
-                      ref={getVideoRefCallback(participant.id, participantScreenStream || participantCameraStream)}
-                    />
-                  ) : (
-                    <div className="participant-grid-avatar">
-                    <Avatar
-                      src={participant.avatar || `${imageApiUrl}/api/images/users/${participant.id}/profile`}
-                      fallback={participant.username}
-                      size={24}
-                      userId={participant.id}
-                    />
-                      {isMuted && (
-                        <div className="participant-grid-muted-icon">
-                          <MicrophoneIcon size={14} />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className="participant-grid-name">
-                    {participant.username}
-                    {Boolean(participant.bot) && <span className="bot-badge">{t('member.bot')}</span>}
-                    {isSelf && ` (${t('common.you') || 'You'})`}
-                    {encryptionEnabled && !isSelf && peerVerificationStatus[participant.id] && (
-                      <span 
-                        className={`participant-verification-badge ${peerVerificationStatus[participant.id].verified ? 'verified' : 'discrepancy'}`}
-                        title={peerVerificationStatus[participant.id].summary || 'Verification status'}
+                      <div
+                        key={participant.id}
+                        className={[
+                          'participant-grid-tile',
+                          isSelf ? 'self' : '',
+                          isSpeaking ? 'speaking' : '',
+                          isMuted ? 'muted' : '',
+                          isLocalMuted ? 'local-muted' : '',
+                          participantHasVideo ? 'has-video' : '',
+                          participant.isReconnecting ? 'reconnecting' : '',
+                          (!isSelf && !participant.isReconnecting && peerState === 'connecting') ? 'connecting' : '',
+                        ].filter(Boolean).join(' ')}
+                        onContextMenu={(e) => openParticipantMenu(participant, e)}
                       >
-                        {peerVerificationStatus[participant.id].verified ? (
-                          <ShieldCheck size={12} />
-                        ) : (
-                          <ShieldExclamationIcon size={12} />
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                  )
-                } catch (err) {
-                  console.error(`[VoiceChannel] Error rendering participant at index ${index}:`, err, participant)
-                  return null
-                }
-              })
-            } catch (err) {
-              console.error('[VoiceChannel] Fatal error rendering participants grid:', err)
-              return <div className="voice-error">Error rendering participants</div>
-            }
-          })()}
-
+                        <div className="participant-grid-media">
+                          {participantHasVideo ? (
+                            <video
+                              autoPlay
+                              playsInline
+                              muted={isSelf}
+                              className="participant-grid-video"
+                              ref={getVideoRefCallback(participant.id, participantScreenStream || participantCameraStream)}
+                            />
+                          ) : (
+                            <div className="participant-grid-avatar">
+                              <Avatar
+                                src={participant.avatar || `${imageApiUrl}/api/images/users/${participant.id}/profile`}
+                                fallback={participant.username}
+                                size={56}
+                                userId={participant.id}
+                              />
+                            </div>
+                          )}
+                          <div className="participant-grid-status">
+                            {isMuted && !participant.isReconnecting && (
+                              <div className="participant-grid-muted-icon" title={t('chat.muted', 'Muted')}>
+                                <MicrophoneIcon size={12} />
+                              </div>
+                            )}
+                            {isDeafened && !participant.isReconnecting && (
+                              <div className="participant-grid-deafen-icon" title={t('chat.deafened', 'Deafened')}>
+                                <SpeakerXMarkIcon size={12} />
+                              </div>
+                            )}
+                            {!isSelf && participant.isReconnecting && (
+                              <div className="participant-grid-reconnecting-badge" title={t('voice.reconnecting', 'Reconnecting…')}>⟳</div>
+                            )}
+                            {!isSelf && peerState !== 'connected' && !participant.isReconnecting && (
+                              <div className={`participant-grid-peer-badge peer-state-${peerState}`} title={t(`voice.peerState.${peerState}`, peerState)}>
+                                {getPeerStateBadgeSymbol(peerState)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="participant-grid-name">
+                          <span className="participant-grid-title">
+                            {participant.username}
+                            {Boolean(participant.bot) && <span className="bot-badge">{t('member.bot')}</span>}
+                          </span>
+                          <span className="participant-grid-subtitle">
+                            {isSelf
+                              ? (t('common.you') || 'You')
+                              : participant.isReconnecting
+                                ? t('voice.reconnecting', 'Reconnecting…')
+                                : t(`voice.peerState.${peerState}`, peerState)}
+                          </span>
+                          {encryptionEnabled && !isSelf && peerVerificationStatus[participant.id] && (
+                            <span
+                              className={`participant-verification-badge ${peerVerificationStatus[participant.id].verified ? 'verified' : 'discrepancy'}`}
+                              title={peerVerificationStatus[participant.id].summary || 'Verification status'}
+                            >
+                              {peerVerificationStatus[participant.id].verified ? (
+                                <ShieldCheck size={12} />
+                              ) : (
+                                <ShieldExclamationIcon size={12} />
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  } catch (err) {
+                    console.error(`[VoiceChannel] Error rendering participant at index ${index}:`, err, participant)
+                    return null
+                  }
+                })
+              } catch (err) {
+                console.error('[VoiceChannel] Fatal error rendering participants grid:', err)
+                return <div className="voice-error">Error rendering participants</div>
+              }
+            })()}
           </div>
         )}
       </div>
@@ -6777,6 +6842,16 @@ socket.on('voice:force-reconnect', (data) => {
 
       <div className="voice-participants-strip">
         <div className="participants-scrollable">
+          {showParticipantsLoadingState && (
+            <div className="participant-strip-state loading" role="status" aria-live="polite">
+              {t('voice.syncingParticipants', 'Setting up audio and syncing participants.')}
+            </div>
+          )}
+          {!showParticipantsLoadingState && isSoloInChannel && (
+            <div className="participant-strip-state empty">
+              {t('voice.waitingForOthers', 'You are the first one here. Waiting for others to join.')}
+            </div>
+          )}
           {(() => {
             // Safety wrapper to prevent blank page crashes
             try {
@@ -6857,7 +6932,7 @@ socket.on('voice:force-reconnect', (data) => {
                     {/* Peer connection state badge — only when not reconnecting */}
                     {!isSelf && peerState !== 'connected' && !participant.isReconnecting && (
                       <div className={`tile-peer-badge peer-state-${peerState}`} title={t(`voice.peerState.${peerState}`, peerState)}>
-                        {peerState === 'connecting' ? '⟳' : peerState === 'failed' ? '✕' : '!'}
+                        {getPeerStateBadgeSymbol(peerState)}
                       </div>
                     )}
                     {encryptionEnabled && !isSelf && peerVerificationStatus[participant.id] && (
@@ -6904,91 +6979,143 @@ socket.on('voice:force-reconnect', (data) => {
         </div>
       </div>
 
-      <div className="voice-controls">
-        <button 
-          className={`voice-control-btn ${currentMuted ? 'active' : ''}`}
-          onClick={toggleMute}
-          title={currentMuted ? t('chat.unmute') : t('chat.mute')}
-        >
-          {currentMuted ? <MicrophoneIcon size={28} /> : <MicrophoneIcon size={28} />}
-        </button>
-        
-        <button 
-          className={`voice-control-btn ${currentDeafened ? 'active' : ''}`}
-          onClick={toggleDeafen}
-          title={currentDeafened ? t('chat.undeafen') : t('chat.deafen')}
-        >
-          {currentDeafened ? <SpeakerXMarkIcon size={28} /> : <MusicalNoteIcon size={28} />}
-        </button>
+      <div className="voice-controls" role="toolbar" aria-label={t('voice.controlToolbar', 'Voice controls')}>
+        <div className="voice-controls-group primary-controls">
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn ${currentMuted ? 'active' : ''}`}
+              onClick={toggleMute}
+              title={currentMuted ? t('chat.unmute') : t('chat.mute')}
+              aria-label={currentMuted ? t('chat.unmute') : t('chat.mute')}
+              aria-pressed={currentMuted}
+            >
+              {currentMuted ? <MicOff size={24} /> : <Mic size={24} />}
+            </button>
+            <span className="voice-control-label">{t('voice.micLabel', 'Mic')}</span>
+          </div>
 
-        <button 
-          className={`voice-control-btn ${isVideoOn ? 'active-video' : ''}`}
-          onClick={toggleVideo}
-          title={isVideoOn ? t('chat.disableVideo') : t('chat.enableVideo')}
-        >
-          {isVideoOn ? <VideoCameraIcon size={28} /> : <VideoCameraSlashIcon size={28} />}
-        </button>
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn ${currentDeafened ? 'active' : ''}`}
+              onClick={toggleDeafen}
+              title={currentDeafened ? t('chat.undeafen') : t('chat.deafen')}
+              aria-label={currentDeafened ? t('chat.undeafen') : t('chat.deafen')}
+              aria-pressed={currentDeafened}
+            >
+              {currentDeafened ? <VolumeX size={24} /> : <Volume2 size={24} />}
+            </button>
+            <span className="voice-control-label">{t('voice.audioLabel', 'Audio')}</span>
+          </div>
 
-        <button 
-          className={`voice-control-btn ${isScreenSharing ? 'active-screen' : ''}`}
-          onClick={toggleScreenShare}
-          title={isScreenSharing ? t('chat.stopSharing') : t('chat.shareScreen')}
-        >
-          {isScreenSharing ? <ComputerDesktopIcon size={28} /> : <ComputerDesktopIcon size={28} />}
-        </button>
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn ${isVideoOn ? 'active-video' : ''}`}
+              onClick={toggleVideo}
+              title={isVideoOn ? t('chat.disableVideo') : t('chat.enableVideo')}
+              aria-label={isVideoOn ? t('chat.disableVideo') : t('chat.enableVideo')}
+              aria-pressed={isVideoOn}
+            >
+              {isVideoOn ? <VideoCameraIcon size={24} /> : <VideoCameraSlashIcon size={24} />}
+            </button>
+            <span className="voice-control-label">{t('chat.video', 'Video')}</span>
+          </div>
 
-        <button
-          className={`voice-control-btn ${showOverlayStudio ? 'active-video' : ''}`}
-          onClick={() => setShowOverlayStudio(true)}
-          title={t('voice.overlayStudio', 'Overlay Studio')}
-        >
-          <Layers3 size={28} />
-        </button>
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn ${isScreenSharing ? 'active-screen' : ''}`}
+              onClick={toggleScreenShare}
+              title={isScreenSharing ? t('chat.stopSharing') : t('chat.shareScreen')}
+              aria-label={isScreenSharing ? t('chat.stopSharing') : t('chat.shareScreen')}
+              aria-pressed={isScreenSharing}
+            >
+              <Monitor size={24} />
+            </button>
+            <span className="voice-control-label">{t('chat.screen', 'Screen')}</span>
+          </div>
 
-        <button 
-          className={`voice-control-btn activities-btn ${activeActivities.filter(a => a.contextType === 'voice' && a.contextId === channel?.id).length > 0 ? 'has-activity' : ''}`}
-          onClick={() => setShowActivityPicker(true)}
-          title="Start Activity"
-        >
-          <RocketLaunchIcon size={28} />
-        </button>
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn ${showOverlayStudio ? 'active-video' : ''}`}
+              onClick={() => setShowOverlayStudio(true)}
+              title={t('voice.overlayStudio', 'Overlay Studio')}
+              aria-label={t('voice.overlayStudio', 'Overlay Studio')}
+              aria-pressed={showOverlayStudio}
+            >
+              <Layers3 size={24} />
+            </button>
+            <span className="voice-control-label">{t('voice.overlayLabel', 'Overlay')}</span>
+          </div>
+        </div>
 
-        <button 
-          className={`voice-control-btn chat-btn ${tempChat.isVisible ? 'active' : ''}`}
-          onClick={tempChat.toggleVisibility}
-          title={tempChat.isVisible ? 'Hide Voice Chat' : 'Show Voice Chat'}
-        >
-          <ChatBubbleLeftRightIcon size={28} />
-          {tempChat.unreadCount > 0 && !tempChat.isVisible && (
-            <span className="voice-chat-unread-badge">{tempChat.unreadCount > 9 ? '9+' : tempChat.unreadCount}</span>
-          )}
-        </button>
+        <div className="voice-controls-group secondary-controls">
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn activities-btn ${activeVoiceActivitiesCount > 0 ? 'has-activity' : ''}`}
+              onClick={() => setShowActivityPicker(true)}
+              title={t('voice.startActivity', 'Start activity')}
+              aria-label={t('voice.startActivity', 'Start activity')}
+              aria-pressed={activeVoiceActivitiesCount > 0}
+            >
+              <RocketLaunchIcon size={24} />
+            </button>
+            <span className="voice-control-label">{t('activity.activity', 'Activity')}</span>
+          </div>
 
-        <button 
-          className="voice-control-btn leave"
-          onClick={handleLeave}
-          title={t('misc.leaveVoiceChannel')}
-        >
-          <PhoneXMarkIcon size={28} />
-        </button>
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn chat-btn ${tempChat.isVisible ? 'active' : ''}`}
+              onClick={tempChat.toggleVisibility}
+              title={tempChat.isVisible ? t('voice.hideChat', 'Hide voice chat') : t('voice.showChat', 'Show voice chat')}
+              aria-label={tempChat.isVisible ? t('voice.hideChat', 'Hide voice chat') : t('voice.showChat', 'Show voice chat')}
+              aria-pressed={tempChat.isVisible}
+            >
+              <ChatBubbleLeftRightIcon size={24} />
+              {tempChat.unreadCount > 0 && !tempChat.isVisible && (
+                <span className="voice-chat-unread-badge">{tempChat.unreadCount > 9 ? '9+' : tempChat.unreadCount}</span>
+              )}
+            </button>
+            <span className="voice-control-label">{t('chat.chat', 'Chat')}</span>
+          </div>
 
-        <button 
-          className="voice-control-btn settings"
-          title={t('misc.voiceSettings')}
-          onClick={onOpenSettings}
-        >
-          <CogIcon size={28} />
-        </button>
+          <div className="voice-control-item">
+            <button
+              className={`voice-control-btn ${showVoiceFX ? 'active' : ''}`}
+              title={t('misc.voiceEffects', 'Voice Effects')}
+              aria-label={t('misc.voiceEffects', 'Voice Effects')}
+              aria-pressed={showVoiceFX}
+              onClick={() => setShowVoiceFX(true)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" width="24" height="24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" />
+              </svg>
+            </button>
+            <span className="voice-control-label">{t('voice.effectsLabel', 'Effects')}</span>
+          </div>
 
-        <button 
-          className={`voice-control-btn ${showVoiceFX ? 'active' : ''}`}
-          title={t('misc.voiceEffects', 'Voice Effects')}
-          onClick={() => setShowVoiceFX(true)}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" width="28" height="28">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" />
-          </svg>
-        </button>
+          <div className="voice-control-item">
+            <button
+              className="voice-control-btn settings"
+              title={t('misc.voiceSettings')}
+              aria-label={t('misc.voiceSettings')}
+              onClick={onOpenSettings}
+            >
+              <CogIcon size={24} />
+            </button>
+            <span className="voice-control-label">{t('misc.settings', 'Settings')}</span>
+          </div>
+
+          <div className="voice-control-item danger">
+            <button
+              className="voice-control-btn leave"
+              onClick={handleLeave}
+              title={t('misc.leaveVoiceChannel')}
+              aria-label={t('misc.leaveVoiceChannel')}
+            >
+              <PhoneXMarkIcon size={24} />
+            </button>
+            <span className="voice-control-label">{t('misc.leave', 'Leave')}</span>
+          </div>
+        </div>
       </div>
 
       <VoiceChannelTempChat

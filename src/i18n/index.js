@@ -5,13 +5,16 @@ import de from './locales/de.json'
 export const languages = {
   en: { name: 'English', nativeName: 'English', flag: '🇬🇧' },
   es: { name: 'Spanish', nativeName: 'Español', flag: '🇪🇸' },
-  de: { name: 'German', nativeName: 'Deutsch', flag: '🇩🇪' }
+  de: { name: 'German', nativeName: 'Deutsch', flag: '🇩🇪' },
+  ru: { name: 'Russian', nativeName: 'русский', flag: '🇷🇺' }
 }
 
 export const translations = {
   en,
   es,
-  de
+  de,
+  ru
+
 }
 
 export const defaultLanguage = 'en'
@@ -47,7 +50,8 @@ const checkForDuplicates = () => {
   const allDuplicates = [
     ...checkFile('en', en),
     ...checkFile('es', es),
-    ...checkFile('de', de)
+    ...checkFile('ru', de),
+    ...checkFile('de', ru)
   ]
   
   if (allDuplicates.length > 0) {

@@ -7,15 +7,12 @@ import './Modal.css'
 import './AdminConfigModal.css'
 
 const STORAGE_TYPES = [
-  { id: 'json', name: 'JSON Files', desc: 'Simple file-based storage, no setup required' },
   { id: 'sqlite', name: 'SQLite', desc: 'Lightweight file-based SQL database' },
   { id: 'mysql', name: 'MySQL', desc: 'Popular open-source relational database' },
   { id: 'mariadb', name: 'MariaDB', desc: 'MySQL-compatible enhanced database' },
   { id: 'postgres', name: 'PostgreSQL', desc: 'Advanced open-source relational database' },
   { id: 'cockroachdb', name: 'CockroachDB', desc: 'Distributed SQL database for global apps' },
-  { id: 'mssql', name: 'SQL Server', desc: 'Microsoft enterprise database' },
-  { id: 'mongodb', name: 'MongoDB', desc: 'Flexible document database' },
-  { id: 'redis', name: 'Redis', desc: 'In-memory data store (cache layer)' }
+  { id: 'mssql', name: 'SQL Server', desc: 'Microsoft enterprise database' }
 ]
 
 const MIGRATION_FIELD_LOCALIZATION = {
@@ -87,9 +84,7 @@ const DRIVER_PACKAGE_BY_STORAGE = {
   mariadb: 'mariadb',
   postgres: 'pg',
   cockroachdb: 'pg',
-  mssql: 'mssql',
-  mongodb: 'mongodb',
-  redis: 'redis'
+  mssql: 'mssql'
 }
 
 const AdminConfigModal = ({ onClose }) => {
@@ -291,10 +286,6 @@ const AdminConfigModal = ({ onClose }) => {
 
   const getDefaultConfigFields = (typeId) => {
     switch (typeId) {
-      case 'json':
-        return [
-          { name: 'dataDir', label: 'Data Directory', type: 'text', default: './data' }
-        ]
       case 'sqlite':
         return [
           { name: 'dbPath', label: 'Database Path', type: 'text', default: './data/voltage.db' }
@@ -329,23 +320,6 @@ const AdminConfigModal = ({ onClose }) => {
           { name: 'password', label: 'Password', type: 'password', default: '' },
           { name: 'encrypt', label: 'Encrypt', type: 'checkbox', default: false },
           { name: 'trustServerCertificate', label: 'Trust Server Certificate', type: 'checkbox', default: true }
-        ]
-      case 'mongodb':
-        return [
-          { name: 'host', label: 'Host', type: 'text', default: 'localhost' },
-          { name: 'port', label: 'Port', type: 'number', default: 27017 },
-          { name: 'database', label: 'Database', type: 'text', default: 'voltchat' },
-          { name: 'user', label: 'Username', type: 'text', default: '' },
-          { name: 'password', label: 'Password', type: 'password', default: '' },
-          { name: 'authSource', label: 'Auth Source', type: 'text', default: 'admin' }
-        ]
-      case 'redis':
-        return [
-          { name: 'host', label: 'Host', type: 'text', default: 'localhost' },
-          { name: 'port', label: 'Port', type: 'number', default: 6379 },
-          { name: 'password', label: 'Password', type: 'password', default: '' },
-          { name: 'db', label: 'Database Number', type: 'number', default: 0 },
-          { name: 'keyPrefix', label: 'Key Prefix', type: 'text', default: 'voltchat:' }
         ]
       default:
         return []
@@ -986,24 +960,14 @@ const AdminConfigModal = ({ onClose }) => {
                     <div className="config-field">
                       <label>{t('adminConfig.fields.databaseType', 'Database Type')}</label>
                       <select value={config.storage.type || 'sqlite'} onChange={(e) => updateConfig('storage', 'type', e.target.value)}>
-                        <option value="json">{t('adminConfig.storageTypes.json.name', 'JSON Files')}</option>
                         <option value="sqlite">{t('adminConfig.storageTypes.sqlite.name', 'SQLite')}</option>
                         <option value="mysql">{t('adminConfig.storageTypes.mysql.name', 'MySQL')}</option>
                         <option value="mariadb">{t('adminConfig.storageTypes.mariadb.name', 'MariaDB')}</option>
                         <option value="postgres">{t('adminConfig.storageTypes.postgres.name', 'PostgreSQL')}</option>
                         <option value="cockroachdb">{t('adminConfig.storageTypes.cockroachdb.name', 'CockroachDB')}</option>
                         <option value="mssql">{t('adminConfig.storageTypes.mssql.name', 'SQL Server')}</option>
-                        <option value="mongodb">{t('adminConfig.storageTypes.mongodb.name', 'MongoDB')}</option>
-                        <option value="redis">{t('adminConfig.storageTypes.redis.name', 'Redis')}</option>
                       </select>
                     </div>
-                    
-                    {config.storage.json && (
-                      <div className="config-field">
-                        <label>{t('adminConfig.fields.dataDirectory', 'Data Directory')}</label>
-                        <input type="text" value={config.storage.json.dataDir || ''} onChange={(e) => updateConfig('storage', 'json', { ...config.storage.json, dataDir: e.target.value })} />
-                      </div>
-                    )}
                     
                     {config.storage.sqlite && (
                       <div className="config-field">
@@ -1137,51 +1101,6 @@ const AdminConfigModal = ({ onClose }) => {
                       </>
                     )}
                     
-                    {(config.storage.mongodb || config.storage.type === 'mongodb') && (
-                      <>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.mongodbHost', 'MongoDB Host')}</label>
-                          <input type="text" value={config.storage.mongodb?.host || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, host: e.target.value })} placeholder={t('adminConfig.placeholders.localhost', 'localhost')} />
-                        </div>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.mongodbPort', 'MongoDB Port')}</label>
-                          <input type="number" value={config.storage.mongodb?.port || 27017} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, port: parseInt(e.target.value) })} />
-                        </div>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.mongodbDatabase', 'MongoDB Database')}</label>
-                          <input type="text" value={config.storage.mongodb?.database || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, database: e.target.value })} placeholder={t('adminConfig.placeholders.voltchat', 'voltchat')} />
-                        </div>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.mongodbUsername', 'MongoDB Username')}</label>
-                          <input type="text" value={config.storage.mongodb?.user || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, user: e.target.value })} placeholder={t('adminConfig.placeholders.enterUsername', 'Enter username')} />
-                        </div>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.mongodbPassword', 'MongoDB Password')}</label>
-                          <input type="password" value={config.storage.mongodb?.password || ''} onChange={(e) => updateConfig('storage', 'mongodb', { ...config.storage.mongodb, password: e.target.value })} placeholder={t('adminConfig.placeholders.enterPassword', 'Enter password')} />
-                        </div>
-                      </>
-                    )}
-                    
-                    {(config.storage.redis || config.storage.type === 'redis') && (
-                      <>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.redisHost', 'Redis Host')}</label>
-                          <input type="text" value={config.storage.redis?.host || ''} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, host: e.target.value })} placeholder={t('adminConfig.placeholders.localhost', 'localhost')} />
-                        </div>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.redisPort', 'Redis Port')}</label>
-                          <input type="number" value={config.storage.redis?.port || 6379} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, port: parseInt(e.target.value) })} />
-                        </div>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.redisPasswordOptional', 'Redis Password (optional)')}</label>
-                          <input type="password" value={config.storage.redis?.password || ''} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, password: e.target.value })} placeholder={t('adminConfig.placeholders.enterPassword', 'Enter password')} />
-                        </div>
-                        <div className="config-field">
-                          <label>{t('adminConfig.fields.redisDatabaseNumber', 'Redis Database Number')}</label>
-                          <input type="number" value={config.storage.redis?.db || 0} onChange={(e) => updateConfig('storage', 'redis', { ...config.storage.redis, db: parseInt(e.target.value) })} min={0} max={15} />
-                        </div>
-                      </>
-                    )}
                   </div>
                 </div>
               )}

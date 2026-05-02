@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
+import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react'
 import { useTranslation } from '../hooks/useTranslation'
 import { useAppStore } from '../store/useAppStore'
 import VoiceRecorder from './VoiceRecorder'
@@ -8,6 +8,7 @@ import '../assets/styles/ChatInput.css'
 const CUSTOM_EMOJI_TOKEN_RE = /:([a-zA-Z0-9_]{1,32}|[^|:\s]+\|[^|:\s]+\|[^|:\s]+\|[^:\s]+):/g
 const UNICODE_EMOJI_SHORTCODE_RE = /:([a-zA-Z0-9_+-]+):/g
 const CARET_MARKER = '\uE000'
+const MAX_INPUT_HEIGHT = 200
 const escapeHtml = (value = '') => value
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -15,15 +16,26 @@ const escapeHtml = (value = '') => value
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;')
 
+// Memoize expensive emoji lookup building
 const buildEmojiLookup = (customEmojis = [], globalEmojis = []) => {
-  const byName = {}
-  const byId = {}
-  ;[...customEmojis, ...globalEmojis].forEach((emoji) => {
-    if (!emoji) return
-    if (emoji.name && emoji.url && !byName[emoji.name]) byName[emoji.name] = emoji
-    if (emoji.id && emoji.url && !byId[emoji.id]) byId[emoji.id] = emoji
-  })
-  return { byName, byId }
+  const byName = new Map()
+  const byId = new Map()
+  
+  // Use for...of for better performance
+  for (const emoji of [...customEmojis, ...globalEmojis]) {
+    if (!emoji) continue
+    if (emoji.name && emoji.url && !byName.has(emoji.name)) {
+      byName.set(emoji.name, emoji)
+    }
+    if (emoji.id && emoji.url && !byId.has(emoji.id)) {
+      byId.set(emoji.id, emoji)
+    }
+  }
+  
+  return { 
+    byName: Object.fromEntries(byName), 
+    byId: Object.fromEntries(byId) 
+  }
 }
 
 const resolveEmojiToken = (tokenInner, lookup) => {
@@ -86,6 +98,7 @@ const buildEditorNodes = (text, lookup) => {
   allMatches.sort((a, b) => a.index - b.index)
   
   for (const m of allMatches) {
+    if (m.index < last) continue
     const tokenInner = m[1]
     
     if (m.type === 'custom') {
@@ -176,6 +189,7 @@ const ChatInput = forwardRef((props, ref) => {
   const [contextMenu, setContextMenu] = useState(null)
   // Track if we're in the middle of a programmatic update to prevent loops
   const isUpdatingRef = useRef(false)
+  const isComposingRef = useRef(false)
   const emojiLookupRef = useRef(buildEmojiLookup(customEmojis, globalEmojis))
 
   useEffect(() => {
@@ -229,6 +243,13 @@ const ChatInput = forwardRef((props, ref) => {
     selection.addRange(range)
   }, [])
 
+  const autoResize = useCallback(() => {
+    const el = editorRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_HEIGHT)}px`
+  }, [])
+
   const renderEditorFromPlainText = useCallback((text, caretOffset = null) => {
     const el = editorRef.current
     if (!el) return
@@ -240,7 +261,7 @@ const ChatInput = forwardRef((props, ref) => {
     }
     if (caretOffset != null) setCaretByPlainOffset(caretOffset)
     autoResize()
-  }, [setCaretByPlainOffset])
+  }, [setCaretByPlainOffset, autoResize])
 
   const readPlainTextAndCaret = useCallback(() => {
     const el = editorRef.current
@@ -313,11 +334,22 @@ const ChatInput = forwardRef((props, ref) => {
 
   const handleInput = (e) => {
     // Skip if we're in the middle of a programmatic update
-    if (isUpdatingRef.current) return
+    if (disabled || isUpdatingRef.current || isComposingRef.current || e?.nativeEvent?.isComposing) return
     syncFromDom()
   }
 
   const handleKeyDown = (e) => {
+    if (disabled) {
+      e.preventDefault()
+      return
+    }
+
+    const isComposing = isComposingRef.current || e.isComposing || e.nativeEvent?.isComposing || e.keyCode === 229
+    if (isComposing) {
+      if (onKeyDown) onKeyDown(e)
+      return
+    }
+
     const selection = window.getSelection()
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null
 
@@ -366,8 +398,10 @@ const ChatInput = forwardRef((props, ref) => {
   }
 
   const handlePaste = (e) => {
+    if (disabled) return
     e.preventDefault()
-    const text = e.clipboardData.getData('text/plain')
+    const text = (e.clipboardData.getData('text/plain') || '').replace(/\r\n?/g, '\n')
+    if (!text) return
     const selection = window.getSelection()
     if (!selection || selection.rangeCount === 0) return
     const range = selection.getRangeAt(0)
@@ -403,6 +437,7 @@ const ChatInput = forwardRef((props, ref) => {
   }, [handleCopyCut])
 
   const insertPlainTextAtCaret = useCallback((text) => {
+    if (disabled) return
     const el = editorRef.current
     if (!el) return
     el.focus()
@@ -418,7 +453,7 @@ const ChatInput = forwardRef((props, ref) => {
     selection.removeAllRanges()
     selection.addRange(newRange)
     syncFromDom()
-  }, [syncFromDom])
+  }, [disabled, syncFromDom])
 
   const getSelectedPlainText = useCallback(() => {
     const selection = window.getSelection()
@@ -428,13 +463,14 @@ const ChatInput = forwardRef((props, ref) => {
   }, [])
 
   const handleContextPaste = useCallback(async () => {
+    if (disabled) return
     try {
       const text = await navigator.clipboard.readText()
       insertPlainTextAtCaret(text)
     } catch {
       // Clipboard read can be blocked by permissions; silently ignore.
     }
-  }, [insertPlainTextAtCaret])
+  }, [disabled, insertPlainTextAtCaret])
 
   const handleContextCopy = useCallback(() => {
     const selected = getSelectedPlainText()
@@ -443,6 +479,7 @@ const ChatInput = forwardRef((props, ref) => {
   }, [getSelectedPlainText])
 
   const handleContextCut = useCallback(() => {
+    if (disabled) return
     const selected = getSelectedPlainText()
     if (!selected) return
     navigator.clipboard.writeText(selected).catch(() => {})
@@ -450,27 +487,24 @@ const ChatInput = forwardRef((props, ref) => {
     if (!selection || selection.rangeCount === 0) return
     selection.getRangeAt(0).deleteContents()
     syncFromDom()
-  }, [getSelectedPlainText, syncFromDom])
+  }, [disabled, getSelectedPlainText, syncFromDom])
 
   const handleContextSelectAll = useCallback(() => {
+    if (disabled || !editorRef.current) return
     const selection = window.getSelection()
     const range = document.createRange()
     range.selectNodeContents(editorRef.current)
     selection.removeAllRanges()
     selection.addRange(range)
-  }, [])
+  }, [disabled])
 
   const handleFocus = (e) => {
     setIsFocused(true)
     if (onFocus) onFocus(e)
   }
-  const handleBlur = () => setIsFocused(false)
-
-  const autoResize = () => {
-    if (editorRef.current) {
-      editorRef.current.style.height = 'auto'
-      editorRef.current.style.height = Math.min(editorRef.current.scrollHeight, 200) + 'px'
-    }
+  const handleBlur = () => {
+    setIsFocused(false)
+    syncFromDom()
   }
 
   const handleContextMenu = useCallback((e) => {
@@ -539,6 +573,13 @@ const ChatInput = forwardRef((props, ref) => {
     }
   }, [contextMenu, closeContextMenu])
 
+  useEffect(() => {
+    autoResize()
+    const handleWindowResize = () => autoResize()
+    window.addEventListener('resize', handleWindowResize)
+    return () => window.removeEventListener('resize', handleWindowResize)
+  }, [autoResize])
+
   return (
     <div className={`chat-input-container ${className} ${isFocused ? 'focused' : ''}`}>
       <button 
@@ -557,7 +598,7 @@ const ChatInput = forwardRef((props, ref) => {
       <div className="chat-input-wrapper">
         <div
           ref={editorRef}
-          contentEditable
+          contentEditable={!disabled}
           className="chat-input-editor"
           placeholder={placeholder}
           onInput={handleInput}
@@ -565,11 +606,20 @@ const ChatInput = forwardRef((props, ref) => {
           onCopy={handleCopy}
           onCut={handleCut}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => { isComposingRef.current = true }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false
+            syncFromDom()
+          }}
           onFocus={handleFocus}
           onBlur={handleBlur}
           onContextMenu={handleContextMenu}
+          role="textbox"
+          aria-multiline="true"
+          aria-label={placeholder || t('chat.messageInput', 'Message input')}
+          aria-disabled={disabled ? 'true' : undefined}
+          tabIndex={disabled ? -1 : 0}
           suppressContentEditableWarning
-          disabled={disabled}
           spellCheck={false}
         />
       </div>

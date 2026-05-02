@@ -50,7 +50,8 @@ const createPokerSoundManager = () => {
   let inited = false
 
   const initAudio = () => {
-    if (inited) return
+    // Allow reinit if context was closed (e.g. after a previous page hidden/GC)
+    if (inited && audioContext && audioContext.state !== 'closed') return
     inited = true
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)()
@@ -200,6 +201,14 @@ const createPokerSoundManager = () => {
     },
     playHover: () => {
       playTone(500, 0.02, 'sine', 0.05)
+    },
+    dispose: () => {
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close().catch(() => {})
+      }
+      audioContext = null
+      masterGain = null
+      inited = false
     }
   }
 }

@@ -1,48 +1,192 @@
 .join-server-modal {
-  max-width: 440px;
+  max-width: 500px;
+}
+
+.join-server-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 28px;
+}
+
+.join-server-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
 }
 
 .join-server-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 20px;
-  background: var(--volt-bg-tertiary);
+  width: 84px;
+  height: 84px;
+  background: color-mix(in srgb, var(--volt-primary) 16%, var(--volt-bg-tertiary));
+  border: 1px solid color-mix(in srgb, var(--volt-primary) 35%, transparent);
   border-radius: 50%;
   color: var(--volt-primary);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--volt-primary) 24%, transparent);
 }
 
 .join-description {
-  text-align: center;
   color: var(--volt-text-secondary);
-  margin-bottom: 24px;
   font-size: 15px;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 34ch;
 }
 
-.join-server-modal .form-group {
+.join-server-input-group {
   margin-bottom: 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--volt-bg-tertiary) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--volt-border) 80%, transparent);
 }
 
-.join-server-modal .form-group label {
-  font-size: 12px;
-  font-weight: 600;
+.join-server-input-group.has-error {
+  border-color: color-mix(in srgb, var(--volt-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--volt-danger) 8%, var(--volt-bg-tertiary));
+}
+
+.join-server-modal .join-server-input-group label {
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
   color: var(--volt-text-muted);
   margin-bottom: 8px;
   display: block;
+  letter-spacing: 0.7px;
 }
 
-.input-hint {
+.join-server-input {
+  width: 100%;
+}
+
+.join-server-modal .join-server-input.is-invalid,
+.join-server-modal .join-server-input.is-invalid:focus {
+  border-color: var(--volt-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--volt-danger) 18%, transparent);
+}
+
+.join-server-modal .input-hint {
   display: block;
   font-size: 12px;
   color: var(--volt-text-muted);
-  margin-top: 8px;
+  margin-top: 10px;
+  line-height: 1.4;
 }
 
-.join-server-modal .modal-footer .btn-primary {
+.join-server-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--volt-border) 88%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.join-server-status.is-ready {
+  color: var(--volt-success);
+  border-color: color-mix(in srgb, var(--volt-success) 30%, transparent);
+  background: color-mix(in srgb, var(--volt-success) 14%, transparent);
+}
+
+.join-server-status.is-loading {
+  color: var(--volt-primary-light, var(--volt-primary));
+  border-color: color-mix(in srgb, var(--volt-primary) 34%, transparent);
+  background: color-mix(in srgb, var(--volt-primary) 12%, transparent);
+}
+
+.join-server-status code {
+  background: color-mix(in srgb, var(--volt-bg-secondary) 82%, black 18%);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--volt-text-primary);
+  word-break: break-all;
+}
+
+.join-server-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.9;
+  animation: joinServerPulse 1s ease-in-out infinite;
+}
+
+@keyframes joinServerPulse {
+  0%, 100% {
+    transform: scale(0.85);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.join-server-modal .modal-footer .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 176px;
+}
+
+.join-server-btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: joinServerSpin 0.75s linear infinite;
+}
+
+@keyframes joinServerSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .join-server-body {
+    padding-top: 18px;
+    gap: 16px;
+  }
+
+  .join-server-icon {
+    width: 68px;
+    height: 68px;
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--volt-primary) 24%, transparent);
+  }
+
+  .join-description {
+    font-size: 14px;
+    max-width: 30ch;
+  }
+
+  .join-server-input-group {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .join-server-modal .input-hint {
+    font-size: 11px;
+  }
+
+  .join-server-status {
+    font-size: 11px;
+    padding: 9px 10px;
+  }
+
+  .join-server-modal .modal-footer .btn-primary {
+    min-width: 0;
+  }
 }

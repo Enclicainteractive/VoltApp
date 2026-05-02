@@ -876,3 +876,247 @@
   color: var(--volt-text-muted);
   font-size: 12px;
 }
+
+/* ── VoiceChannelMainView Polish (non-breaking overrides) ───────────────── */
+.vc-main-view {
+  --vc-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.vc-main-header {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
+    var(--volt-bg-secondary);
+  backdrop-filter: blur(8px);
+}
+
+.vc-main-controls {
+  gap: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+    var(--volt-bg-tertiary);
+}
+
+.vc-control-btn,
+.vc-info-btn,
+.vc-mini-btn,
+.vc-bottom-btn {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease;
+}
+
+.vc-control-btn::after,
+.vc-info-btn::after,
+.vc-mini-btn::after,
+.vc-bottom-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.vc-control-btn:hover,
+.vc-info-btn:hover,
+.vc-mini-btn:hover,
+.vc-bottom-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+}
+
+.vc-control-btn:active,
+.vc-info-btn:active,
+.vc-mini-btn:active,
+.vc-bottom-btn:active {
+  transform: translateY(0) scale(0.96);
+}
+
+.vc-control-btn:focus-visible,
+.vc-info-btn:focus-visible,
+.vc-mini-btn:focus-visible,
+.vc-bottom-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--volt-primary) 75%, white 25%);
+  outline-offset: 2px;
+}
+
+.vc-control-btn.active:not(.danger) {
+  background: var(--volt-primary);
+  border-color: color-mix(in srgb, var(--volt-primary) 70%, white 30%);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--volt-primary) 34%, transparent 66%);
+}
+
+.vc-control-btn.active.danger,
+.vc-control-btn.danger {
+  border-color: rgba(239, 68, 68, 0.56);
+  box-shadow: 0 10px 24px rgba(239, 68, 68, 0.28);
+}
+
+.vc-main-body {
+  scrollbar-gutter: stable both-edges;
+}
+
+.vc-participants-grid {
+  gap: 14px;
+}
+
+.vc-tile {
+  border-color: rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 60%),
+    var(--volt-bg-secondary);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  transition:
+    transform 160ms var(--vc-ease-standard),
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
+}
+
+.vc-tile:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3);
+}
+
+.vc-tile.speaking {
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3), 0 18px 36px rgba(0, 0, 0, 0.3);
+}
+
+.vc-tile.connecting {
+  border-style: dashed;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.vc-tile-footer {
+  backdrop-filter: blur(6px);
+}
+
+.vc-tile-status {
+  font-weight: 600;
+}
+
+.vc-tile-expand {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.vc-main-bottom-controls {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+    var(--volt-bg-secondary);
+  backdrop-filter: blur(8px);
+}
+
+@media (max-width: 768px) {
+  .vc-mini-view {
+    border-top-color: rgba(255, 255, 255, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)),
+      var(--volt-bg-secondary);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.26);
+    backdrop-filter: blur(12px);
+  }
+
+  .vc-mini-header {
+    min-height: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .vc-mini-status {
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--volt-bg-quaternary);
+    color: var(--volt-text-secondary);
+  }
+
+  .vc-mini-status.connected {
+    color: var(--volt-success);
+    background: rgba(34, 197, 94, 0.16);
+  }
+
+  .vc-mini-status.connecting,
+  .vc-mini-status.degraded {
+    color: var(--volt-warning);
+    background: rgba(245, 158, 11, 0.18);
+  }
+
+  .vc-mini-status.error {
+    color: var(--volt-danger);
+    background: rgba(239, 68, 68, 0.18);
+  }
+
+  .vc-main-controls {
+    gap: 8px;
+  }
+
+  .vc-control-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 11px;
+  }
+
+  .vc-main-body {
+    padding: 14px;
+  }
+
+  .vc-participants-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+
+  .vc-main-bottom-controls {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .vc-bottom-btn {
+    min-height: 56px;
+  }
+}
+
+@media (max-width: 420px) {
+  .vc-main-header {
+    height: auto;
+    min-height: 52px;
+    padding: 8px 10px;
+  }
+
+  .vc-main-title {
+    font-size: 13px;
+  }
+
+  .vc-control-btn,
+  .vc-mini-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .vc-participants-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .vc-tile-expand {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-control-btn,
+  .vc-info-btn,
+  .vc-mini-btn,
+  .vc-bottom-btn,
+  .vc-tile,
+  .vc-speaking-ring {
+    animation: none !important;
+    transition: none !important;
+  }
+}

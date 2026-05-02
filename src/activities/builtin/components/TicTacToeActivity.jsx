@@ -137,6 +137,11 @@ const createTTTSoundManager = () => {
   return {
     init,
     ensureInit: () => { if (!ctx) init() },
+    dispose: () => {
+      try { if (ctx && ctx.state !== 'closed') ctx.close().catch(() => {}) } catch {}
+      ctx = null
+      master = null
+    },
     toggleMute: () => { muted = !muted; return muted },
     isMuted: () => muted,
 
@@ -276,6 +281,11 @@ const TicTacToeActivity = ({ sdk, currentUser }) => {
       document.removeEventListener('keydown', handler)
     }
   }, [sound])
+
+  // Close AudioContext on unmount
+  useEffect(() => () => {
+    try { soundRef.current?.dispose?.() } catch {}
+  }, [])
 
   // Play win/lose/draw sounds when game ends
   useEffect(() => {

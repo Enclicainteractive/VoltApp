@@ -68,6 +68,15 @@ const PEER_LEAVE_GRACE_MS = 8000
 const NEGOTIATION_TIMEOUT_MS = 18000
 const PENDING_CANDIDATE_MAX_AGE_MS = 20000
 
+// Defined at module scope — shape never changes at runtime, so there is no
+// reason to recreate this object on every render inside the provider.
+const TIER_CONFIG = {
+  small:   { maxPeers: 10,  concurrent: 3, cooldown: 800,  staggerBase: 300,  staggerPerPeer: 200, batchSize: 10 },
+  medium:  { maxPeers: 25,  concurrent: 4, cooldown: 1000, staggerBase: 500,  staggerPerPeer: 300, batchSize: 15 },
+  large:   { maxPeers: 50,  concurrent: 5, cooldown: 1500, staggerBase: 800,  staggerPerPeer: 400, batchSize: 25 },
+  massive: { maxPeers: 100, concurrent: 6, cooldown: 2000, staggerBase: 1000, staggerPerPeer: 500, batchSize: 30 }
+}
+
 const VoiceContext = createContext(null)
 
 // Provider that manages all RTC state - persists across UI view changes
@@ -125,12 +134,6 @@ export const VoiceProvider = ({ children }) => {
   const isMassJoinInProgressRef = useRef(false)
   const pendingPeerCountRef = useRef(0)
   
-  const TIER_CONFIG = {
-    small: { maxPeers: 10, concurrent: 3, cooldown: 800, staggerBase: 300, staggerPerPeer: 200, batchSize: 10 },
-    medium: { maxPeers: 25, concurrent: 4, cooldown: 1000, staggerBase: 500, staggerPerPeer: 300, batchSize: 15 },
-    large: { maxPeers: 50, concurrent: 5, cooldown: 1500, staggerBase: 800, staggerPerPeer: 400, batchSize: 25 },
-    massive: { maxPeers: 100, concurrent: 6, cooldown: 2000, staggerBase: 1000, staggerPerPeer: 500, batchSize: 30 }
-  }
   const MAX_CONNECTED_PEERS = 100
   const priorityPeersRef = useRef(new Set())
 
@@ -819,23 +822,35 @@ export const VoiceProvider = ({ children }) => {
       
       setLocalStream(stream)
       localStreamRef.current = stream
-      
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-      const analyser = audioContext.createAnalyser()
-      const source = audioContext.createMediaStreamSource(stream)
-      source.connect(analyser)
-      analyserRef.current = { audioContext, analyser }
-      
+
       hasJoinedRef.current = true
       hasLeftRef.current = false
-      
+
       socket.emit('voice:join', {
         channelId: channelData.id,
         peerId: user.id
       })
-      
+
       // Install audio unlock for Chrome autoplay
       installAudioUnlock()
+
+      // Defer AudioContext construction off the click handler so the browser
+      // can paint the "connecting" UI before the synchronous Web Audio work runs.
+      // analyserRef is only used for audio-level visualisation, so a brief null
+      // window here is safe.
+      setTimeout(() => {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext
+          if (!AudioCtx) return
+          const audioContext = new AudioCtx()
+          const analyser = audioContext.createAnalyser()
+          const source = audioContext.createMediaStreamSource(stream)
+          source.connect(analyser)
+          analyserRef.current = { audioContext, analyser }
+        } catch (e) {
+          console.warn('[Voice] AudioContext setup failed:', e?.message)
+        }
+      }, 0)
     } catch (err) {
       console.error('[Voice] Failed to get microphone:', err)
       setConnectionState('error')

@@ -26,6 +26,7 @@ import { defineConfig } from 'vite'
 // we will have a long conversation about what you did wrong.
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { performanceConfig } from './vite.config.performance.js'
 
 export default defineConfig({
   // React Fast Refresh - enables hot module replacement for React components
@@ -110,32 +111,30 @@ export default defineConfig({
     ]
   },
 
-  // Build configuration
+  // Enhanced build configuration with performance optimizations
   build: {
+    // Merge with performance config for optimal bundle splitting
+    ...performanceConfig.build,
+    
     // Source maps help debugging in browser dev tools
     // Slightly increases build time but debugging IMPOSSIBLE without them
     // 
     // Yes, build is slower with sourcemaps.
     // No, we don't care. Try debugging minified code once.
     // I'll wait. While you cry. In the corner.
-    sourcemap: true,
+    sourcemap: process.env.NODE_ENV === 'development',
+    
     // esbuild is significantly faster than terser for minification
     // Terser is deprecated anyway. Like, actually deprecated.
     // Use esbuild or go home.
     minify: 'esbuild',
+    
     // Target latest JavaScript features - assumes modern browser environment
     // 
     // 'esnext' tells esbuild to assume the environment supports the latest JS features
     // It knows about (ES2022-ES2024+) if you're using something that doesn't...
     // then you're COOKED. Sorry not sorry.
-    target: 'esnext',
-    rollupOptions: {
-      output: {
-        compact: true,
-        // Generate ES modules - modern and tree-shakeable
-        format: 'esm'
-      }
-    }
+    target: 'esnext'
   },
 
   // esbuild options

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { authService } from '../services/authService'
 import { apiService } from '../services/apiService'
 import { useAppStore } from '../store/useAppStore'
@@ -16,6 +16,22 @@ import {
 
 const AuthContext = createContext(null)
 const REFRESH_SKEW_MS = 5 * 60 * 1000
+const VALID_PRESENCE_STATUSES = new Set(['online', 'idle', 'dnd', 'invisible', 'offline'])
+const PRESENCE_STATUS_ALIASES = {
+  active: 'online',
+  available: 'online',
+  away: 'idle',
+  busy: 'dnd',
+  do_not_disturb: 'dnd',
+  'do-not-disturb': 'dnd'
+}
+
+const normalizePresenceStatus = (status, fallback = null) => {
+  if (typeof status !== 'string') return fallback
+  const normalized = status.trim().toLowerCase().replace(/\s+/g, '_')
+  const canonical = PRESENCE_STATUS_ALIASES[normalized] || normalized
+  return VALID_PRESENCE_STATUSES.has(canonical) ? canonical : fallback
+}
 
 const decodeJwtPayload = (token) => {
   if (!token || typeof token !== 'string') return null
@@ -52,10 +68,12 @@ const normalizeUserProfile = (userData) => {
     userData.profile?.dateOfBirth ||
     userData.profile?.dob ||
     null
+  const normalizedStatus = normalizePresenceStatus(userData.status, null)
 
   return {
     ...userData,
-    birthDate
+    birthDate,
+    status: normalizedStatus || userData.status
   }
 }
 
@@ -85,6 +103,10 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(getStoredAccessToken())
   const setUserInStore = useAppStore(state => state.setUser)
   const setSelfPresence = useAppStore(state => state.setSelfPresence)
+  const selfPresenceRef = useRef({
+    status: normalizePresenceStatus(user?.status, 'online'),
+    customStatus: typeof user?.customStatus === 'string' ? user.customStatus : ''
+  })
 
   const clearSession = () => {
     clearSessionStorage()
@@ -127,69 +149,108 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     setUserInStore(user)
-    setSelfPresence({
-      status: user?.status || 'online',
-      customStatus: user?.customStatus || ''
-    })
-  }, [user, setSelfPresence, setUserInStore])
+
+    const hasActiveSession = Boolean(user || token || getStoredAccessToken())
+    const nextStatus = normalizePresenceStatus(user?.status, hasActiveSession ? selfPresenceRef.current.status : 'online')
+    const nextCustomStatus =
+      typeof user?.customStatus === 'string'
+        ? user.customStatus
+        : hasActiveSession
+          ? selfPresenceRef.current.customStatus
+          : ''
+
+    const previous = selfPresenceRef.current
+    if (previous.status === nextStatus && previous.customStatus === nextCustomStatus) return
+
+    const nextPresence = {
+      status: nextStatus,
+      customStatus: nextCustomStatus
+    }
+
+    selfPresenceRef.current = nextPresence
+    setSelfPresence(nextPresence)
+    console.log('[Auth] Self presence transition', { from: previous, to: nextPresence, hasActiveSession })
+  }, [token, user, setSelfPresence, setUserInStore])
 
   useEffect(() => {
-      const initAuth = async () => {
-      const storedToken = getStoredAccessToken()
-      const storedUser = getStoredUserData()
-      
-      if (storedToken && storedUser) {
-        try {
-          const claims = decodeJwtPayload(storedToken)
-          const claimUserId = claims?.userId || claims?.id || claims?.sub || null
-          if (claimUserId && storedUser?.id && claimUserId !== storedUser.id) {
-            console.warn('[Auth] Stored token/user mismatch detected, clearing session')
-            clearSession()
-          } else {
-            const userData = normalizeUserProfile(storedUser)
-            setUser(userData)
-            setToken(storedToken)
-            setStoredUserData(userData)
-            console.log('[Auth] Restored session for:', userData.username)
-          }
-        } catch (error) {
-          console.error('Failed to restore session:', error)
-          clearSession()
-        }
-      }
+    const initAuth = async () => {
+      // Hard timeout: if init takes longer than 15 seconds, abort and clear session.
+      let hardTimeoutFired = false
+      const hardTimeoutId = window.setTimeout(() => {
+        hardTimeoutFired = true
+        console.warn('[Auth] Init timed out after 15s — clearing session')
+        clearSession()
+        setLoading(false)
+      }, 15000)
 
-      if (storedToken) {
-        const expMs = getTokenExpiryMs(storedToken)
-        if (expMs && Date.now() >= expMs - REFRESH_SKEW_MS) {
-          const refreshed = await tryRefreshSession()
-          if (!refreshed) {
+      try {
+        const storedToken = getStoredAccessToken()
+        const storedUser = getStoredUserData()
+
+        if (storedToken && storedUser) {
+          try {
+            const claims = decodeJwtPayload(storedToken)
+            const claimUserId = claims?.userId || claims?.id || claims?.sub || null
+            if (claimUserId && storedUser?.id && claimUserId !== storedUser.id) {
+              console.warn('[Auth] Stored token/user mismatch detected, clearing session')
+              clearSession()
+            } else {
+              const userData = normalizeUserProfile(storedUser)
+              setUser(userData)
+              setToken(storedToken)
+              setStoredUserData(userData)
+              console.log('[Auth] Restored session for:', userData.username)
+            }
+          } catch (error) {
+            console.error('Failed to restore session:', error)
             clearSession()
-            setLoading(false)
-            return
           }
         }
-        try {
-          const refreshed = await apiService.getCurrentUser()
-          if (refreshed?.data) {
-            const normalizedUser = normalizeUserProfile(refreshed.data)
-            setUser(normalizedUser)
-            setStoredUserData(normalizedUser)
-            
-            if (normalizedUser?.clientCSS !== undefined) {
-              customCSSService.loadFromProfile(normalizedUser.clientCSS, normalizedUser.clientCSSEnabled)
+
+        if (storedToken) {
+          const expMs = getTokenExpiryMs(storedToken)
+          if (expMs && Date.now() >= expMs - REFRESH_SKEW_MS) {
+            const refreshed = await tryRefreshSession()
+            if (!refreshed) {
+              clearSession()
+              return
             }
           }
-        } catch (err) {
-          console.warn('[Auth] Failed to refresh user profile', err)
-          const status = err?.response?.status
-          if (status === 401) {
-            const refreshed = await tryRefreshSession()
-            if (!refreshed) clearSession()
+          try {
+            const refreshed = await apiService.getCurrentUser()
+            if (refreshed?.data) {
+              const normalizedUser = normalizeUserProfile(refreshed.data)
+              setUser(normalizedUser)
+              setStoredUserData(normalizedUser)
+
+              if (normalizedUser?.clientCSS !== undefined) {
+                customCSSService.loadFromProfile(normalizedUser.clientCSS, normalizedUser.clientCSSEnabled)
+              }
+            }
+          } catch (err) {
+            console.warn('[Auth] Failed to refresh user profile', err)
+            const status = err?.response?.status
+            if (status === 401) {
+              const refreshed = await tryRefreshSession()
+              if (!refreshed) {
+                clearSession()
+              }
+            } else {
+              // Network timeout, 5xx, or no response — clear session so loading
+              // is not stuck forever.
+              console.warn('[Auth] Non-401 error during profile fetch — clearing session to unblock loading')
+              clearSession()
+            }
           }
         }
+      } finally {
+        // Cancel the hard timeout if we finished before it fired, then release
+        // the loading state (unless the hard timeout already did so).
+        window.clearTimeout(hardTimeoutId)
+        if (!hardTimeoutFired) {
+          setLoading(false)
+        }
       }
-
-      setLoading(false)
     }
     initAuth()
   }, [])

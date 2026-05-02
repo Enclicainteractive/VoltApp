@@ -10,6 +10,14 @@
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
 }
 
+/* Enhanced visualizer integration */
+.attachment-viewer .enhanced-audio-visualizer {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+}
+
 /* Image Viewer */
 .image-viewer .image-link {
   display: block;
@@ -696,6 +704,52 @@
   border-color: rgba(255, 255, 255, 0.14);
 }
 
+.media-pill-btn.active {
+  background: color-mix(in srgb, var(--volt-primary) 26%, rgba(255, 255, 255, 0.12));
+  border-color: color-mix(in srgb, var(--volt-primary) 58%, rgba(255, 255, 255, 0.14));
+}
+
+.audio-toolbar,
+.video-top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.media-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--volt-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.media-select-wrap--dark {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.media-select {
+  min-width: 96px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.media-select option {
+  color: #111827;
+}
+
 .audio-visualizer {
   height: 42px;
   display: flex;
@@ -713,6 +767,19 @@
   width: 100%;
 }
 
+.audio-wave--mirror {
+  align-items: center;
+}
+
+.audio-wave--mirror .wave-bar {
+  transform-origin: center;
+}
+
+.audio-wave--pulse .wave-bar {
+  border-radius: 999px;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--volt-primary) 32%, transparent);
+}
+
 .wave-bar {
   flex: 1 1 0;
   min-width: 3px;
@@ -725,6 +792,14 @@
 
 .wave-bar.playing {
   opacity: 1;
+}
+
+.audio-wave--mirror .wave-bar.playing {
+  transform: scaleY(1.04);
+}
+
+.audio-wave--pulse .wave-bar.playing {
+  filter: saturate(1.2);
 }
 
 .audio-controls {
@@ -1061,6 +1136,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .video-controls-left {
@@ -1073,6 +1150,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  margin-left: auto;
 }
 
 .video-controls .control-btn {

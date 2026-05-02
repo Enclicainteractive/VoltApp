@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { UsersIcon, PlusIcon, XMarkIcon, MagnifyingGlassIcon, ClipboardDocumentIcon, BellIcon, BellSlashIcon, ArrowPathIcon, WifiIcon } from '@heroicons/react/24/outline'
 import { Lock, Shield, ShieldOff, Key } from 'lucide-react'
 import { useTranslation } from '../hooks/useTranslation'
@@ -7,13 +7,203 @@ import { apiService } from '../services/apiService'
 import { useSocket } from '../contexts/SocketContext'
 import { useE2e } from '../contexts/E2eContext'
 import { soundService } from '../services/soundService'
+import lazyLoadingService from '../services/lazyLoadingService'
 import Avatar from './Avatar'
 import ContextMenu from './ContextMenu'
 import GuildTagBadge from './GuildTagBadge'
 import E2eeEnableModal from './E2eeEnableModal'
 import E2eeKeyPromptModal from './E2eeKeyPromptModal'
+import { useResetScrollOnChange } from '../hooks/useResetScrollOnChange'
 import '../assets/styles/DMList.css'
 import '../assets/styles/SystemMessagePanel.css'
+
+const OFFLINE_GRACE_MS = 2400
+const PRESENCE_STATUSES = new Set(['online', 'idle', 'dnd', 'invisible', 'offline'])
+const PRESENCE_STATUS_ALIASES = new Map([
+  ['active', 'online'],
+  ['available', 'online'],
+  ['away', 'idle'],
+  ['busy', 'dnd'],
+  ['do_not_disturb', 'dnd'],
+  ['do-not-disturb', 'dnd'],
+  ['donotdisturb', 'dnd']
+])
+
+const isNumericTimestampString = (value) => {
+  let hasDigit = false
+  let hasDecimalPoint = false
+
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i]
+    if (char >= '0' && char <= '9') {
+      hasDigit = true
+      continue
+    }
+
+    if (char === '.' && !hasDecimalPoint) {
+      hasDecimalPoint = true
+      continue
+    }
+
+    return false
+  }
+
+  return hasDigit
+}
+
+const normalizePresenceUserId = (value) => {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value)
+  }
+  if (typeof value === 'object') {
+    return normalizePresenceUserId(
+      value.id ??
+      value.userId ??
+      value.user_id ??
+      value.memberId ??
+      value.member_id ??
+      value.user?.id ??
+      value.user?.userId ??
+      value.user?.user_id
+    )
+  }
+  return null
+}
+
+const extractPresenceUserId = (payload = {}) => normalizePresenceUserId(
+  payload.userId ??
+  payload.user_id ??
+  payload.memberId ??
+  payload.member_id ??
+  payload.recipientId ??
+  payload.recipient_id ??
+  payload.targetUserId ??
+  payload.target_user_id ??
+  payload.user?.id ??
+  payload.user?.userId ??
+  payload.user?.user_id ??
+  payload.member?.id ??
+  payload.member?.userId ??
+  payload.member?.user_id ??
+  payload.member?.user?.id ??
+  payload.member?.user?.userId ??
+  payload.presence?.userId ??
+  payload.presence?.user_id ??
+  payload.data?.userId ??
+  payload.data?.user_id ??
+  payload.data?.memberId ??
+  payload.data?.member_id ??
+  payload.data?.user?.id
+)
+
+const parsePresenceTimestamp = (value) => {
+  if (value === null || value === undefined) return null
+
+  if (value instanceof Date) {
+    const ms = value.getTime()
+    return Number.isFinite(ms) ? ms : null
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 1e12 ? Math.round(value * 1000) : Math.round(value)
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+
+    if (isNumericTimestampString(trimmed)) {
+      const asNumber = Number(trimmed)
+      if (!Number.isFinite(asNumber)) return null
+      return asNumber < 1e12 ? Math.round(asNumber * 1000) : Math.round(asNumber)
+    }
+
+    const parsed = Date.parse(trimmed)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+
+  return null
+}
+
+const getPresenceEventInfo = (payload = {}) => {
+  const candidates = [
+    payload.updatedAt,
+    payload.updated_at,
+    payload.timestamp,
+    payload.at,
+    payload.lastSeenAt,
+    payload.last_seen_at,
+    payload.occurredAt,
+    payload.eventTime,
+    payload.time,
+    payload.meta?.timestamp,
+    payload.meta?.updatedAt,
+    payload.presence?.updatedAt,
+    payload.presence?.timestamp,
+    payload.data?.updatedAt,
+    payload.data?.updated_at,
+    payload.data?.timestamp,
+    payload.data?.at
+  ]
+
+  for (const candidate of candidates) {
+    const parsed = parsePresenceTimestamp(candidate)
+    if (parsed !== null) {
+      return { eventAt: parsed, hasTimestamp: true }
+    }
+  }
+
+  return { eventAt: Date.now(), hasTimestamp: false }
+}
+
+const extractPresenceStatus = (payload = {}) => (
+  payload.status ??
+  payload.presence?.status ??
+  payload.user?.status ??
+  payload.data?.status
+)
+
+const extractCustomStatus = (payload = {}) => {
+  if (payload.customStatus !== undefined) return { hasCustomStatus: true, customStatus: payload.customStatus }
+  if (payload.custom_status !== undefined) return { hasCustomStatus: true, customStatus: payload.custom_status }
+  if (payload.user?.customStatus !== undefined) return { hasCustomStatus: true, customStatus: payload.user.customStatus }
+  if (payload.user?.custom_status !== undefined) return { hasCustomStatus: true, customStatus: payload.user.custom_status }
+  if (payload.data?.customStatus !== undefined) return { hasCustomStatus: true, customStatus: payload.data.customStatus }
+  if (payload.data?.custom_status !== undefined) return { hasCustomStatus: true, customStatus: payload.data.custom_status }
+  return { hasCustomStatus: false, customStatus: null }
+}
+
+const normalizePresenceStatus = (status, fallback = null) => {
+  if (typeof status !== 'string') return fallback
+  const normalized = status.trim().toLowerCase()
+  const aliasResolved = PRESENCE_STATUS_ALIASES.get(normalized) || normalized
+  return PRESENCE_STATUSES.has(aliasResolved) ? aliasResolved : fallback
+}
+
+const normalizeConversationPresence = (items) => {
+  if (!Array.isArray(items)) return []
+
+  return items.map(conv => {
+    const recipient = conv?.recipient
+    if (!recipient) return conv
+
+    const normalizedStatus = normalizePresenceStatus(recipient.status, recipient.status)
+    if (normalizedStatus === recipient.status) return conv
+
+    return {
+      ...conv,
+      recipient: {
+        ...recipient,
+        status: normalizedStatus
+      }
+    }
+  })
+}
 
 const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onOpenSystemInbox }) => {
   const { t } = useTranslation()
@@ -39,6 +229,10 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
   const [dmE2eeStatus, setDmE2eeStatus] = useState({})
   const [lastRealtimeAt, setLastRealtimeAt] = useState(null)
   const [statusNow, setStatusNow] = useState(Date.now())
+  const reconnectResyncAtRef = useRef(0)
+  const pendingOfflineTimersRef = useRef(new Map())
+  const latestPresenceEventAtRef = useRef(new Map())
+  const dmItemsRef = useResetScrollOnChange([type, selectedConversation?.id, showNewDM])
 
   const markRealtimeUpdate = useCallback(() => {
     setLastRealtimeAt(Date.now())
@@ -58,7 +252,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
   const loadConversations = useCallback(async (search = '') => {
     try {
       const res = await apiService.getDirectMessages(search)
-      setConversations(res.data)
+      setConversations(normalizeConversationPresence(res.data))
       markRealtimeUpdate()
     } catch (err) {
       console.error('Failed to load conversations:', err)
@@ -79,6 +273,16 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
     return () => clearInterval(intervalId)
   }, [])
 
+  useEffect(() => {
+    const timers = pendingOfflineTimersRef.current
+    return () => {
+      for (const timeoutId of timers.values()) {
+        clearTimeout(timeoutId)
+      }
+      timers.clear()
+    }
+  }, [])
+
   const loadMuteStatus = async () => {
     try {
       const res = await apiService.getNotificationSettings()
@@ -93,6 +297,16 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
       console.error('Failed to load mute status:', err)
     }
   }
+
+  useEffect(() => {
+    if (!connected) return
+    const now = Date.now()
+    if (now - reconnectResyncAtRef.current < 2500) return
+    reconnectResyncAtRef.current = now
+
+    loadConversations()
+    loadMuteStatus()
+  }, [connected])
 
   useEffect(() => {
     if (!socket || !connected) return
@@ -117,18 +331,107 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
 
   useEffect(() => {
     if (!socket || !connected) return
+    const timers = pendingOfflineTimersRef.current
 
-    const handleStatusUpdate = ({ userId, status, customStatus }) => {
-      markRealtimeUpdate()
-      setConversations(prev => prev.map(conv => {
-        if (conv.recipient?.id === userId) {
-          return {
-            ...conv,
-            recipient: { ...conv.recipient, status, customStatus }
+    const clearPendingOffline = (userId) => {
+      const timeoutId = timers.get(userId)
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timers.delete(userId)
+      }
+    }
+
+    const markEventIfFresh = (userId, payload) => {
+      const { eventAt, hasTimestamp } = getPresenceEventInfo(payload)
+      const lastEventAt = latestPresenceEventAtRef.current.get(userId) || 0
+      if (hasTimestamp && eventAt < lastEventAt) return null
+      const monotonicEventAt = hasTimestamp ? eventAt : Math.max(eventAt, lastEventAt + 1)
+      latestPresenceEventAtRef.current.set(userId, monotonicEventAt)
+      return monotonicEventAt
+    }
+
+    const applyStatusToRecipient = (userId, status, customStatus, hasCustomStatus = false) => {
+      setConversations(prev => {
+        let changed = false
+        const next = prev.map(conv => {
+          const recipientId = normalizePresenceUserId(conv.recipient?.id)
+          if (!recipientId || recipientId !== userId) return conv
+          const nextRecipient = { ...conv.recipient }
+          let recipientChanged = false
+
+          if (status && nextRecipient.status !== status) {
+            nextRecipient.status = status
+            recipientChanged = true
           }
-        }
-        return conv
-      }))
+
+          if (hasCustomStatus) {
+            const normalizedCustom = customStatus ?? null
+            if (nextRecipient.customStatus !== normalizedCustom) {
+              nextRecipient.customStatus = normalizedCustom
+              recipientChanged = true
+            }
+          }
+
+          if (!recipientChanged) return conv
+          changed = true
+          return { ...conv, recipient: nextRecipient }
+        })
+
+        return changed ? next : prev
+      })
+    }
+
+    const handleStatusUpdate = (payload = {}) => {
+      const userId = extractPresenceUserId(payload)
+      if (!userId) return
+
+      const normalizedStatus = normalizePresenceStatus(extractPresenceStatus(payload))
+      const { hasCustomStatus, customStatus } = extractCustomStatus(payload)
+      if (!normalizedStatus && !hasCustomStatus) return
+
+      const eventAt = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+
+      clearPendingOffline(userId)
+      applyStatusToRecipient(userId, normalizedStatus, customStatus, hasCustomStatus)
+      markRealtimeUpdate()
+    }
+
+    const handleMemberOnline = (payload = {}) => {
+      const userId = extractPresenceUserId(payload)
+      if (!userId) return
+
+      const normalizedStatus = normalizePresenceStatus(extractPresenceStatus(payload), 'online')
+      const { hasCustomStatus, customStatus } = extractCustomStatus(payload)
+      const eventAt = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+
+      clearPendingOffline(userId)
+      applyStatusToRecipient(userId, normalizedStatus, customStatus, hasCustomStatus)
+      markRealtimeUpdate()
+    }
+
+    const handleMemberOffline = (payload = {}) => {
+      const userId = extractPresenceUserId(payload)
+      if (!userId) return
+
+      const eventAt = markEventIfFresh(userId, payload)
+      if (!eventAt) return
+
+      clearPendingOffline(userId)
+      const timeoutId = setTimeout(() => {
+        const currentTimeout = timers.get(userId)
+        if (currentTimeout !== timeoutId) return
+        timers.delete(userId)
+
+        const latestEventAt = latestPresenceEventAtRef.current.get(userId) || 0
+        if (latestEventAt > eventAt) return
+
+        applyStatusToRecipient(userId, 'offline')
+        markRealtimeUpdate()
+      }, OFFLINE_GRACE_MS)
+
+      timers.set(userId, timeoutId)
     }
 
     const handleDMNotification = () => {
@@ -138,13 +441,22 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
     }
 
     socket.on('user:status', handleStatusUpdate)
+    socket.on('member:online', handleMemberOnline)
+    socket.on('member:offline', handleMemberOffline)
     socket.on('dm:notification', handleDMNotification)
     socket.on('dm:new', handleDMNotification)
 
     return () => {
       socket.off('user:status', handleStatusUpdate)
+      socket.off('member:online', handleMemberOnline)
+      socket.off('member:offline', handleMemberOffline)
       socket.off('dm:notification', handleDMNotification)
       socket.off('dm:new', handleDMNotification)
+
+      for (const timeoutId of timers.values()) {
+        clearTimeout(timeoutId)
+      }
+      timers.clear()
     }
   }, [socket, connected, loadConversations, markRealtimeUpdate])
 
@@ -223,11 +535,13 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
   }
 
   const handleSelectConversation = (conv) => {
+    lazyLoadingService.preloadComponents(['DMChat', 'ChatInput', 'FileAttachment'], { idle: true })
     onSelectConversation?.(conv)
   }
 
   const getStatusColor = (status) => {
-    switch (status) {
+    const normalizedStatus = normalizePresenceStatus(status, status)
+    switch (normalizedStatus) {
       case 'online': return 'var(--volt-success)'
       case 'idle': return 'var(--volt-warning)'
       case 'dnd': return 'var(--volt-danger)'
@@ -283,9 +597,12 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
         </div>
       </div>
 
-      <div className="dm-items">
+      <div ref={dmItemsRef} className="dm-items">
         <button 
           className={`dm-item nav-item ${location.pathname === '/chat/friends' ? 'active' : ''}`}
+          type="button"
+          onMouseEnter={() => lazyLoadingService.preloadComponents(['FriendsPage'], { idle: true })}
+          onFocus={() => lazyLoadingService.preloadComponents(['FriendsPage'], { idle: true })}
           onClick={() => navigate('/chat/friends')}
         >
           <UsersIcon size={24} />
@@ -294,6 +611,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
 
         <button
           className={`dm-item nav-item sysmsg-sidebar-entry`}
+          type="button"
           onClick={onOpenSystemInbox}
           title={t('system.systemInbox')}
         >
@@ -308,7 +626,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
 
         <div className="dm-section-header">
           <span>{t('dm.title').toUpperCase()}</span>
-          <button className="dm-add-btn" onClick={() => setShowNewDM(!showNewDM)} title={t('dm.newMessage')}>
+          <button className="dm-add-btn" type="button" onClick={() => setShowNewDM(!showNewDM)} title={t('dm.newMessage')}>
             {showNewDM ? <XMarkIcon size={16} /> : <PlusIcon size={16} />}
           </button>
         </div>
@@ -330,6 +648,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                   <button 
                     key={user.id} 
                     className={`search-result-item ${selectedUserIds.includes(user.id) ? 'selected' : ''}`}
+                    type="button"
                     onClick={() => toggleSelectedUser(user.id)}
                   >
                     <Avatar
@@ -345,6 +664,7 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
             {selectedUserIds.length > 0 && (
               <button
                 className="dm-create-group-btn"
+                type="button"
                 onClick={handleCreateSelectedConversation}
               >
                 {selectedUserIds.length === 1
@@ -359,7 +679,20 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
         )}
 
         {loading ? (
-              <div className="dm-loading">{t('common.loading')}</div>
+              <div className="dm-loading" role="status" aria-live="polite">
+                <span className="dm-loading-title">{t('common.loading')}</span>
+                <div className="dm-loading-list">
+                  {[0, 1, 2, 3].map(index => (
+                    <div key={index} className="dm-loading-row">
+                      <span className="dm-loading-avatar" />
+                      <span className="dm-loading-lines">
+                        <span className="dm-loading-line dm-loading-line-primary" />
+                        <span className="dm-loading-line dm-loading-line-secondary" />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : filteredConversations.length === 0 ? (
               <div className="empty-dms">
                 {searchQuery ? 'No conversations found' : t('dm.chooseConversation')}
@@ -382,6 +715,8 @@ const DMList = ({ type, onSelectConversation, selectedConversation, onClose, onO
                     className={`dm-conversation ${selectedConversation?.id === conv.id ? 'active' : ''} ${unreadCount > 0 ? 'unread' : ''}`}
                     role="button"
                     tabIndex={0}
+                    onMouseEnter={() => lazyLoadingService.preloadComponents(['DMChat', 'ChatInput'], { idle: true })}
+                    onFocus={() => lazyLoadingService.preloadComponents(['DMChat', 'ChatInput'], { idle: true })}
                     onClick={() => handleSelectConversation(conv)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {

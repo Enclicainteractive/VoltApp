@@ -29,6 +29,8 @@ const getExistingBirthDate = (user) => {
   return ''
 }
 
+export const isBirthDateMissing = (user) => !getExistingBirthDate(user)
+
 const BirthDateRequiredModal = () => {
   const { user, refreshUser, logout } = useAuth()
   const existingBirthDate = getExistingBirthDate(user)
@@ -37,7 +39,7 @@ const BirthDateRequiredModal = () => {
   const [error, setError] = useState('')
   const [completed, setCompleted] = useState(false)
 
-  if (!user || existingBirthDate || completed) return null
+  if (!user || !isBirthDateMissing(user) || completed) return null
   if (typeof document === 'undefined') return null
 
   const handleSave = async (e) => {

@@ -163,6 +163,200 @@
   background: linear-gradient(180deg, rgba(148, 163, 184, 0.02), transparent 32%), var(--volt-bg);
 }
 
+.admin-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--volt-border);
+  font-size: 13px;
+  color: var(--volt-text-primary);
+  background: var(--volt-bg-secondary);
+}
+
+.admin-notice.success {
+  border-color: rgba(16, 185, 129, 0.38);
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.admin-notice.error {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.admin-notice.warning {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.admin-notice-dismiss {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-confirmation-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.admin-confirmation-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--volt-text-primary);
+  font-size: 13px;
+}
+
+.admin-confirmation-message svg {
+  color: var(--volt-warning);
+  flex-shrink: 0;
+}
+
+.admin-confirmation-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.admin-inline-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -4px 0 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  border: 1px solid var(--volt-border);
+  color: var(--volt-text-primary);
+  background: var(--volt-bg-secondary);
+}
+
+.admin-inline-status.warning {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.admin-inline-status.success {
+  border-color: rgba(16, 185, 129, 0.38);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.admin-inline-status.error {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.13);
+}
+
+.admin-inline-status-dismiss {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.admin-sub-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: -8px 0 12px;
+  flex-wrap: wrap;
+}
+
+.admin-pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}
+
+.admin-pagination-controls select {
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  color: var(--volt-text-primary);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.admin-page-input {
+  width: 64px;
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  color: var(--volt-text-primary);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.admin-selection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--volt-text-muted);
+  font-size: 12px;
+}
+
+.admin-empty-row {
+  text-align: center;
+  color: var(--volt-text-muted);
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-empty-row strong {
+  color: var(--volt-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-empty-row span {
+  font-size: 12px;
+  color: var(--volt-text-muted);
+}
+
+.admin-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--volt-border);
+  background: var(--volt-bg-secondary);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
 .admin-loading {
   display: flex;
   flex-direction: column;
@@ -1635,6 +1829,15 @@
   .admin-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .admin-confirmation-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-confirmation-actions {
+    justify-content: flex-end;
   }
   
   .admin-search {

@@ -3,6 +3,7 @@ import { SpeakerWaveIcon, UsersIcon, PhoneIcon } from '@heroicons/react/24/outli
 import { useSocket } from '../contexts/SocketContext'
 import { useTranslation } from '../hooks/useTranslation'
 import { soundService } from '../services/soundService'
+import lazyLoadingService from '../services/lazyLoadingService'
 import Avatar from './Avatar'
 import '../assets/styles/VoiceChannelPreview.css'
 
@@ -65,7 +66,9 @@ const VoiceChannelPreview = ({ channel, onJoin, onClose }) => {
       <div className="preview-participants">
         <div className="participants-header">
           <UsersIcon size={16} />
-          <span>{participants.length} {t('chat.connected', 'connected')}</span>
+          <span className="participants-count">
+            <strong>{participants.length}</strong> {t('chat.connected', 'connected')}
+          </span>
         </div>
 
         {participants.length > 0 ? (
@@ -87,13 +90,20 @@ const VoiceChannelPreview = ({ channel, onJoin, onClose }) => {
       </div>
 
       <div className="preview-actions">
-        <button className="btn btn-secondary" onClick={onClose}>
+        <button type="button" className="btn btn-secondary preview-cancel-btn" onClick={onClose}>
           {t('common.cancel', 'Cancel')}
         </button>
-        <button className="btn btn-primary" onClick={() => {
-          soundService.prime()
-          onJoin?.()
-        }}>
+        <button
+          type="button"
+          className="btn btn-primary preview-join-btn"
+          onMouseEnter={() => lazyLoadingService.preloadComponents(['VoiceChannel'], { idle: true })}
+          onFocus={() => lazyLoadingService.preloadComponents(['VoiceChannel'], { idle: true })}
+          onClick={() => {
+            soundService.prime()
+            lazyLoadingService.preloadComponents(['VoiceChannel'], { idle: false })
+            onJoin?.()
+          }}
+        >
           <PhoneIcon size={18} />
           {t('chat.joinChannel', 'Join Voice')}
         </button>

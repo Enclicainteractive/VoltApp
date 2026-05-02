@@ -1,27 +1,84 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { DocumentTextIcon, ArrowDownTrayIcon, EyeIcon, EyeSlashIcon, CodeBracketIcon, MusicalNoteIcon, FilmIcon, PhotoIcon, PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, MagnifyingGlassPlusIcon, MagnifyingGlassMinusIcon, ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { DocumentTextIcon, ArrowDownTrayIcon, EyeIcon, EyeSlashIcon, CodeBracketIcon, MusicalNoteIcon, FilmIcon, PhotoIcon, PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, BackwardIcon, ForwardIcon, MagnifyingGlassPlusIcon, MagnifyingGlassMinusIcon, ArrowPathIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '../contexts/AuthContext'
 import { settingsService } from '../services/settingsService'
 import { classifyImageUrlForNsfw, getNsfwThresholds } from '../services/nsfwDetectionService'
+import EnhancedAudioVisualizer from './EnhancedAudioVisualizer'
 import '../assets/styles/FileAttachment.css'
+import '../assets/styles/EnhancedAudioVisualizer.css'
+
+const ATTACHMENT_MEDIA_VOLUME_KEY = 'volt_attachment_media_volume'
+const ATTACHMENT_AUDIO_VISUALIZER_STYLE_KEY = 'volt_attachment_audio_visualizer_style'
+const ATTACHMENT_AUDIO_VISUALIZER_MODE_KEY = 'volt_attachment_audio_visualizer_mode'
+const ATTACHMENT_AUDIO_LOOP_KEY = 'volt_attachment_audio_loop'
+const ATTACHMENT_VIDEO_FIT_KEY = 'volt_attachment_video_fit'
+const ATTACHMENT_VIDEO_LOOP_KEY = 'volt_attachment_video_loop'
+const ATTACHMENT_VIDEO_RATE_KEY = 'volt_attachment_video_rate'
+
+const attachmentMediaListeners = new Set()
+
+const subscribeAttachmentMediaEvents = (listener) => {
+  attachmentMediaListeners.add(listener)
+  return () => attachmentMediaListeners.delete(listener)
+}
+
+const broadcastAttachmentMediaEvent = (event) => {
+  attachmentMediaListeners.forEach((listener) => {
+    try {
+      listener(event)
+    } catch (err) {
+      console.warn('[FileAttachment] Failed to notify linked media player:', err)
+    }
+  })
+}
+
+const createAttachmentMediaId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`
+
+const readStoredNumber = (key, fallback) => {
+  if (typeof window === 'undefined') return fallback
+  const value = Number(window.localStorage.getItem(key))
+  return Number.isFinite(value) ? value : fallback
+}
+
+const readStoredString = (key, fallback) => {
+  if (typeof window === 'undefined') return fallback
+  return window.localStorage.getItem(key) || fallback
+}
+
+const readStoredBoolean = (key, fallback = false) => {
+  if (typeof window === 'undefined') return fallback
+  const value = window.localStorage.getItem(key)
+  if (value == null) return fallback
+  return value === 'true'
+}
+
+const persistStoredValue = (key, value) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(key, String(value))
+}
 
 // Custom Audio Player Component
 const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
+  const playerIdRef = useRef(createAttachmentMediaId('audio'))
   const audioRef = useRef(null)
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const sourceNodeRef = useRef(null)
   const animationFrameRef = useRef(null)
-  const previousVolumeRef = useRef(1)
+  const previousVolumeRef = useRef(readStoredNumber(ATTACHMENT_MEDIA_VOLUME_KEY, 0.88) || 1)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(1)
-  const [isMuted, setIsMuted] = useState(false)
+  const [volume, setVolume] = useState(() => readStoredNumber(ATTACHMENT_MEDIA_VOLUME_KEY, 0.88))
+  const [isMuted, setIsMuted] = useState(() => readStoredNumber(ATTACHMENT_MEDIA_VOLUME_KEY, 0.88) === 0)
   const [showVolumeSlider, setShowVolumeSlider] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1)
+  const [loopEnabled, setLoopEnabled] = useState(() => readStoredBoolean(ATTACHMENT_AUDIO_LOOP_KEY, false))
+  const [visualizerStyle, setVisualizerStyle] = useState(() => readStoredString(ATTACHMENT_AUDIO_VISUALIZER_STYLE_KEY, 'bars'))
+  const [visualizerMode, setVisualizerMode] = useState(() => readStoredString(ATTACHMENT_AUDIO_VISUALIZER_MODE_KEY, 'spectrum'))
   const [visualizerBars, setVisualizerBars] = useState(() => Array.from({ length: 32 }, () => 0.18))
+  const [useEnhancedVisualizer, setUseEnhancedVisualizer] = useState(() => readStoredBoolean('volt_enhanced_audio_visualizer', true))
 
   const resetVisualizer = useCallback(() => {
     setVisualizerBars((current) => current.map((_, index) => {
@@ -41,14 +98,9 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
     const analyser = analyserRef.current
     if (!analyser) return
 
-    const buffer = new Uint8Array(analyser.frequencyBinCount)
-    // Number of bars in the visualizer
-    const BAR_COUNT = 32
-    // Map bar index to a frequency bin range using a logarithmic scale
-    // so lower frequencies (bass) get more bars and higher frequencies
-    // are compressed — matching how humans perceive audio.
+    const frequencyBuffer = new Uint8Array(analyser.frequencyBinCount)
+    const timeDomainBuffer = new Uint8Array(analyser.fftSize)
     const getFreqRange = (barIndex, totalBars, binCount) => {
-      // Logarithmic mapping: bar 0 → low freq, bar N-1 → high freq
       const nyquist = binCount
       const logMin = Math.log2(1)
       const logMax = Math.log2(nyquist)
@@ -58,20 +110,45 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
     }
 
     const tick = () => {
-      analyser.getByteFrequencyData(buffer)
+      if (visualizerMode === 'wave') {
+        analyser.getByteTimeDomainData(timeDomainBuffer)
+      } else {
+        analyser.getByteFrequencyData(frequencyBuffer)
+      }
 
       setVisualizerBars((current) => current.map((previous, index) => {
-        const { start, end } = getFreqRange(index, current.length, buffer.length)
-        let sum = 0
-        for (let i = start; i < end; i += 1) sum += buffer[i]
-        const average = sum / (end - start)
-        // Normalize to 0..1, apply a slight boost to make quiet audio more visible
-        const normalized = clamp(Math.pow(average / 255, 0.75), 0.05, 1)
-        // Fast attack (0.7), slower decay (0.25) for a punchy look
-        const smoothed = normalized > previous
-          ? previous * 0.3 + normalized * 0.7   // fast attack
-          : previous * 0.75 + normalized * 0.25  // slow decay
-        return smoothed
+        let normalized = 0.08
+
+        if (visualizerMode === 'wave') {
+          const segmentSize = Math.max(1, Math.floor(timeDomainBuffer.length / current.length))
+          const start = index * segmentSize
+          const end = Math.min(timeDomainBuffer.length, start + segmentSize)
+          let sum = 0
+          for (let i = start; i < end; i += 1) {
+            sum += Math.abs(timeDomainBuffer[i] - 128)
+          }
+          normalized = clamp((sum / Math.max(1, end - start)) / 96, 0.05, 1)
+        } else if (visualizerMode === 'pulse') {
+          const bandSize = Math.max(1, Math.floor(frequencyBuffer.length / 6))
+          const bandIndex = index % 6
+          const start = bandIndex * bandSize
+          const end = Math.min(frequencyBuffer.length, start + bandSize)
+          let sum = 0
+          for (let i = start; i < end; i += 1) sum += frequencyBuffer[i]
+          const average = sum / Math.max(1, end - start)
+          const curve = 0.72 + Math.sin((index / current.length) * Math.PI * 2) * 0.18
+          normalized = clamp(Math.pow(average / 255, 0.65) * curve, 0.05, 1)
+        } else {
+          const { start, end } = getFreqRange(index, current.length, frequencyBuffer.length)
+          let sum = 0
+          for (let i = start; i < end; i += 1) sum += frequencyBuffer[i]
+          const average = sum / (end - start)
+          normalized = clamp(Math.pow(average / 255, 0.75), 0.05, 1)
+        }
+
+        return normalized > previous
+          ? previous * 0.24 + normalized * 0.76
+          : previous * 0.74 + normalized * 0.26
       }))
 
       animationFrameRef.current = requestAnimationFrame(tick)
@@ -79,7 +156,7 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
 
     stopVisualizerLoop()
     tick()
-  }, [stopVisualizerLoop])
+  }, [stopVisualizerLoop, visualizerMode])
 
   const ensureVisualizer = useCallback(async () => {
     const audio = audioRef.current
@@ -183,6 +260,15 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
 
   useEffect(() => {
     const audio = audioRef.current
+    if (!audio) return
+
+    audio.loop = loopEnabled
+    audio.volume = volume
+    audio.muted = volume === 0
+  }, [loopEnabled, src, volume])
+
+  useEffect(() => {
+    const audio = audioRef.current
     if (!audio) return undefined
 
     audio.currentTime = 0
@@ -210,6 +296,48 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
       audioContextRef.current?.close?.().catch(() => {})
     } catch {}
   }, [stopVisualizerLoop])
+
+  useEffect(() => subscribeAttachmentMediaEvents((event) => {
+    if (!event || event.source === playerIdRef.current) return
+
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (event.type === 'pause-others') {
+      audio.pause()
+      return
+    }
+
+    if (event.type === 'volume-sync') {
+      const nextVolume = clamp(Number(event.volume), 0, 1)
+      audio.volume = nextVolume
+      audio.muted = nextVolume === 0
+      setVolume(nextVolume)
+      setIsMuted(nextVolume === 0)
+      if (nextVolume > 0) previousVolumeRef.current = nextVolume
+    }
+  }), [])
+
+  const applyVolume = useCallback((nextVolume, { broadcast = true } = {}) => {
+    const safeVolume = clamp(Number(nextVolume), 0, 1)
+    const audio = audioRef.current
+    if (audio) {
+      audio.volume = safeVolume
+      audio.muted = safeVolume === 0
+    }
+    setVolume(safeVolume)
+    setIsMuted(safeVolume === 0)
+    if (safeVolume > 0) previousVolumeRef.current = safeVolume
+    persistStoredValue(ATTACHMENT_MEDIA_VOLUME_KEY, safeVolume)
+
+    if (broadcast) {
+      broadcastAttachmentMediaEvent({
+        type: 'volume-sync',
+        source: playerIdRef.current,
+        volume: safeVolume
+      })
+    }
+  }, [])
   
   const togglePlay = async () => {
     const audio = audioRef.current
@@ -220,6 +348,7 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
       return
     }
 
+    broadcastAttachmentMediaEvent({ type: 'pause-others', source: playerIdRef.current })
     await ensureVisualizer()
     audio.play().catch((err) => {
       console.warn('[FileAttachment] Failed to play audio attachment:', err)
@@ -235,30 +364,14 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
   }
   
   const handleVolumeChange = (e) => {
-    const vol = parseFloat(e.target.value)
-    if (audioRef.current) {
-      audioRef.current.volume = vol
-      audioRef.current.muted = vol === 0
-      setVolume(vol)
-      setIsMuted(vol === 0)
-      if (vol > 0) previousVolumeRef.current = vol
-    }
+    applyVolume(parseFloat(e.target.value))
   }
   
   const toggleMute = () => {
-    if (audioRef.current) {
-      if (isMuted) {
-        const restoredVolume = previousVolumeRef.current > 0 ? previousVolumeRef.current : 1
-        audioRef.current.muted = false
-        audioRef.current.volume = restoredVolume
-        setVolume(restoredVolume)
-        setIsMuted(false)
-      } else {
-        if (audioRef.current.volume > 0) previousVolumeRef.current = audioRef.current.volume
-        audioRef.current.muted = true
-        audioRef.current.volume = 0
-        setIsMuted(true)
-      }
+    if (isMuted) {
+      applyVolume(previousVolumeRef.current > 0 ? previousVolumeRef.current : 0.88)
+    } else {
+      applyVolume(0)
     }
   }
 
@@ -279,16 +392,38 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
   
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0
   const volumePercent = (isMuted ? 0 : volume) * 100
+  const visualizerOptions = [
+    { value: 'bars', label: 'Bars' },
+    { value: 'mirror', label: 'Mirror' },
+    { value: 'pulse', label: 'Pulse' }
+  ]
+  const visualizerModeOptions = [
+    { value: 'spectrum', label: 'Spectrum' },
+    { value: 'wave', label: 'Wave' },
+    { value: 'pulse', label: 'Pulse' }
+  ]
 
   return (
     <div className="custom-audio-player">
-      <audio ref={audioRef} src={src} preload="metadata" crossOrigin="anonymous" />
+      <audio ref={audioRef} src={src} preload="metadata" crossOrigin="anonymous" loop={loopEnabled} />
       <div className="media-card-header">
         <div className="media-card-title-group">
           <span className="media-card-eyebrow">Audio Attachment</span>
           <span className="media-card-title" title={name}>{name}</span>
         </div>
         <div className="media-card-actions">
+          <button
+            className={`media-pill-btn ${loopEnabled ? 'active' : ''}`}
+            onClick={() => {
+              const nextValue = !loopEnabled
+              setLoopEnabled(nextValue)
+              if (audioRef.current) audioRef.current.loop = nextValue
+              persistStoredValue(ATTACHMENT_AUDIO_LOOP_KEY, nextValue)
+            }}
+            type="button"
+          >
+            Loop
+          </button>
           <button className="media-pill-btn" onClick={cyclePlaybackRate} type="button">
             {playbackRate}x
           </button>
@@ -297,25 +432,109 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
           </a>
         </div>
       </div>
-      
-      <div className="audio-visualizer">
-        <div className="audio-wave" aria-hidden="true">
-          {visualizerBars.map((value, i) => (
-            <div 
-              key={i} 
-              className={`wave-bar ${isPlaying ? 'playing' : ''}`}
-              style={{ 
-                height: `${Math.max(14, Math.round(value * 100))}%`,
-                animationDelay: `${i * 0.03}s`
-              }}
-            />
-          ))}
-        </div>
+
+      <div className="audio-toolbar">
+        <button
+          className={`media-pill-btn ${useEnhancedVisualizer ? 'active' : ''}`}
+          onClick={() => {
+            const nextValue = !useEnhancedVisualizer
+            setUseEnhancedVisualizer(nextValue)
+            persistStoredValue('volt_enhanced_audio_visualizer', nextValue)
+          }}
+          type="button"
+          title="Toggle enhanced visualizer"
+        >
+          Enhanced
+        </button>
+        {!useEnhancedVisualizer && (
+          <>
+            <label className="media-select-wrap">
+              <span>Style</span>
+              <select
+                className="media-select"
+                value={visualizerStyle}
+                onChange={(event) => {
+                  setVisualizerStyle(event.target.value)
+                  persistStoredValue(ATTACHMENT_AUDIO_VISUALIZER_STYLE_KEY, event.target.value)
+                }}
+              >
+                {visualizerOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="media-select-wrap">
+              <span>Mode</span>
+              <select
+                className="media-select"
+                value={visualizerMode}
+                onChange={(event) => {
+                  setVisualizerMode(event.target.value)
+                  persistStoredValue(ATTACHMENT_AUDIO_VISUALIZER_MODE_KEY, event.target.value)
+                }}
+              >
+                {visualizerModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
       </div>
+      
+      {useEnhancedVisualizer ? (
+        <EnhancedAudioVisualizer
+          analyser={analyserRef.current}
+          isPlaying={isPlaying}
+          style={visualizerStyle}
+          mode={visualizerMode}
+          onStyleChange={(newStyle) => {
+            setVisualizerStyle(newStyle)
+            persistStoredValue(ATTACHMENT_AUDIO_VISUALIZER_STYLE_KEY, newStyle)
+          }}
+          onModeChange={(newMode) => {
+            setVisualizerMode(newMode)
+            persistStoredValue(ATTACHMENT_AUDIO_VISUALIZER_MODE_KEY, newMode)
+          }}
+        />
+      ) : (
+        <div className="audio-visualizer">
+          <div className={`audio-wave audio-wave--${visualizerStyle}`} aria-hidden="true">
+            {visualizerBars.map((value, i) => (
+              <div 
+                key={i} 
+                className={`wave-bar ${isPlaying ? 'playing' : ''}`}
+                style={{ 
+                  height: `${Math.max(14, Math.round(value * 100))}%`,
+                  animationDelay: `${i * 0.03}s`
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
       
       <div className="audio-controls">
         <button className="control-btn play-btn" onClick={togglePlay}>
           {isPlaying ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
+        </button>
+
+        <button
+          className="control-btn"
+          type="button"
+          onClick={() => handleSeek({ target: { value: Math.max(0, currentTime - 10) } })}
+          title="Back 10 seconds"
+        >
+          <BackwardIcon width={18} height={18} />
+        </button>
+
+        <button
+          className="control-btn"
+          type="button"
+          onClick={() => handleSeek({ target: { value: Math.min(duration || 0, currentTime + 10) } })}
+          title="Forward 10 seconds"
+        >
+          <ForwardIcon width={18} height={18} />
         </button>
         
         <div className="progress-container">
@@ -374,15 +593,19 @@ const CustomAudioPlayer = ({ src, name, size, formatFileSize }) => {
 
 // Custom Video Player Component
 const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
+  const playerIdRef = useRef(createAttachmentMediaId('video'))
   const videoRef = useRef(null)
+  const previousVolumeRef = useRef(readStoredNumber(ATTACHMENT_MEDIA_VOLUME_KEY, 0.88) || 1)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(1)
-  const [isMuted, setIsMuted] = useState(false)
+  const [volume, setVolume] = useState(() => readStoredNumber(ATTACHMENT_MEDIA_VOLUME_KEY, 0.88))
+  const [isMuted, setIsMuted] = useState(() => readStoredNumber(ATTACHMENT_MEDIA_VOLUME_KEY, 0.88) === 0)
   const [showControls, setShowControls] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [playbackRate, setPlaybackRate] = useState(1)
+  const [playbackRate, setPlaybackRate] = useState(() => clamp(readStoredNumber(ATTACHMENT_VIDEO_RATE_KEY, 1), 0.5, 2))
+  const [fitMode, setFitMode] = useState(() => readStoredString(ATTACHMENT_VIDEO_FIT_KEY, 'contain'))
+  const [loopEnabled, setLoopEnabled] = useState(() => readStoredBoolean(ATTACHMENT_VIDEO_LOOP_KEY, false))
   const controlsTimeoutRef = useRef(null)
   
   useEffect(() => {
@@ -392,8 +615,16 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
     const handleLoadedMetadata = () => setDuration(video.duration)
     const handleTimeUpdate = () => setCurrentTime(video.currentTime)
     const handleEnded = () => setIsPlaying(false)
-    const handlePlay = () => setIsPlaying(true)
+    const handlePlay = () => {
+      setIsPlaying(true)
+      broadcastAttachmentMediaEvent({ type: 'pause-others', source: playerIdRef.current })
+    }
     const handlePause = () => setIsPlaying(false)
+    const handleVolumeChanged = () => {
+      setVolume(video.volume)
+      setIsMuted(video.muted || video.volume === 0)
+      if (video.volume > 0) previousVolumeRef.current = video.volume
+    }
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
     }
@@ -403,6 +634,7 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
     video.addEventListener('ended', handleEnded)
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
+    video.addEventListener('volumechange', handleVolumeChanged)
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     
     return () => {
@@ -411,9 +643,61 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
       video.removeEventListener('ended', handleEnded)
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
+      video.removeEventListener('volumechange', handleVolumeChanged)
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
     }
   }, [src])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.volume = volume
+    video.muted = volume === 0
+    video.loop = loopEnabled
+    video.playbackRate = playbackRate
+  }, [loopEnabled, playbackRate, src, volume])
+
+  useEffect(() => subscribeAttachmentMediaEvents((event) => {
+    if (!event || event.source === playerIdRef.current) return
+
+    const video = videoRef.current
+    if (!video) return
+
+    if (event.type === 'pause-others') {
+      video.pause()
+      return
+    }
+
+    if (event.type === 'volume-sync') {
+      const nextVolume = clamp(Number(event.volume), 0, 1)
+      video.volume = nextVolume
+      video.muted = nextVolume === 0
+      setVolume(nextVolume)
+      setIsMuted(nextVolume === 0)
+      if (nextVolume > 0) previousVolumeRef.current = nextVolume
+    }
+  }), [])
+
+  const applyVolume = useCallback((nextVolume, { broadcast = true } = {}) => {
+    const safeVolume = clamp(Number(nextVolume), 0, 1)
+    const video = videoRef.current
+    if (video) {
+      video.volume = safeVolume
+      video.muted = safeVolume === 0
+    }
+    setVolume(safeVolume)
+    setIsMuted(safeVolume === 0)
+    if (safeVolume > 0) previousVolumeRef.current = safeVolume
+    persistStoredValue(ATTACHMENT_MEDIA_VOLUME_KEY, safeVolume)
+
+    if (broadcast) {
+      broadcastAttachmentMediaEvent({
+        type: 'volume-sync',
+        source: playerIdRef.current,
+        volume: safeVolume
+      })
+    }
+  }, [])
   
   const togglePlay = () => {
     if (videoRef.current) {
@@ -434,23 +718,14 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
   }
   
   const handleVolumeChange = (e) => {
-    const vol = parseFloat(e.target.value)
-    if (videoRef.current) {
-      videoRef.current.volume = vol
-      setVolume(vol)
-      setIsMuted(vol === 0)
-    }
+    applyVolume(parseFloat(e.target.value))
   }
   
   const toggleMute = () => {
-    if (videoRef.current) {
-      if (isMuted) {
-        videoRef.current.volume = volume || 1
-        setIsMuted(false)
-      } else {
-        videoRef.current.volume = 0
-        setIsMuted(true)
-      }
+    if (isMuted) {
+      applyVolume(previousVolumeRef.current > 0 ? previousVolumeRef.current : 0.88)
+    } else {
+      applyVolume(0)
     }
   }
 
@@ -460,6 +735,7 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
       videoRef.current.playbackRate = nextRate
     }
     setPlaybackRate(nextRate)
+    persistStoredValue(ATTACHMENT_VIDEO_RATE_KEY, nextRate)
   }
   
   const containerRef = useRef(null)
@@ -510,6 +786,9 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
         className="video-element"
         onClick={togglePlay}
         preload="metadata"
+        playsInline
+        loop={loopEnabled}
+        style={{ objectFit: fitMode }}
       />
       
       {!isPlaying && (
@@ -521,6 +800,36 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
       )}
       
       <div className={`video-controls ${showControls ? 'visible' : 'hidden'}`}>
+        <div className="video-top-actions">
+          <button
+            className={`media-pill-btn ${loopEnabled ? 'active' : ''}`}
+            type="button"
+            onClick={() => {
+              const nextValue = !loopEnabled
+              setLoopEnabled(nextValue)
+              if (videoRef.current) videoRef.current.loop = nextValue
+              persistStoredValue(ATTACHMENT_VIDEO_LOOP_KEY, nextValue)
+            }}
+          >
+            Loop
+          </button>
+          <label className="media-select-wrap media-select-wrap--dark">
+            <span>Fit</span>
+            <select
+              className="media-select"
+              value={fitMode}
+              onChange={(event) => {
+                setFitMode(event.target.value)
+                persistStoredValue(ATTACHMENT_VIDEO_FIT_KEY, event.target.value)
+              }}
+            >
+              <option value="contain">Contain</option>
+              <option value="cover">Cover</option>
+              <option value="fill">Fill</option>
+            </select>
+          </label>
+        </div>
+
         <div className="video-progress-container">
           <input
             type="range"
@@ -569,7 +878,7 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
             </a>
             <span className="video-name">{name}</span>
             <button className="control-btn" onClick={toggleFullscreen}>
-              <ArrowsPointingOutIcon size={18} />
+              {isFullscreen ? <ArrowsPointingInIcon size={18} /> : <ArrowsPointingOutIcon size={18} />}
             </button>
           </div>
         </div>
@@ -579,13 +888,16 @@ const CustomVideoPlayer = ({ src, name, size, formatFileSize }) => {
 }
 
 // File type detection based on extension
-const getFileType = (filename) => {
-  if (!filename) return 'unknown'
-  const ext = filename.split('.').pop().toLowerCase()
+const getFileType = (attachment = {}) => {
+  const filename = attachment?.name || attachment?.filename || ''
+  const explicitType = attachment?.type
+  const contentType = (attachment?.contentType || attachment?.mimeType || '').toLowerCase()
+  if (!filename && !contentType && !explicitType) return 'unknown'
+  const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : ''
   
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']
-  const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv']
-  const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma']
+  const videoExts = ['mp4', 'webm', 'ogv', 'mov', 'avi', 'mkv']
+  const audioExts = ['mp3', 'wav', 'ogg', 'oga', 'm4a', 'flac', 'aac', 'wma']
   const codeExts = [
     'js', 'jsx', 'ts', 'tsx', 'html', 'htm', 'css', 'scss', 'sass', 'less',
     'json', 'xml', 'yaml', 'yml', 'sql', 'sh', 'bash', 'zsh', 'ps1', 'bat',
@@ -594,7 +906,17 @@ const getFileType = (filename) => {
     'vim', 'vimrc', 'dockerfile', 'makefile', 'cmake', 'gradle'
   ]
   const textExts = ['txt', 'md', 'log', 'csv', 'tsv', 'ini', 'conf', 'cfg', 'env', 'gitignore']
+
+  if (explicitType && ['image', 'video', 'audio', 'code', 'text'].includes(explicitType)) {
+    return explicitType
+  }
   
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.startsWith('audio/')) return 'audio'
+  if (contentType.startsWith('video/')) return 'video'
+
+  if (ext === 'ogg' || ext === 'oga') return 'audio'
+  if (ext === 'ogv') return 'video'
   if (imageExts.includes(ext)) return 'image'
   if (videoExts.includes(ext)) return 'video'
   if (audioExts.includes(ext)) return 'audio'
@@ -1144,9 +1466,9 @@ const FileAttachment = ({ attachment }) => {
   useEffect(() => {
     // Determine file type from extension if not provided
     if (!attachmentType || attachmentType === 'file') {
-      setFileType(getFileType(name))
+      setFileType(getFileType(attachment))
     }
-  }, [name, attachmentType])
+  }, [attachment, attachmentType])
 
   useEffect(() => {
     let cancelled = false

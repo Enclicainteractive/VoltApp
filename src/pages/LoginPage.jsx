@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getStoredServer } from '../services/serverConfig'
 import { authService } from '../services/authService'
 import { setSessionValue, setStoredUserData } from '../services/authSession'
+import lazyLoadingService from '../services/lazyLoadingService'
 import { useTranslation } from '../hooks/useTranslation'
 import ServerSelector from '../components/ServerSelector'
 import LoadingScreen from '../components/LoadingScreen'
@@ -37,6 +38,7 @@ const LoginPage = () => {
   const [resetSent, setResetSent] = useState(false)
   const [resetError, setResetError] = useState('')
   const [resetLoading, setResetLoading] = useState(false)
+  const [oauthLoading, setOauthLoading] = useState(false)
 
   const authMode = useMemo(() => {
     const serverCfg = authService.getServerConfig()
@@ -61,6 +63,10 @@ const LoginPage = () => {
       navigate('/chat', { replace: true })
     }
   }, [isAuthenticated, authLoading, navigate])
+
+  useEffect(() => {
+    lazyLoadingService.preloadRouteChunks(['route:chat', 'route:callback', 'route:reset-password'], { idle: true })
+  }, [])
 
   useEffect(() => {
     const stored = getStoredServer()
@@ -97,6 +103,10 @@ const LoginPage = () => {
     setMode(prev => (prev === 'oauth' || prev === 'account') ? prev : 'oauth')
   }, [authMode.localEnabled, authMode.oauthEnabled])
 
+  useEffect(() => {
+    setError('')
+  }, [mode, accountAction])
+
   // Early return after all hooks are called
   if (authLoading) {
     return <LoadingScreen message="Checking login status..." />
@@ -108,6 +118,22 @@ const LoginPage = () => {
     setModeSwitching(true)
     setMode(nextMode)
     window.setTimeout(() => setModeSwitching(false), 180)
+  }
+
+  const clearForgotPasswordState = () => {
+    setShowForgotPassword(false)
+    setResetSent(false)
+    setResetEmail('')
+    setResetError('')
+    setResetLoading(false)
+  }
+
+  const openForgotPassword = () => {
+    lazyLoadingService.preloadRouteChunks(['route:reset-password'], { idle: true })
+    setResetSent(false)
+    setResetEmail(identifier.includes('@') ? identifier.trim() : '')
+    setResetError('')
+    setShowForgotPassword(true)
   }
 
   const persistSessionAndRedirect = async (tokenData) => {
@@ -122,6 +148,8 @@ const LoginPage = () => {
     }
     const userData = await authService.getUserInfo(tokenData)
     setStoredUserData(userData)
+    lazyLoadingService.preloadRouteChunks(['route:chat'], { idle: false })
+    lazyLoadingService.preloadComponents(['ChatArea', 'ServerSidebar', 'ChannelSidebar', 'MessageList'], { idle: false })
     window.location.href = '/chat'
   }
 
@@ -175,6 +203,54 @@ const LoginPage = () => {
     }
   }
 
+  const handleOAuthLogin = async () => {
+    if (oauthLoading || submitting) return
+    setOauthLoading(true)
+    setError('')
+    try {
+      lazyLoadingService.preloadRouteChunks(['route:callback'], { idle: false })
+      await login()
+    } finally {
+      setOauthLoading(false)
+    }
+  }
+
+  const handleForgotPasswordSubmit = async (e) => {
+    e.preventDefault()
+    if (!resetEmail.trim()) {
+      setResetError(t('auth.emailRequired', 'Email is required'))
+      return
+    }
+    setResetLoading(true)
+    setResetError('')
+    try {
+      await authService.forgotPassword(resetEmail.trim())
+      setResetSent(true)
+    } catch (err) {
+      setResetError(err.response?.data?.error || t('auth.resetEmailFailed', 'Failed to send reset email'))
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
+  const loginReady = Boolean(identifier.trim() && password)
+  const registerMissingFields = !registerUsername.trim() || !registerEmail.trim() || !registerBirthDate || !registerPassword
+  const registerPasswordTooShort = registerPassword.length > 0 && registerPassword.length < authMode.minPasswordLength
+  const registerPasswordMismatch = registerPasswordConfirm.length > 0 && registerPassword !== registerPasswordConfirm
+  const registerReady = !registerMissingFields && !registerPasswordTooShort && !registerPasswordMismatch
+  const isAccountLogin = mode === 'account' && accountAction === 'login'
+  const helperMessage = mode === 'oauth'
+    ? t('auth.oauthHelper', 'Use secure provider sign-in. You will be redirected and returned automatically.')
+    : isAccountLogin
+      ? t('auth.accountLoginHelper', 'Use your Volt account credentials for this server.')
+      : t('auth.accountRegisterHelper', 'Create your account. You will be signed in immediately after registration.')
+  const registerHint = registerPasswordTooShort
+    ? t('auth.passwordTooShort', 'Password must be at least {{min}} characters.', { min: authMode.minPasswordLength })
+    : registerPasswordMismatch
+      ? t('auth.passwordMismatch', 'Passwords do not match.')
+      : t('auth.passwordHint', 'Use at least {{min}} characters.', { min: authMode.minPasswordLength })
+  const registerHintInvalid = registerPasswordTooShort || registerPasswordMismatch
+
   return (
     <div className="login-page">
       <div className="login-background">
@@ -196,8 +272,10 @@ const LoginPage = () => {
         </div>
       </div>
       <div className="server-selector-button-container">
-        <button 
+        <button
+          type="button"
           className="server-selector-button"
+          aria-label="Select server"
           onClick={() => setShowServerSelector(true)}
         >
           <ServerStackIcon size={16} />
@@ -207,7 +285,7 @@ const LoginPage = () => {
       </div>
 
       <div className="login-container">
-        <div className="login-content">
+        <div className="login-content auth-shell-card">
           <div className="login-branding">
             <div className="logo">
               <VoltageLogo size={48} />
@@ -217,7 +295,7 @@ const LoginPage = () => {
           </div>
 
           {authConfigLoading ? (
-            <div className="login-loading">
+            <div className="login-loading" role="status" aria-live="polite">
               <ArrowPathIcon size={18} className="spin" />
               <span>{t('auth.loadingMethods', 'Loading sign-in methods...')}</span>
             </div>
@@ -226,6 +304,7 @@ const LoginPage = () => {
               {(authMode.localEnabled || authMode.oauthEnabled) && (
                 <div className="login-mode-toggle">
                   <button
+                    type="button"
                     className={`mode-btn ${mode === 'oauth' ? 'active' : ''}`}
                     onClick={() => selectMode('oauth')}
                     disabled={!authMode.oauthEnabled}
@@ -235,6 +314,7 @@ const LoginPage = () => {
                     {authMode.providerName}
                   </button>
                   <button
+                    type="button"
                     className={`mode-btn ${mode === 'account' ? 'active' : ''}`}
                     onClick={() => selectMode('account')}
                     disabled={!authMode.localEnabled}
@@ -246,11 +326,20 @@ const LoginPage = () => {
                 </div>
               )}
 
-              <div className={`login-auth-panel ${modeSwitching ? 'switching' : ''}`}>
+              <div className={`login-auth-panel ${modeSwitching ? 'switching' : ''}`} aria-busy={submitting || oauthLoading}>
+                <div role="status" aria-live="polite" className="auth-helper-message">
+                  {helperMessage}
+                </div>
+                {!!error && <p className="login-error login-error-inline" role="alert">{error}</p>}
+
                 {mode === 'oauth' && authMode.oauthEnabled && (
-                  <button className="login-button oauth" onClick={login} disabled={submitting}>
-                    <VoltageLogo size={18} />
-                    <span>{t('auth.continueWithProvider', `Continue with ${authMode.providerName}`, { provider: authMode.providerName })}</span>
+                  <button type="button" className="login-button oauth" onClick={handleOAuthLogin} disabled={submitting || oauthLoading}>
+                    {oauthLoading ? <ArrowPathIcon size={18} className="spin" /> : <VoltageLogo size={18} />}
+                    <span>
+                      {oauthLoading
+                        ? t('auth.redirectingProvider', 'Redirecting...')
+                        : t('auth.continueWithProvider', `Continue with ${authMode.providerName}`, { provider: authMode.providerName })}
+                    </span>
                   </button>
                 )}
 
@@ -258,12 +347,14 @@ const LoginPage = () => {
                   <>
                     <div className="login-submode-toggle">
                       <button
+                        type="button"
                         className={`submode-btn ${accountAction === 'login' ? 'active' : ''}`}
                         onClick={() => setAccountAction('login')}
                       >
                         {t('auth.signIn', 'Sign in')}
                       </button>
                       <button
+                        type="button"
                         className={`submode-btn ${accountAction === 'register' ? 'active' : ''}`}
                         onClick={() => setAccountAction('register')}
                         disabled={!authMode.canRegister}
@@ -274,22 +365,37 @@ const LoginPage = () => {
                     </div>
 
                     {accountAction === 'login' ? (
-                      <form className="login-form" onSubmit={handleLocalLogin}>
+                      <form className="login-form login-form-account" onSubmit={handleLocalLogin} aria-busy={submitting}>
                         <input
                           className="login-input"
                           type="text"
                           autoComplete="username"
                           placeholder={t('auth.usernameOrEmail', 'Username or email')}
+                          aria-label={t('auth.usernameOrEmail', 'Username or email')}
+                          aria-invalid={Boolean(error)}
                           value={identifier}
-                          onChange={(e) => setIdentifier(e.target.value)}
+                          disabled={submitting}
+                          onChange={(e) => {
+                            setIdentifier(e.target.value)
+                            if (error) setError('')
+                          }}
+                          autoFocus
+                          required
                         />
                         <input
                           className="login-input"
                           type="password"
                           autoComplete="current-password"
                           placeholder={t('auth.password', 'Password')}
+                          aria-label={t('auth.password', 'Password')}
+                          aria-invalid={Boolean(error)}
                           value={password}
-                          onChange={(e) => setPassword(e.target.value)}
+                          disabled={submitting}
+                          onChange={(e) => {
+                            setPassword(e.target.value)
+                            if (error) setError('')
+                          }}
+                          required
                         />
                         {/* Honeypot field - hidden from users, traps bots */}
                         <input
@@ -300,60 +406,100 @@ const LoginPage = () => {
                           style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
                           onFocus={() => setPassword('')} // Trap bot if it focuses this
                         />
-                        <button className="login-button account" type="submit" disabled={submitting}>
+                        <button className="login-button account" type="submit" disabled={submitting || !loginReady} aria-busy={submitting}>
                           {submitting ? <ArrowPathIcon size={18} className="spin" /> : <KeyIcon size={18} />}
                           <span>{submitting ? t('auth.signingIn', 'Signing in...') : t('auth.signIn', 'Sign in')}</span>
                         </button>
                         <button 
                           type="button"
                           className="forgot-password-link"
-                          onClick={() => setShowForgotPassword(true)}
+                          onClick={openForgotPassword}
+                          disabled={submitting}
                         >
                           {t('auth.forgotPassword', 'Forgot password?')}
                         </button>
                       </form>
                     ) : (
-                      <form className="login-form" onSubmit={handleLocalRegister}>
+                      <form className="login-form login-form-account" onSubmit={handleLocalRegister} aria-busy={submitting}>
                         <input
                           className="login-input"
                           type="text"
                           autoComplete="username"
                           placeholder={t('auth.username', 'Username')}
+                          aria-label={t('auth.username', 'Username')}
+                          aria-invalid={Boolean(error)}
                           value={registerUsername}
-                          onChange={(e) => setRegisterUsername(e.target.value)}
+                          disabled={submitting}
+                          onChange={(e) => {
+                            setRegisterUsername(e.target.value)
+                            if (error) setError('')
+                          }}
+                          autoFocus
+                          required
                         />
                         <input
                           className="login-input"
                           type="email"
                           autoComplete="email"
                           placeholder={t('auth.email', 'Email')}
+                          aria-label={t('auth.email', 'Email')}
+                          aria-invalid={Boolean(error)}
                           value={registerEmail}
-                          onChange={(e) => setRegisterEmail(e.target.value)}
+                          disabled={submitting}
+                          onChange={(e) => {
+                            setRegisterEmail(e.target.value)
+                            if (error) setError('')
+                          }}
+                          required
                         />
                         <input
                           className="login-input"
                           type="date"
                           autoComplete="bday"
                           max={new Date().toISOString().slice(0, 10)}
+                          aria-label={t('auth.birthDate', 'Birth date')}
+                          aria-invalid={Boolean(error)}
                           value={registerBirthDate}
-                          onChange={(e) => setRegisterBirthDate(e.target.value)}
+                          disabled={submitting}
+                          onChange={(e) => {
+                            setRegisterBirthDate(e.target.value)
+                            if (error) setError('')
+                          }}
+                          required
                         />
                         <input
                           className="login-input"
                           type="password"
                           autoComplete="new-password"
                           placeholder={t('auth.passwordMin', 'Password (min {{min}} chars)', { min: authMode.minPasswordLength })}
+                          aria-label={t('auth.passwordMin', 'Password (min {{min}} chars)', { min: authMode.minPasswordLength })}
+                          aria-invalid={registerPasswordTooShort || registerPasswordMismatch || Boolean(error)}
                           value={registerPassword}
-                          onChange={(e) => setRegisterPassword(e.target.value)}
+                          disabled={submitting}
+                          onChange={(e) => {
+                            setRegisterPassword(e.target.value)
+                            if (error) setError('')
+                          }}
+                          required
                         />
                         <input
                           className="login-input"
                           type="password"
                           autoComplete="new-password"
                           placeholder={t('auth.confirmPassword', 'Confirm password')}
+                          aria-label={t('auth.confirmPassword', 'Confirm password')}
+                          aria-invalid={registerPasswordMismatch || Boolean(error)}
                           value={registerPasswordConfirm}
-                          onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
+                          disabled={submitting}
+                          onChange={(e) => {
+                            setRegisterPasswordConfirm(e.target.value)
+                            if (error) setError('')
+                          }}
+                          required
                         />
+                        <p role="status" aria-live="polite" className={`login-form-helper ${registerHintInvalid ? 'invalid' : ''}`}>
+                          {registerHint}
+                        </p>
                         {/* Honeypot field - hidden from users, traps bots */}
                         <input
                           type="text"
@@ -363,7 +509,7 @@ const LoginPage = () => {
                           style={{ position: 'absolute', left: '-9999px', opacity: 0 }}
                           onFocus={() => { setRegisterUsername(''); setRegisterEmail(''); setRegisterBirthDate('') }} // Trap bot
                         />
-                        <button className="login-button account" type="submit" disabled={submitting || !authMode.canRegister}>
+                        <button className="login-button account" type="submit" disabled={submitting || !authMode.canRegister || !registerReady} aria-busy={submitting}>
                           {submitting ? <ArrowPathIcon size={18} className="spin" /> : <KeyIcon size={18} />}
                           <span>{submitting ? t('auth.creatingAccount', 'Creating account...') : t('auth.createAccount', 'Create account')}</span>
                         </button>
@@ -379,8 +525,6 @@ const LoginPage = () => {
             </>
           )}
 
-          {!!error && <p className="login-error">{error}</p>}
-
           <p className="login-footer">
             {t('app.secureAuth', 'Secure authentication enabled')}
           </p>
@@ -394,9 +538,21 @@ const LoginPage = () => {
       )}
 
       {showForgotPassword && (
-        <div className="modal-overlay" onClick={() => { setShowForgotPassword(false); setResetSent(false); setResetEmail(''); }}>
+        <div
+          className="modal-overlay"
+          onClick={clearForgotPasswordState}
+          onKeyDown={(e) => { if (e.key === 'Escape') clearForgotPasswordState() }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('auth.forgotPassword', 'Forgot Password')}
+        >
           <div className="modal-content forgot-password-modal" onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => { setShowForgotPassword(false); setResetSent(false); setResetEmail(''); }}>
+            <button
+              type="button"
+              className="modal-close"
+              aria-label={t('modals.close', 'Close')}
+              onClick={clearForgotPasswordState}
+            >
               ×
             </button>
             
@@ -405,34 +561,25 @@ const LoginPage = () => {
                 <h2>{t('auth.forgotPassword', 'Forgot Password')}</h2>
                 <p className="forgot-desc">{t('auth.forgotDesc', 'Enter your email address and we\'ll send you a link to reset your password.')}</p>
                 
-                {resetError && <p className="login-error">{resetError}</p>}
+                {resetError && <p className="login-error" role="alert">{resetError}</p>}
                 
-                <form onSubmit={async (e) => {
-                  e.preventDefault()
-                  if (!resetEmail.trim()) {
-                    setResetError(t('auth.emailRequired', 'Email is required'))
-                    return
-                  }
-                  setResetLoading(true)
-                  setResetError('')
-                  try {
-                    await authService.forgotPassword(resetEmail.trim())
-                    setResetSent(true)
-                  } catch (err) {
-                    setResetError(err.response?.data?.error || 'Failed to send reset email')
-                  } finally {
-                    setResetLoading(false)
-                  }
-                }}>
+                <form onSubmit={handleForgotPasswordSubmit} className="login-form modal-form" aria-busy={resetLoading}>
                   <input
                     className="login-input"
                     type="email"
                     autoComplete="email"
                     placeholder={t('auth.yourEmail', 'Your email')}
+                    aria-label={t('auth.yourEmail', 'Your email')}
                     value={resetEmail}
-                    onChange={(e) => setResetEmail(e.target.value)}
+                    disabled={resetLoading}
+                    onChange={(e) => {
+                      setResetEmail(e.target.value)
+                      if (resetError) setResetError('')
+                    }}
+                    required
+                    autoFocus
                   />
-                  <button className="login-button account" type="submit" disabled={resetLoading}>
+                  <button className="login-button account" type="submit" disabled={resetLoading || !resetEmail.trim()} aria-busy={resetLoading}>
                     {resetLoading ? <ArrowPathIcon size={18} className="spin" /> : null}
                     <span>{resetLoading ? t('auth.sending', 'Sending...') : t('auth.sendResetLink', 'Send Reset Link')}</span>
                   </button>
@@ -444,7 +591,7 @@ const LoginPage = () => {
                 <h2>{t('auth.checkYourEmail', 'Check your email')}</h2>
                 <p className="forgot-desc">{t('auth.resetLinkSent', 'We\'ve sent a password reset link to')}</p>
                 <p className="reset-email">{resetEmail}</p>
-                <button className="login-button account" onClick={() => { setShowForgotPassword(false); setResetSent(false); setResetEmail(''); }}>
+                <button type="button" className="login-button account" onClick={clearForgotPasswordState}>
                   {t('common.back', 'Back to Login')}
                 </button>
               </>

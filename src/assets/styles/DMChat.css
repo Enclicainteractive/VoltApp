@@ -42,18 +42,49 @@
 .dm-chat-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  min-height: 56px;
+  gap: 14px;
+  padding: 12px 16px;
+  min-height: 68px;
   background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), var(--volt-bg-primary);
   border-bottom: 1px solid var(--volt-border);
   flex-shrink: 0;
 }
 
+.dm-recipient-avatar-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.dm-presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--volt-bg-primary);
+  background: #6b7280;
+}
+
+.dm-presence-dot.online { background: var(--volt-success); }
+.dm-presence-dot.idle { background: var(--volt-warning); }
+.dm-presence-dot.dnd { background: var(--volt-danger); }
+.dm-presence-dot.offline,
+.dm-presence-dot.invisible { background: #6b7280; }
+
 .dm-recipient-info {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+
+.dm-recipient-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .dm-recipient-name {
@@ -61,9 +92,47 @@
   font-weight: 700;
   color: var(--volt-text-primary);
   line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-recipient-subline {
   display: flex;
   align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dm-recipient-status-pill {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--volt-text-secondary);
+  background: var(--volt-bg-secondary);
+  border: 1px solid var(--volt-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  min-width: 0;
+  max-width: 220px;
+}
+
+.dm-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b7280;
+  flex: 0 0 auto;
+}
+
+.dm-recipient-status-pill .dm-recipient-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .e2ee-settings-btn {
@@ -84,20 +153,42 @@
   color: var(--volt-danger);
 }
 
-.dm-recipient-status {
+.dm-recipient-status-pill.online .dm-status-dot { background: var(--volt-success); }
+.dm-recipient-status-pill.idle .dm-status-dot { background: var(--volt-warning); }
+.dm-recipient-status-pill.dnd .dm-status-dot { background: var(--volt-danger); }
+
+.dm-recipient-meta {
   font-size: 12px;
   color: var(--volt-text-muted);
-  text-transform: capitalize;
+  white-space: nowrap;
 }
-
-.dm-recipient-status.online  { color: var(--volt-success); }
-.dm-recipient-status.idle    { color: var(--volt-warning); }
-.dm-recipient-status.dnd     { color: var(--volt-danger);  }
 
 .dm-header-actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
+  margin-left: auto;
+}
+
+.dm-connection-pill {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.dm-connection-pill.online {
+  color: var(--volt-success);
+  background: rgba(59, 165, 92, 0.12);
+  border-color: rgba(59, 165, 92, 0.28);
+}
+
+.dm-connection-pill.offline {
+  color: var(--volt-warning);
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.3);
 }
 
 .dm-call-indicator {
@@ -145,17 +236,23 @@
   min-height: 200px;
 }
 
-/* When call is active, limit messages height and enable smooth scrolling */
-.dm-chat.has-active-call .dm-messages {
-  max-height: calc(100vh - 400px);
-  min-height: 200px;
-}
-
 .dm-loading-more {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 12px;
   font-size: 13px;
   color: var(--volt-text-muted);
+}
+
+.dm-inline-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--volt-text-muted) 30%, transparent);
+  border-top-color: var(--volt-primary);
+  animation: dmSpin 0.8s linear infinite;
 }
 
 .dm-loading,
@@ -167,12 +264,79 @@
   justify-content: center;
   text-align: center;
   color: var(--volt-text-muted);
-  gap: 12px;
+  gap: 10px;
+  padding: 24px;
 }
 
-.dm-empty h3 { color: var(--volt-text-primary); margin: 0; }
-.dm-empty p  { margin: 0; }
-.dm-empty-icon { opacity: 0.5; color: var(--volt-text-muted); }
+.dm-state-icon-wrap {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-loading-spinner {
+  position: absolute;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--volt-primary) 16%, transparent);
+  border-top-color: var(--volt-primary);
+  animation: dmSpin 0.9s linear infinite;
+}
+
+.dm-loading h3,
+.dm-empty h3 {
+  color: var(--volt-text-primary);
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.dm-loading p,
+.dm-empty p {
+  margin: 0;
+  max-width: 420px;
+  line-height: 1.45;
+  color: var(--volt-text-secondary);
+}
+
+.dm-empty-hero {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-empty-hero .dm-empty-icon {
+  position: absolute;
+  right: -2px;
+  bottom: -4px;
+  opacity: 0.85;
+  color: var(--volt-primary);
+  background: var(--volt-bg-primary);
+  border-radius: 999px;
+  padding: 4px;
+}
+
+.dm-empty-hint {
+  font-size: 12px;
+  color: var(--volt-warning) !important;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.dm-empty-icon { opacity: 0.55; color: var(--volt-text-muted); }
+
+@keyframes dmSpin {
+  to { transform: rotate(360deg); }
+}
 
 /* ── Individual message ──────────────────────────────────────────────────── */
 .dm-message {
@@ -339,6 +503,14 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 4px;
+  align-items: flex-start;
+  max-width: min(720px, 100%);
+}
+
+.message-attachments > * {
+  width: 100%;
+  max-width: 100%;
+  flex: 0 0 auto;
 }
 
 .dm-message .link-embed,
@@ -1045,6 +1217,26 @@
   .dm-chat {
     height: 100%;
     min-height: 0;
+  }
+
+  .dm-chat-header {
+    gap: 10px;
+    padding: 10px 12px;
+    min-height: 64px;
+  }
+
+  .dm-recipient-subline {
+    gap: 6px;
+  }
+
+  .dm-recipient-status-pill {
+    max-width: 150px;
+    padding: 2px 7px;
+  }
+
+  .dm-recipient-meta,
+  .dm-connection-pill {
+    display: none;
   }
 
   .dm-messages {

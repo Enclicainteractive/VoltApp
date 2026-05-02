@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { PlusIcon, UsersIcon, CogIcon, ArrowRightOnRectangleIcon, EllipsisHorizontalIcon, ClipboardDocumentIcon, ShieldCheckIcon, GlobeAmericasIcon, BellIcon, BellSlashIcon, FlagIcon, CalendarDaysIcon } from '@heroicons/react/24/outline'
 import { useTranslation } from '../hooks/useTranslation'
 import { useAuth } from '../contexts/AuthContext'
@@ -8,8 +8,10 @@ import ContextMenu from './ContextMenu'
 import { apiService } from '../services/apiService'
 import { getStoredServer } from '../services/serverConfig'
 import { settingsService } from '../services/settingsService'
+import lazyLoadingService from '../services/lazyLoadingService'
 import { VoltageLogo } from './LoadingScreen'
 import Avatar from './Avatar'
+import { useResetScrollOnChange } from '../hooks/useResetScrollOnChange'
 import '../assets/styles/ServerSidebar.css'
 
 const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServer, onOpenSettings, onOpenCreate, onOpenJoin, onOpenServerSettings, onLeaveServer, onOpenAdmin, isAdmin, friendRequestCount = 0, dmNotifications = [], serverUnreadCounts = {}, serverMentionCounts = {}, serverEventsMeta = {}, onDMClick }) => {
@@ -19,6 +21,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [contextMenu, setContextMenu] = useState(null)
   const [mutedServers, setMutedServers] = useState({})
+  const sidebarRef = useResetScrollOnChange([currentServerId])
 
   const server = getStoredServer()
   const showAdminPanel = Boolean(isAdmin || server?.ownerId === user?.id)
@@ -27,11 +30,89 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
   const totalNotifications = friendRequestCount + dmNotificationCount
   const pinnedDmNotifications = Array.isArray(dmNotifications) ? dmNotifications.slice(0, 4) : []
 
-  React.useEffect(() => {
-    loadMuteStatus()
+  const openCreateServer = useCallback(() => {
+    if (onOpenCreate) {
+      onOpenCreate()
+      return
+    }
+    setShowCreateModal(true)
+  }, [onOpenCreate])
+
+  const openJoinServer = useCallback(() => {
+    if (onOpenJoin) {
+      onOpenJoin()
+      return
+    }
+    setShowJoinModal(true)
+  }, [onOpenJoin])
+
+  const handleServerChange = useCallback((serverId) => {
+    if (!serverId) return
+    setContextMenu(null)
+    lazyLoadingService.preloadRouteChunks(['route:chat'], { idle: true })
+    if (serverId === 'friends') {
+      lazyLoadingService.preloadComponents(['FriendsPage'], { idle: true })
+    } else if (serverId === 'discovery') {
+      lazyLoadingService.preloadComponents(['Discovery'], { idle: true })
+    } else if (serverId === 'dms') {
+      lazyLoadingService.preloadComponents(['DMList', 'DMChat'], { idle: true })
+    } else {
+      lazyLoadingService.preloadComponents(['ChatArea', 'MessageList', 'ChannelSidebar', 'MemberSidebar'], { idle: true })
+    }
+    onServerChange?.(serverId)
+  }, [onServerChange])
+
+  const prefetchNavigationIntent = useCallback((target) => {
+    lazyLoadingService.preloadRouteChunks(['route:chat'], { idle: true })
+    if (target === 'friends') {
+      lazyLoadingService.preloadComponents(['FriendsPage'], { idle: true })
+      return
+    }
+    if (target === 'discovery') {
+      lazyLoadingService.preloadComponents(['Discovery'], { idle: true })
+      return
+    }
+    if (target === 'dms') {
+      lazyLoadingService.preloadComponents(['DMList', 'DMChat'], { idle: true })
+      return
+    }
+    if (target === 'admin') {
+      lazyLoadingService.preloadRouteChunks(['route:admin-panel', 'route:settings-modal'], { idle: true })
+      lazyLoadingService.preloadComponents(['AdminPanel'], { idle: true })
+      return
+    }
+    if (target === 'settings') {
+      lazyLoadingService.preloadRouteChunks(['route:settings-modal'], { idle: true })
+      lazyLoadingService.preloadComponents(['SettingsModal'], { idle: true })
+      return
+    }
+    if (target === 'join') {
+      lazyLoadingService.preloadRouteChunks(['route:invite'], { idle: true })
+    }
+    lazyLoadingService.preloadComponents(['ChatArea', 'MessageList', 'ChannelSidebar', 'MemberSidebar'], { idle: true })
   }, [])
 
-  const loadMuteStatus = async () => {
+  const openContextMenu = useCallback((x, y, payload) => {
+    setContextMenu(null)
+    requestAnimationFrame(() => {
+      setContextMenu({ x, y, ...payload })
+    })
+  }, [])
+
+  const openContextMenuForTarget = useCallback((target, payload) => {
+    const rect = target?.getBoundingClientRect?.()
+    if (!rect) return
+    openContextMenu(rect.left + rect.width / 2, rect.top + Math.min(rect.height - 6, 30), payload)
+  }, [openContextMenu])
+
+  const handleMenuHotkey = useCallback((event, payload) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault()
+      openContextMenuForTarget(event.currentTarget, payload)
+    }
+  }, [openContextMenuForTarget])
+
+  const loadMuteStatus = useCallback(async () => {
     const cachedSettings = settingsService.getSettings()
     if (cachedSettings?.serverMutes && Object.keys(cachedSettings.serverMutes).length > 0) {
       setMutedServers(cachedSettings.serverMutes)
@@ -49,7 +130,15 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
     } catch (err) {
       console.error('Failed to load mute status:', err)
     }
-  }
+  }, [])
+
+  React.useEffect(() => {
+    loadMuteStatus()
+  }, [loadMuteStatus])
+
+  React.useEffect(() => {
+    setContextMenu(null)
+  }, [currentServerId])
 
   const handleMuteServer = async (server, mute) => {
     try {
@@ -72,7 +161,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
         if (onLeaveServer) {
           onLeaveServer(server.id)
         } else if (currentServerId === server.id) {
-          onServerChange('home')
+          handleServerChange('home')
         }
       } catch (err) {
         console.error('Failed to leave server:', err)
@@ -104,20 +193,30 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
 
   return (
     <>
-      <div className="server-sidebar">
+      <div ref={sidebarRef} className="server-sidebar">
         <div className="server-list">
           <button 
-            className="server-icon home-icon"
-            onClick={() => onServerChange('home')}
+            className={`server-icon home-icon ${currentServerId === 'home' ? 'active' : ''}`}
+            onClick={() => handleServerChange('home')}
+            onMouseEnter={() => prefetchNavigationIntent('home')}
+            onFocus={() => prefetchNavigationIntent('home')}
             title={t('nav.chat')}
+            type="button"
+            aria-current={currentServerId === 'home' ? 'page' : undefined}
+            aria-label={t('nav.chat')}
           >
             <VoltageLogo size={28} />
           </button>
 
           <button 
-            className={`server-icon friends-icon ${currentServerId === 'friends' ? 'active' : ''}`}
-            onClick={() => onServerChange('friends')}
+            className={`server-icon friends-icon ${currentServerId === 'friends' ? 'active' : ''} ${totalNotifications > 0 ? 'has-unread' : ''}`}
+            onClick={() => handleServerChange('friends')}
+            onMouseEnter={() => prefetchNavigationIntent('friends')}
+            onFocus={() => prefetchNavigationIntent('friends')}
             title={t('nav.friends')}
+            type="button"
+            aria-current={currentServerId === 'friends' ? 'page' : undefined}
+            aria-label={`${t('nav.friends')}${totalNotifications > 0 ? ` (${totalNotifications} unread)` : ''}`}
           >
             <UsersIcon size={28} />
             {totalNotifications > 0 && (
@@ -145,16 +244,20 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
                     onDMClick(conversation.id, recipient)
                     return
                   }
-                  onServerChange?.('dms')
+                  handleServerChange('dms')
                 }
 
                 return (
                   <button
                     key={conversation.id}
-                    className={`server-dm-icon ${currentServerId === 'dms' ? 'active' : ''}`}
+                    className={`server-dm-icon ${currentServerId === 'dms' ? 'active' : ''} ${unreadCount > 0 ? 'has-unread' : ''}`}
                     onClick={handleOpenDm}
+                    onMouseEnter={() => prefetchNavigationIntent('dms')}
+                    onFocus={() => prefetchNavigationIntent('dms')}
                     title={label}
                     type="button"
+                    aria-current={currentServerId === 'dms' ? 'page' : undefined}
+                    aria-label={`${label}${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
                   >
                     {recipient ? (
                       <Avatar src={recipient.avatar} fallback={label} size={26} userId={recipient.id} />
@@ -174,10 +277,14 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
               })}
               {dmNotifications.length > pinnedDmNotifications.length && (
                 <button
-                  className={`server-dm-more ${currentServerId === 'dms' ? 'active' : ''}`}
-                  onClick={() => onServerChange?.('dms')}
+                  className={`server-dm-more ${currentServerId === 'dms' ? 'active' : ''} ${dmNotifications.length > 0 ? 'has-unread' : ''}`}
+                  onClick={() => handleServerChange('dms')}
+                  onMouseEnter={() => prefetchNavigationIntent('dms')}
+                  onFocus={() => prefetchNavigationIntent('dms')}
                   title={t('dm.title', 'Direct Messages')}
                   type="button"
+                  aria-current={currentServerId === 'dms' ? 'page' : undefined}
+                  aria-label={t('dm.title', 'Direct Messages')}
                 >
                   +{dmNotifications.length - pinnedDmNotifications.length}
                 </button>
@@ -187,17 +294,27 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
 
           <button 
             className={`server-icon discovery-icon ${currentServerId === 'discovery' ? 'active' : ''}`}
-            onClick={() => onServerChange('discovery')}
+            onClick={() => handleServerChange('discovery')}
+            onMouseEnter={() => prefetchNavigationIntent('discovery')}
+            onFocus={() => prefetchNavigationIntent('discovery')}
             title={t('discovery.title')}
+            type="button"
+            aria-current={currentServerId === 'discovery' ? 'page' : undefined}
+            aria-label={t('discovery.title')}
           >
             <GlobeAmericasIcon size={28} />
           </button>
 
           {showAdminPanel && (
             <button 
-              className="server-icon admin-icon"
+              className={`server-icon admin-icon ${currentServerId === 'admin' ? 'active' : ''}`}
               onClick={onOpenAdmin}
+              onMouseEnter={() => prefetchNavigationIntent('admin')}
+              onFocus={() => prefetchNavigationIntent('admin')}
               title={t('misc.adminPanel')}
+              type="button"
+              aria-current={currentServerId === 'admin' ? 'page' : undefined}
+              aria-label={t('misc.adminPanel')}
             >
               <ShieldCheckIcon size={28} />
             </button>
@@ -209,20 +326,24 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
             const unreadCount = serverUnreadCounts[server.id] || 0
             const mentionCount = serverMentionCounts[server.id] || 0
             const eventMeta = serverEventsMeta?.[server.id] || null
+            const hasUnread = unreadCount > 0
+            const hasMention = mentionCount > 0
             return (
             <button
               key={server.id}
-              className={`server-icon ${currentServerId === server.id ? 'active' : ''} ${eventMeta ? 'has-events' : ''} ${eventMeta?.hasToday ? 'has-events-today' : ''} ${mentionCount > 0 ? 'has-mention' : ''}`}
-              onClick={() => onServerChange(server.id)}
+              className={`server-icon ${currentServerId === server.id ? 'active' : ''} ${eventMeta ? 'has-events' : ''} ${eventMeta?.hasToday ? 'has-events-today' : ''} ${hasUnread ? 'has-unread' : ''} ${hasMention ? 'has-mention' : ''}`}
+              onClick={() => handleServerChange(server.id)}
               onContextMenu={(e) => {
                 e.preventDefault()
-                setContextMenu({
-                  x: e.clientX,
-                  y: e.clientY,
-                  server
-                })
+                openContextMenu(e.clientX, e.clientY, { server })
               }}
+              onKeyDown={(event) => handleMenuHotkey(event, { server })}
+              onMouseEnter={() => prefetchNavigationIntent(server.id)}
+              onFocus={() => prefetchNavigationIntent(server.id)}
               title={server.name}
+              type="button"
+              aria-current={currentServerId === server.id ? 'page' : undefined}
+              aria-label={`${server.name}${hasMention ? ` (${mentionCount} mentions)` : hasUnread ? ` (${unreadCount} unread)` : ''}`}
             >
               {server.icon ? (
                 <img src={server.icon} alt={server.name} />
@@ -231,7 +352,12 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
                   {server.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
                 </span>
               )}
-              {unreadCount > 0 && (
+              {hasMention && (
+                <div className="server-mention-badge">
+                  {mentionCount > 99 ? '99+' : mentionCount}
+                </div>
+              )}
+              {hasUnread && (
                 <div className="server-unread-badge">
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </div>
@@ -246,38 +372,54 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           
           <button 
             className="server-icon add-server"
-            onClick={() => (onOpenCreate ? onOpenCreate() : setShowCreateModal(true))}
+            onClick={openCreateServer}
+            onMouseEnter={() => prefetchNavigationIntent('join')}
+            onFocus={() => prefetchNavigationIntent('join')}
             onContextMenu={(e) => {
               e.preventDefault()
-              setContextMenu({
-                x: e.clientX,
-                y: e.clientY,
+              openContextMenu(e.clientX, e.clientY, {
                 items: [
-                  { icon: <PlusIcon size={16} />, label: t('servers.create'), onClick: () => onOpenCreate ? onOpenCreate() : setShowCreateModal(true) },
-                  { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
+                  { icon: <PlusIcon size={16} />, label: t('servers.create'), onClick: openCreateServer },
+                  { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: openJoinServer }
                 ]
               })
             }}
+            onKeyDown={(event) => handleMenuHotkey(event, {
+              items: [
+                { icon: <PlusIcon size={16} />, label: t('servers.create'), onClick: openCreateServer },
+                { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: openJoinServer }
+              ]
+            })}
             title={t('servers.create')}
+            type="button"
+            aria-label={t('servers.create')}
           >
             <PlusIcon size={24} />
           </button>
 
           <button 
             className="server-icon join-server"
-            onClick={() => (onOpenJoin ? onOpenJoin() : setShowJoinModal(true))}
+            onClick={openJoinServer}
+            onMouseEnter={() => prefetchNavigationIntent('join')}
+            onFocus={() => prefetchNavigationIntent('join')}
             onContextMenu={(e) => {
               e.preventDefault()
-              setContextMenu({
-                x: e.clientX,
-                y: e.clientY,
+              openContextMenu(e.clientX, e.clientY, {
                 items: [
-                  { icon: <PlusIcon size={16} />, label: t('servers.create'), onClick: () => onOpenCreate ? onOpenCreate() : setShowCreateModal(true) },
-                  { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
+                  { icon: <PlusIcon size={16} />, label: t('servers.create'), onClick: openCreateServer },
+                  { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: openJoinServer }
                 ]
               })
             }}
+            onKeyDown={(event) => handleMenuHotkey(event, {
+              items: [
+                { icon: <PlusIcon size={16} />, label: t('servers.create'), onClick: openCreateServer },
+                { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: openJoinServer }
+              ]
+            })}
             title={t('servers.join')}
+            type="button"
+            aria-label={t('servers.join')}
           >
             <ArrowRightOnRectangleIcon size={22} />
           </button>
@@ -287,18 +429,26 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
           <button 
             className="server-icon settings-icon"
             onClick={onOpenSettings}
+            onMouseEnter={() => prefetchNavigationIntent('settings')}
+            onFocus={() => prefetchNavigationIntent('settings')}
             onContextMenu={(e) => {
               e.preventDefault()
-              setContextMenu({
-                x: e.clientX,
-                y: e.clientY,
+              openContextMenu(e.clientX, e.clientY, {
                 items: [
                   { icon: <CogIcon size={16} />, label: t('nav.settings'), onClick: onOpenSettings },
-                  { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: () => onOpenJoin ? onOpenJoin() : setShowJoinModal(true) },
+                  { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: openJoinServer }
                 ]
               })
             }}
+            onKeyDown={(event) => handleMenuHotkey(event, {
+              items: [
+                { icon: <CogIcon size={16} />, label: t('nav.settings'), onClick: onOpenSettings },
+                { icon: <ArrowRightOnRectangleIcon size={16} />, label: t('servers.join'), onClick: openJoinServer }
+              ]
+            })}
             title={t('nav.settings')}
+            type="button"
+            aria-label={t('nav.settings')}
           >
             <CogIcon size={24} />
           </button>
@@ -314,7 +464,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
             { label: contextMenu.server?.name, type: 'header' },
             {
               label: t('common.open'),
-              onClick: () => onServerChange(contextMenu.server?.id)
+              onClick: () => handleServerChange(contextMenu.server?.id)
             },
             {
               label: mutedServers[contextMenu.server?.id] ? 'Unmute Notifications' : 'Mute Notifications',
@@ -325,7 +475,7 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
               label: t('servers.serverSettings'),
               icon: <ShieldCheckIcon size={14} />,
               onClick: () => {
-                onServerChange(contextMenu.server?.id)
+                handleServerChange(contextMenu.server?.id)
                 onOpenServerSettings?.()
               },
               disabled: contextMenu.server?.ownerId !== user?.id
@@ -333,7 +483,19 @@ const ServerSidebar = ({ servers, currentServerId, onServerChange, onCreateServe
             {
               label: t('servers.serverId'),
               icon: <ClipboardDocumentIcon size={14} />,
-              onClick: () => navigator.clipboard.writeText(contextMenu.server?.id)
+              onClick: async () => {
+                if (!contextMenu.server?.id) return
+                try {
+                  await navigator.clipboard.writeText(contextMenu.server.id)
+                } catch {
+                  const textArea = document.createElement('textarea')
+                  textArea.value = contextMenu.server.id
+                  document.body.appendChild(textArea)
+                  textArea.select()
+                  document.execCommand('copy')
+                  document.body.removeChild(textArea)
+                }
+              }
             },
             {
               label: 'Report Server',

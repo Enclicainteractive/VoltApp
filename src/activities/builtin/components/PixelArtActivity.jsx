@@ -154,6 +154,14 @@ export default function PixelArtActivity({ sdk }) {
     draw()
   }, [draw, gridVersion])
 
+  // Clear any pending sync timer on unmount
+  useEffect(() => () => {
+    if (syncTimerRef.current) {
+      window.clearTimeout(syncTimerRef.current)
+      syncTimerRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     if (!sdk) return undefined
 
